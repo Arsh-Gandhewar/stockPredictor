@@ -1,7 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { StockService } from '../stock/stock.service';
-import { TransactionType, OrderType } from '@prisma/client';
+import { TransactionType, OrderType } from 'db';
 
 @Injectable()
 export class PortfolioService {
@@ -52,7 +52,7 @@ export class PortfolioService {
 
     // Fetch real-time price
     const quote = await this.stockService.getLatestQuote(ticker);
-    const currentPrice = quote.regularMarketPrice;
+    const currentPrice = (quote as any).regularMarketPrice;
     if (!currentPrice) throw new BadRequestException('Could not fetch real-time price for ' + ticker);
 
     const totalValue = currentPrice * quantity;
@@ -63,7 +63,7 @@ export class PortfolioService {
       }
 
       // Execute BUY
-      await this.db.client.$transaction(async (tx) => {
+      await this.db.client.$transaction(async (tx: any) => {
         // Deduct cash
         await tx.portfolio.update({
           where: { id: portfolio.id },
@@ -120,7 +120,7 @@ export class PortfolioService {
       }
 
       // Execute SELL
-      await this.db.client.$transaction(async (tx) => {
+      await this.db.client.$transaction(async (tx: any) => {
         // Add cash
         await tx.portfolio.update({
           where: { id: portfolio.id },

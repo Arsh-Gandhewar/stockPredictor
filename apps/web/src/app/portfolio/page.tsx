@@ -1,35 +1,53 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowUpRight, ArrowDownRight, Wallet, TrendingUp, TrendingDown, Clock, Activity } from 'lucide-react';
-
-const positions = [
-  { ticker: 'RELIANCE', name: 'Reliance Ind.', qty: 150, avgPrice: 2850.50, ltp: 2934.50 },
-  { ticker: 'HDFCBANK', name: 'HDFC Bank', qty: 300, avgPrice: 1480.00, ltp: 1445.10 },
-  { ticker: 'TCS', name: 'TCS Ltd.', qty: 50, avgPrice: 3890.00, ltp: 4012.30 },
-];
-
-const transactions = [
-  { id: '1', date: '2026-08-04 10:15', ticker: 'RELIANCE', type: 'BUY', qty: 50, price: 2900.00 },
-  { id: '2', date: '2026-08-03 14:30', ticker: 'INFY', type: 'SELL', qty: 100, price: 1640.20 },
-  { id: '3', date: '2026-08-01 09:45', ticker: 'HDFCBANK', type: 'BUY', qty: 300, price: 1480.00 },
-];
+import { Wallet, TrendingUp, TrendingDown, Clock, Activity, Loader2 } from 'lucide-react';
+import { usePortfolio, useExecuteTrade } from '@/hooks/use-stock';
+import { useState } from 'react';
 
 export default function PortfolioPage() {
+  const { data: portfolio, isLoading, refetch } = usePortfolio();
+  const executeTrade = useExecuteTrade();
+  
   const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val);
 
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center h-[50vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  const positions = portfolio?.positions || [];
+  const transactions = portfolio?.transactions || [];
+  const availableCash = portfolio?.availableCash || 0;
+
+  // In a real app we'd fetch real-time LTP. For now, let's assume LTP is close to average for seeded data.
+  // We'll just mock LTP as avgPrice * some random multiplier for the sake of the UI until real socket is attached
+  const enrichedPositions = positions.map((p: any) => ({
+    ...p,
+    ltp: p.averagePrice * (1 + (Math.random() * 0.1 - 0.05)), // +/- 5%
+    ticker: p.stock.ticker,
+    name: p.stock.name,
+  }));
+
   const calculateTotalValue = () => {
-    return positions.reduce((acc, pos) => acc + (pos.qty * pos.ltp), 0);
+    return enrichedPositions.reduce((acc: number, pos: any) => acc + (pos.quantity * pos.ltp), 0);
   };
 
   const calculateTotalInvested = () => {
-    return positions.reduce((acc, pos) => acc + (pos.qty * pos.avgPrice), 0);
+    return enrichedPositions.reduce((acc: number, pos: any) => acc + (pos.quantity * pos.averagePrice), 0);
   };
 
-  const totalValue = calculateTotalValue();
   const totalInvested = calculateTotalInvested();
+  const totalValue = calculateTotalValue();
   const totalPnL = totalValue - totalInvested;
-  const pnlPercent = (totalPnL / totalInvested) * 100;
+  const pnlPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+
+  const handleSell = (ticker: string, quantity: number) => {
+    executeTrade.mutate({ ticker, type: 'SELL', quantity });
+  };
 
   return (
     <div className="space-y-6">
@@ -48,7 +66,7 @@ export default function PortfolioPage() {
             <Wallet className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(totalValue + 245000)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(totalValue + availableCash)}</div>
           </CardContent>
         </Card>
         
@@ -58,7 +76,7 @@ export default function PortfolioPage() {
             <Wallet className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{formatCurrency(245000)}</div>
+            <div className="text-2xl font-bold">{formatCurrency(availableCash)}</div>
           </CardContent>
         </Card>
 
@@ -78,10 +96,10 @@ export default function PortfolioPage() {
             {totalPnL >= 0 ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
           </CardHeader>
           <CardContent>
-            <div className={\`text-2xl font-bold \${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}\`}>
+            <div className={`text-2xl font-bold \${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {totalPnL >= 0 ? '+' : ''}{formatCurrency(totalPnL)}
             </div>
-            <p className={\`text-xs \${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}\`}>
+            <p className={`text-xs \${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {totalPnL >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
             </p>
           </CardContent>
@@ -108,8 +126,14 @@ export default function PortfolioPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {positions.map((pos) => {
-                    const pnl = (pos.ltp - pos.avgPrice) * pos.qty;
+                  {enrichedPositions.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="px-4 py-8 text-center text-muted-foreground">
+                        No holdings yet. Search for a stock to buy!
+                      </td>
+                    </tr>
+                  ) : enrichedPositions.map((pos: any) => {
+                    const pnl = (pos.ltp - pos.averagePrice) * pos.quantity;
                     const isProfit = pnl >= 0;
                     return (
                       <tr key={pos.ticker} className="border-b border-border hover:bg-muted/20">
@@ -117,14 +141,20 @@ export default function PortfolioPage() {
                           {pos.ticker}
                           <div className="text-xs text-muted-foreground">{pos.name}</div>
                         </td>
-                        <td className="px-4 py-3">{pos.qty}</td>
-                        <td className="px-4 py-3">{formatCurrency(pos.avgPrice)}</td>
+                        <td className="px-4 py-3">{pos.quantity}</td>
+                        <td className="px-4 py-3">{formatCurrency(pos.averagePrice)}</td>
                         <td className="px-4 py-3">{formatCurrency(pos.ltp)}</td>
-                        <td className={\`px-4 py-3 font-medium \${isProfit ? 'text-green-500' : 'text-red-500'}\`}>
+                        <td className={`px-4 py-3 font-medium \${isProfit ? 'text-green-500' : 'text-red-500'}`}>
                           {isProfit ? '+' : ''}{formatCurrency(pnl)}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <button className="text-xs font-bold text-destructive hover:underline">SELL</button>
+                          <button 
+                            onClick={() => handleSell(pos.ticker, pos.quantity)}
+                            disabled={executeTrade.isPending}
+                            className="text-xs font-bold text-destructive hover:underline disabled:opacity-50"
+                          >
+                            SELL ALL
+                          </button>
                         </td>
                       </tr>
                     );
@@ -144,18 +174,20 @@ export default function PortfolioPage() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {transactions.map((tx) => (
+              {transactions.length === 0 ? (
+                <div className="text-center text-muted-foreground py-4">No recent transactions</div>
+              ) : transactions.map((tx: any) => (
                 <div key={tx.id} className="flex justify-between items-center border-b border-border pb-3 last:border-0 last:pb-0">
                   <div>
-                    <div className="font-bold">{tx.ticker}</div>
-                    <div className="text-xs text-muted-foreground">{tx.date}</div>
+                    <div className="font-bold">{tx.stock?.ticker || 'UNKNOWN'}</div>
+                    <div className="text-xs text-muted-foreground">{new Date(tx.timestamp).toLocaleString()}</div>
                   </div>
                   <div className="text-right">
-                    <div className={\`font-bold \${tx.type === 'BUY' ? 'text-blue-500' : 'text-orange-500'}\`}>
+                    <div className={`font-bold \${tx.type === 'BUY' ? 'text-blue-500' : 'text-orange-500'}`}>
                       {tx.type}
                     </div>
                     <div className="text-xs font-medium text-foreground">
-                      {tx.qty} @ {formatCurrency(tx.price)}
+                      {tx.quantity} @ {formatCurrency(tx.price)}
                     </div>
                   </div>
                 </div>

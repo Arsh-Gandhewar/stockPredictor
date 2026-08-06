@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import yahooFinance from 'yahoo-finance2';
+import YahooFinance from 'yahoo-finance2';
+const yahooFinance = new YahooFinance();
 import { DatabaseService } from '../../database/database.service';
 import { RSI, MACD, EMA, SMA, BollingerBands, ATR, ADX } from 'technicalindicators';
 
@@ -20,10 +21,10 @@ export class StockService {
       if (!stock) throw new NotFoundException(`Stock ${ticker} not found in DB`);
 
       const queryOptions = { period1, period2, interval: '1d' as const };
-      const result = await yahooFinance.historical(ticker, queryOptions);
+      const result = await yahooFinance.historical(ticker, queryOptions) as any[];
 
       // Save to DB (batch upsert or createMany)
-      const records = result.map(quote => ({
+      const records = result.map((quote: any) => ({
         stockId: stock.id,
         date: quote.date,
         open: quote.open,
@@ -127,5 +128,122 @@ export class StockService {
 
   async getLatestQuote(ticker: string) {
     return yahooFinance.quote(ticker);
+  }
+
+  async getMarketSummary() {
+    this.logger.log('getMarketSummary called');
+    try {
+      this.logger.log('Fetching Nifty quote...');
+      const nifty = await yahooFinance.quote('^NSEI') as any;
+      this.logger.log('Fetching Sensex quote...');
+      const sensex = await yahooFinance.quote('^BSESN') as any;
+      
+      this.logger.log('Quotes fetched successfully.');
+      return [
+        {
+          name: 'NIFTY 50',
+          value: nifty.regularMarketPrice?.toFixed(2) || '0.00',
+          change: nifty.regularMarketChangePercent?.toFixed(2) + '%',
+          up: (nifty.regularMarketChangePercent || 0) >= 0
+        },
+        {
+          name: 'SENSEX',
+          value: sensex.regularMarketPrice?.toFixed(2) || '0.00',
+          change: sensex.regularMarketChangePercent?.toFixed(2) + '%',
+          up: (sensex.regularMarketChangePercent || 0) >= 0
+        }
+      ];
+    } catch (error) {
+      this.logger.warn(`Failed to fetch market indices, falling back to db stocks. Error: ${error.message}`);
+      // Fallback: just return the top 2 stocks in DB as pseudo-indices
+      this.logger.log('Fetching from DB...');
+      const stocks = await this.db.client.stock.findMany({ take: 2 });
+      this.logger.log('DB fetch complete. Building summary...');
+      const summary = [];
+      for (const stock of stocks) {
+        let quote: any = null;
+        try {
+          quote = await yahooFinance.quote(stock.ticker);
+        } catch (e) {
+          quote = null;
+        }
+        summary.push({
+          name: stock.name,
+          value: quote?.regularMarketPrice?.toFixed(2) || '0.00',
+          change: (quote?.regularMarketChangePercent?.toFixed(2) || '0') + '%',
+          up: (quote?.regularMarketChangePercent || 0) >= 0
+        });
+      }
+      return summary;
+    }
+  }
+
+  async getTopPicks() {
+    // Fetch top 5 stocks sorted by AI confidence or purely by some technical indicator for now
+    const stocks = await this.db.client.stock.findMany({
+      include: {
+        aiInsights: {
+          orderBy: { timestamp: 'desc' },
+          take: 1
+        },
+        priceHistory: {
+          orderBy: { date: 'desc' },
+          take: 1
+        }
+      },
+      take: 5
+    });
+
+    return stocks.map((stock: any) => {
+      const insight = stock.aiInsights[0];
+      const latestPrice = stock.priceHistory[0]?.close || 0;
+      
+      return {
+        ticker: stock.ticker,
+        name: stock.name,
+        price: latestPrice.toFixed(2),
+        recommendation: insight?.recommendation || 'HOLD',
+        confidence: insight?.confidenceScore || 50,
+      };
+    }).sort((a: any, b: any) => b.confidence - a.confidence);
+  }
+
+  async getHistoricalData(ticker: string) {
+    const stock = await this.db.client.stock.findUnique({ where: { ticker } });
+    if (!stock) throw new NotFoundException('Stock not found');
+
+    const history = await this.db.client.priceHistory.findMany({
+      where: { stockId: stock.id },
+      orderBy: { date: 'asc' }
+    });
+
+    return history.map((h: any) => ({
+      time: h.date.toISOString().split('T')[0],
+      open: h.open,
+      high: h.high,
+      low: h.low,
+      close: h.close
+    }));
+  }
+
+  async getStockProfile(ticker: string) {
+    const stock = await this.db.client.stock.findUnique({
+      where: { ticker },
+      include: {
+        aiInsights: { orderBy: { timestamp: 'desc' }, take: 1 },
+        priceHistory: { orderBy: { date: 'desc' }, take: 1 }
+      }
+    });
+
+    if (!stock) throw new NotFoundException('Stock not found');
+    
+    return {
+      ticker: stock.ticker,
+      name: stock.name,
+      sector: stock.sector,
+      exchange: stock.exchange,
+      price: stock.priceHistory[0]?.close || 0,
+      insight: stock.aiInsights[0] || null
+    };
   }
 }

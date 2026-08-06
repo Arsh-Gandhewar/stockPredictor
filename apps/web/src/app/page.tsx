@@ -1,24 +1,15 @@
 'use client';
 
-import { ArrowUpRight, ArrowDownRight, Activity, TrendingUp, DollarSign } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, Activity, TrendingUp, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
-// Dummy data to ensure UI looks premium while backend is connected
-const marketSummary = [
-  { name: 'NIFTY 50', value: '22,453.30', change: '+1.2%', up: true },
-  { name: 'BANKNIFTY', value: '47,965.40', change: '+0.8%', up: true },
-  { name: 'INDIA VIX', value: '11.23', change: '-4.5%', up: false },
-  { name: 'SENSEX', value: '74,119.39', change: '+1.1%', up: true },
-];
-
-const aiPicks = [
-  { ticker: 'RELIANCE', name: 'Reliance Industries', price: '2,934.50', recommendation: 'STRONG BUY', confidence: 92 },
-  { ticker: 'HDFCBANK', name: 'HDFC Bank', price: '1,445.10', recommendation: 'ACCUMULATE', confidence: 85 },
-  { ticker: 'TCS', name: 'Tata Consultancy Services', price: '4,012.30', recommendation: 'HOLD', confidence: 60 },
-  { ticker: 'INFY', name: 'Infosys', price: '1,634.20', recommendation: 'BUY', confidence: 78 },
-];
+import { useMarketSummary, useTopPicks } from '@/hooks/use-stock';
+import { useRouter } from 'next/navigation';
 
 export default function Dashboard() {
+  const router = useRouter();
+  const { data: marketSummary, isLoading: isLoadingSummary } = useMarketSummary();
+  const { data: aiPicks, isLoading: isLoadingPicks } = useTopPicks();
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
@@ -29,21 +20,27 @@ export default function Dashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {marketSummary.map((index) => (
-          <Card key={index.name} className="overflow-hidden relative bg-gradient-to-br from-card to-card/50">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">{index.name}</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{index.value}</div>
-              <p className={\`text-xs flex items-center mt-1 \${index.up ? 'text-green-500' : 'text-red-500'}\`}>
-                {index.up ? <ArrowUpRight className="h-3 w-3 mr-1" /> : <ArrowDownRight className="h-3 w-3 mr-1" />}
-                {index.change}
-              </p>
-            </CardContent>
-          </Card>
-        ))}
+        {isLoadingSummary ? (
+          <div className="col-span-4 flex justify-center py-8">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          marketSummary?.map((index: any) => (
+            <Card key={index.name} className="overflow-hidden relative bg-gradient-to-br from-card to-card/50">
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardTitle className="text-sm font-medium">{index.name}</CardTitle>
+                <Activity className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{index.value}</div>
+                <p className={`text-xs flex items-center mt-1 \${index.up ? 'text-green-500' : 'text-red-500'}`}>
+                  {index.up ? <ArrowUpRight className="h-3 w-3 mr-1" /> : <ArrowDownRight className="h-3 w-3 mr-1" />}
+                  {index.change}
+                </p>
+              </CardContent>
+            </Card>
+          ))
+        )}
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
@@ -62,22 +59,32 @@ export default function Dashboard() {
             <CardTitle>Top AI Picks</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {aiPicks.map((pick) => (
-                <div key={pick.ticker} className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent transition-colors cursor-pointer">
-                  <div className="flex flex-col">
-                    <span className="font-bold">{pick.ticker}</span>
-                    <span className="text-xs text-muted-foreground">{pick.name}</span>
+            {isLoadingPicks ? (
+              <div className="flex justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {aiPicks?.map((pick: any) => (
+                  <div 
+                    key={pick.ticker} 
+                    onClick={() => router.push(`/stock/${pick.ticker}`)}
+                    className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-accent transition-colors cursor-pointer"
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-bold">{pick.ticker}</span>
+                      <span className="text-xs text-muted-foreground">{pick.name}</span>
+                    </div>
+                    <div className="flex flex-col items-end">
+                      <span className="font-medium">₹{pick.price}</span>
+                      <span className="text-xs font-bold text-primary flex items-center">
+                        <TrendingUp className="h-3 w-3 mr-1" /> {pick.recommendation} ({pick.confidence}%)
+                      </span>
+                    </div>
                   </div>
-                  <div className="flex flex-col items-end">
-                    <span className="font-medium">₹{pick.price}</span>
-                    <span className="text-xs font-bold text-primary flex items-center">
-                      <TrendingUp className="h-3 w-3 mr-1" /> {pick.recommendation} ({pick.confidence}%)
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>

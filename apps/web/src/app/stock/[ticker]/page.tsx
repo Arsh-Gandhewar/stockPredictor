@@ -2,56 +2,45 @@
 
 import { useParams } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ArrowUpRight, ArrowDownRight, TrendingUp, Info } from 'lucide-react';
+import { ArrowUpRight, ArrowDownRight, TrendingUp, Info, Loader2 } from 'lucide-react';
 import { useEffect, useRef } from 'react';
-import { createChart } from 'lightweight-charts';
+import { createChart, CandlestickSeries } from 'lightweight-charts';
+import { useStockProfile, useExecuteTrade, useStockChart } from '@/hooks/use-stock';
 
 export default function StockDetailsPage() {
   const params = useParams();
   const ticker = params.ticker as string;
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  
+  const { data: profile, isLoading: isProfileLoading } = useStockProfile(ticker);
+  const { data: chartData, isLoading: isChartLoading } = useStockChart(ticker);
+  const executeTrade = useExecuteTrade();
 
-  // Mock data for the chart
   useEffect(() => {
-    if (!chartContainerRef.current) return;
+    if (!chartContainerRef.current || !chartData || chartData.length === 0) return;
     
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { color: 'transparent' },
-        textColor: '#d1d5db', // text-muted-foreground
+        textColor: '#d1d5db',
       },
       grid: {
-        vertLines: { color: '#1f2937' }, // border
+        vertLines: { color: '#1f2937' },
         horzLines: { color: '#1f2937' },
       },
       width: chartContainerRef.current.clientWidth,
       height: 400,
     });
 
-    const candlestickSeries = chart.addCandlestickSeries({
-      upColor: '#22c55e', // green-500
-      downColor: '#ef4444', // red-500
+    const candlestickSeries = chart.addSeries(CandlestickSeries, {
+      upColor: '#22c55e',
+      downColor: '#ef4444',
       borderVisible: false,
       wickUpColor: '#22c55e',
       wickDownColor: '#ef4444',
     });
 
-    // Generate some mock candlestick data
-    const data = [];
-    let basePrice = 2800;
-    for (let i = 0; i < 100; i++) {
-      const open = basePrice + (Math.random() - 0.5) * 50;
-      const close = open + (Math.random() - 0.5) * 50;
-      const high = Math.max(open, close) + Math.random() * 20;
-      const low = Math.min(open, close) - Math.random() * 20;
-      data.push({
-        time: \`2026-04-\${(i % 30 + 1).toString().padStart(2, '0')}\`,
-        open, high, low, close
-      });
-      basePrice = close;
-    }
-
-    candlestickSeries.setData(data);
+    candlestickSeries.setData(chartData);
 
     const handleResize = () => {
       if (chartContainerRef.current) {
@@ -64,21 +53,39 @@ export default function StockDetailsPage() {
       window.removeEventListener('resize', handleResize);
       chart.remove();
     };
-  }, []);
+  }, [chartData]);
+
+  if (isProfileLoading) {
+    return (
+      <div className="flex justify-center items-center h-[50vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!profile) {
+    return <div>Stock not found</div>;
+  }
+
+  const handleBuy = () => {
+    executeTrade.mutate({ ticker, type: 'BUY', quantity: 10 });
+  };
+
+  const formatCurrency = (val: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(val);
 
   return (
     <div className="space-y-6">
       {/* Header Info */}
       <div className="flex justify-between items-start">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight">{ticker}</h1>
-          <p className="text-xl text-muted-foreground">Reliance Industries Ltd</p>
+          <h1 className="text-4xl font-bold tracking-tight">{profile.ticker}</h1>
+          <p className="text-xl text-muted-foreground">{profile.name}</p>
         </div>
         <div className="text-right">
-          <div className="text-4xl font-bold">₹2,934.50</div>
+          <div className="text-4xl font-bold">{formatCurrency(profile.price)}</div>
           <div className="text-lg font-medium text-green-500 flex items-center justify-end">
             <ArrowUpRight className="h-5 w-5 mr-1" />
-            +45.20 (1.56%)
+            Active
           </div>
         </div>
       </div>
@@ -88,16 +95,16 @@ export default function StockDetailsPage() {
         <CardHeader className="py-4">
           <CardTitle className="text-sm font-medium flex items-center justify-between">
             <span>Price Chart (1D)</span>
-            <div className="flex gap-2 text-xs">
-              <button className="px-2 py-1 rounded bg-accent">1D</button>
-              <button className="px-2 py-1 rounded hover:bg-accent/50 text-muted-foreground">1W</button>
-              <button className="px-2 py-1 rounded hover:bg-accent/50 text-muted-foreground">1M</button>
-              <button className="px-2 py-1 rounded hover:bg-accent/50 text-muted-foreground">1Y</button>
-            </div>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div ref={chartContainerRef} className="w-full" />
+          {isChartLoading ? (
+            <div className="h-[400px] flex items-center justify-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div ref={chartContainerRef} className="w-full" />
+          )}
         </CardContent>
       </Card>
 
@@ -111,21 +118,12 @@ export default function StockDetailsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                Reliance Industries Limited is an Indian multinational conglomerate company, headquartered in Mumbai, India. It has diverse businesses including energy, petrochemicals, natural gas, retail, telecommunications, mass media, and textiles.
-              </p>
               <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
                 <div>
-                  <span className="text-muted-foreground">Sector:</span> Energy
+                  <span className="text-muted-foreground">Sector:</span> {profile.sector || 'N/A'}
                 </div>
                 <div>
-                  <span className="text-muted-foreground">Industry:</span> Oil & Gas
-                </div>
-                <div>
-                  <span className="text-muted-foreground">Market Cap:</span> ₹19.8T
-                </div>
-                <div>
-                  <span className="text-muted-foreground">P/E Ratio:</span> 28.5
+                  <span className="text-muted-foreground">Exchange:</span> {profile.exchange}
                 </div>
               </div>
             </CardContent>
@@ -141,21 +139,31 @@ export default function StockDetailsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-muted-foreground">Action</span>
-                <span className="font-bold text-green-500 text-lg">STRONG BUY</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="font-medium text-muted-foreground">Confidence</span>
-                <span className="font-bold text-primary">92%</span>
-              </div>
-              <div className="pt-2 border-t border-border">
-                <p className="text-sm text-muted-foreground">
-                  The stock has broken out of a 6-month consolidation zone with high volume. MACD shows a bullish crossover and RSI is trending up but not overbought. Expected short-term target is ₹3,200.
-                </p>
-              </div>
-              <button className="w-full mt-4 bg-primary text-primary-foreground font-medium py-2 rounded-md hover:bg-primary/90 transition-colors">
-                Trade Now
+              {profile.insight ? (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-muted-foreground">Action</span>
+                    <span className="font-bold text-green-500 text-lg">{profile.insight.recommendation}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-muted-foreground">Confidence</span>
+                    <span className="font-bold text-primary">{profile.insight.confidenceScore}%</span>
+                  </div>
+                  <div className="pt-2 border-t border-border">
+                    <p className="text-sm text-muted-foreground">
+                      {profile.insight.reasoning}
+                    </p>
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-muted-foreground">No recent insights available.</div>
+              )}
+              <button 
+                onClick={handleBuy}
+                disabled={executeTrade.isPending}
+                className="w-full mt-4 bg-primary text-primary-foreground font-medium py-2 rounded-md hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {executeTrade.isPending ? 'Processing...' : 'Buy 10 Shares'}
               </button>
             </CardContent>
           </Card>
