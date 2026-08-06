@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { StockService } from '../stock/stock.service';
+import { AiService } from '../ai/ai.service';
 import { TransactionType, OrderType } from 'db';
 
 @Injectable()
@@ -9,13 +10,24 @@ export class PortfolioService {
 
   constructor(
     private readonly db: DatabaseService,
-    private readonly stockService: StockService
+    private readonly stockService: StockService,
+    private readonly aiService: AiService
   ) {}
 
   /**
    * Initialize a portfolio for a new user with 1,000,000 INR
    */
   async createPortfolio(userId: string) {
+    await this.db.client.user.upsert({
+      where: { id: userId },
+      update: {},
+      create: {
+        id: userId,
+        clerkId: `clerk_${userId}`,
+        email: `${userId}@example.com`,
+      }
+    });
+
     return this.db.client.portfolio.create({
       data: {
         userId,
@@ -154,5 +166,54 @@ export class PortfolioService {
       this.logger.log(`User ${userId} SOLD ${quantity} shares of ${ticker} at ${currentPrice}`);
       return { success: true, message: 'Sell order executed successfully', price: currentPrice };
     }
+  }
+
+  /**
+   * Scans all positions in user's portfolio and evaluates high-confidence (>80%) sell signals
+   */
+  async getPortfolioSellSignals(userId: string) {
+    const portfolio = await this.getPortfolio(userId);
+    if (!portfolio || !portfolio.positions || portfolio.positions.length === 0) {
+      return [];
+    }
+
+    const sellSignals = [];
+
+    for (const position of portfolio.positions) {
+      const stock = position.stock;
+      if (!stock) continue;
+
+      let quote: any = null;
+      try {
+        quote = await this.stockService.getLatestQuote(stock.ticker);
+      } catch (e) {
+        quote = null;
+      }
+
+      const currentPrice = quote?.regularMarketPrice || position.averagePrice;
+      const unrealizedPnLPercent = ((currentPrice - position.averagePrice) / position.averagePrice) * 100;
+
+      // Evaluate AI sell signal for this holding
+      const evaluation = await this.aiService.evaluatePortfolioSellOpportunity({
+        ticker: stock.ticker,
+        name: stock.name,
+        avgPrice: position.averagePrice,
+        currentPrice: currentPrice,
+        unrealizedPnLPercent: unrealizedPnLPercent,
+      });
+
+      // Filter: Show ONLY if confidence is >= 80% and recommendation is SELL or STRONG_SELL
+      if (evaluation.confidenceScore >= 80 && ['SELL', 'STRONG_SELL'].includes(evaluation.recommendation)) {
+        sellSignals.push({
+          ...evaluation,
+          quantityHeld: position.quantity,
+          avgPurchasePrice: position.averagePrice,
+          currentPrice: currentPrice,
+          unrealizedPnLPercent: Number(unrealizedPnLPercent.toFixed(2)),
+        });
+      }
+    }
+
+    return sellSignals;
   }
 }

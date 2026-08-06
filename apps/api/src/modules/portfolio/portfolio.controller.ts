@@ -27,4 +27,10 @@ export class PortfolioController {
       tradeData.quantity
     );
   }
+
+  @Get('sell-signals')
+  async getPortfolioSellSignals(@Headers('x-user-id') userId: string) {
+    const id = userId || 'user_123';
+    return this.portfolioService.getPortfolioSellSignals(id);
+  }
 }

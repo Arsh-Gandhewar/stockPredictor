@@ -41,6 +41,16 @@ export function usePortfolio(userId?: string) {
   });
 }
 
+export function usePortfolioSellSignals(userId?: string) {
+  return useQuery({
+    queryKey: ['portfolio-sell-signals', userId],
+    queryFn: () => fetcher<any[]>('/portfolio/sell-signals', {
+      headers: userId ? { 'x-user-id': userId } : undefined
+    }),
+    refetchInterval: 120000, // 2 minutes continuous monitoring
+  });
+}
+
 export function useExecuteTrade() {
   const queryClient = useQueryClient();
   
@@ -53,6 +63,7 @@ export function useExecuteTrade() {
       }),
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['portfolio', variables.userId] });
+      queryClient.invalidateQueries({ queryKey: ['portfolio-sell-signals', variables.userId] });
     },
   });
 }
