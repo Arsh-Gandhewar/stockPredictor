@@ -1,0 +1,298 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  clerkId   String   @unique
+  email     String   @unique
+  firstName String?
+  lastName  String?
+  avatarUrl String?
+  role      Role     @default(USER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  portfolios Portfolio[]
+  alerts     Alert[]
+  watchlists Watchlist[]
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+model Stock {
+  id          String   @id @default(cuid())
+  ticker      String   @unique
+  name        String
+  exchange    String   // NSE, BSE
+  sector      String?
+  industry    String?
+  description String?
+  logoUrl     String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  priceHistory         PriceHistory[]
+  technicalIndicators  TechnicalIndicator[]
+  fundamentalData      FundamentalData[]
+  aiInsights           AIInsight[]
+  positions            Position[]
+  transactions         Transaction[]
+  alerts               Alert[]
+  watchlistStocks      WatchlistStock[]
+  news                 NewsArticleOnStock[]
+}
+
+model PriceHistory {
+  id        String   @id @default(cuid())
+  stockId   String
+  stock     Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  date      DateTime
+  open      Float
+  high      Float
+  low       Float
+  close     Float
+  volume    BigInt
+  createdAt DateTime @default(now())
+
+  @@unique([stockId, date])
+  @@index([stockId])
+  @@index([date])
+}
+
+model TechnicalIndicator {
+  id              String   @id @default(cuid())
+  stockId         String
+  stock           Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  timestamp       DateTime
+  rsi             Float?
+  macd            Float?
+  macdSignal      Float?
+  macdHist        Float?
+  ema20           Float?
+  sma50           Float?
+  sma200          Float?
+  bollingerUpper  Float?
+  bollingerLower  Float?
+  atr             Float?
+  adx             Float?
+  vwap            Float?
+  obv             Float?
+  createdAt       DateTime @default(now())
+
+  @@unique([stockId, timestamp])
+  @@index([stockId])
+}
+
+model FundamentalData {
+  id                  String   @id @default(cuid())
+  stockId             String   @unique
+  stock               Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  peRatio             Float?
+  pbRatio             Float?
+  roe                 Float?
+  roce                Float?
+  eps                 Float?
+  debtEquity          Float?
+  bookValue           Float?
+  dividendYield       Float?
+  promoterHolding     Float?
+  institutionalHolding Float?
+  marketCap           BigInt?
+  updatedAt           DateTime @updatedAt
+}
+
+model NewsArticle {
+  id            String   @id @default(cuid())
+  source        String
+  title         String
+  url           String   @unique
+  publishTime   DateTime
+  author        String?
+  summary       String?
+  sentiment     Sentiment
+  confidence    Float?
+  impactShort   String?
+  impactLong    String?
+  whyItMatters  String?
+  createdAt     DateTime @default(now())
+
+  stocks        NewsArticleOnStock[]
+}
+
+enum Sentiment {
+  POSITIVE
+  NEUTRAL
+  NEGATIVE
+}
+
+model NewsArticleOnStock {
+  newsId  String
+  stockId String
+  news    NewsArticle @relation(fields: [newsId], references: [id], onDelete: Cascade)
+  stock   Stock       @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@id([newsId, stockId])
+}
+
+model AIInsight {
+  id              String         @id @default(cuid())
+  stockId         String
+  stock           Stock          @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  recommendation  Recommendation
+  confidenceScore Float
+  reasoning       String         @db.Text
+  riskLevel       RiskLevel
+  bullishFactors  String[]
+  bearishFactors  String[]
+  expectedTrend   String
+  horizon         Horizon
+  entryZoneLow    Float?
+  entryZoneHigh   Float?
+  target          Float?
+  stopLoss        Float?
+  rewardRiskRatio Float?
+  probabilityScore Float?
+  timestamp       DateTime       @default(now())
+
+  @@index([stockId])
+  @@index([timestamp])
+}
+
+enum Recommendation {
+  STRONG_BUY
+  BUY
+  ACCUMULATE
+  HOLD
+  REDUCE
+  SELL
+  STRONG_SELL
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum Horizon {
+  SWING
+  SHORT_TERM
+  LONG_TERM
+}
+
+model Portfolio {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  availableCash Float    @default(1000000) // ₹10,00,000
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  positions     Position[]
+  transactions  Transaction[]
+}
+
+model Position {
+  id           String    @id @default(cuid())
+  portfolioId  String
+  portfolio    Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  stockId      String
+  stock        Stock     @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  quantity     Int
+  averagePrice Float
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([portfolioId, stockId])
+}
+
+model Transaction {
+  id          String          @id @default(cuid())
+  portfolioId String
+  portfolio   Portfolio       @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  stockId     String
+  stock       Stock           @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  type        TransactionType
+  orderType   OrderType
+  quantity    Int
+  price       Float
+  timestamp   DateTime        @default(now())
+}
+
+enum TransactionType {
+  BUY
+  SELL
+}
+
+enum OrderType {
+  MARKET
+  LIMIT
+}
+
+model Alert {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stockId     String
+  stock       Stock     @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  type        AlertType
+  condition   Condition
+  targetValue Float?
+  targetRec   Recommendation?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  triggeredAt DateTime?
+
+  @@index([userId])
+}
+
+enum AlertType {
+  PRICE
+  VOLUME
+  NEWS
+  AI_RECOMMENDATION_CHANGE
+  TARGET_HIT
+  STOP_LOSS_HIT
+}
+
+enum Condition {
+  GREATER_THAN
+  LESS_THAN
+  EQUALS
+  CHANGES_TO
+}
+
+model Watchlist {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stocks    WatchlistStock[]
+
+  @@unique([userId, name])
+}
+
+model WatchlistStock {
+  watchlistId String
+  watchlist   Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
+  stockId     String
+  stock       Stock     @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  isPinned    Boolean   @default(false)
+  notes       String?
+  colorLabel  String?   // Hex code or predefined color name
+  addedAt     DateTime  @default(now())
+
+  @@id([watchlistId, stockId])
+}
