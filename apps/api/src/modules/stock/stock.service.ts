@@ -130,56 +130,62 @@ export class StockService {
     return yahooFinance.quote(ticker);
   }
 
+  private cache = new Map<string, { data: any; expiresAt: number }>();
+
   async getMarketSummary() {
-    this.logger.log('getMarketSummary called');
+    const cached = this.cache.get('market-summary');
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
     try {
-      this.logger.log('Fetching Nifty quote...');
-      const nifty = await yahooFinance.quote('^NSEI') as any;
-      this.logger.log('Fetching Sensex quote...');
-      const sensex = await yahooFinance.quote('^BSESN') as any;
-      
-      this.logger.log('Quotes fetched successfully.');
-      return [
-        {
-          name: 'NIFTY 50',
-          value: nifty.regularMarketPrice?.toFixed(2) || '0.00',
-          change: nifty.regularMarketChangePercent?.toFixed(2) + '%',
-          up: (nifty.regularMarketChangePercent || 0) >= 0
-        },
-        {
-          name: 'SENSEX',
-          value: sensex.regularMarketPrice?.toFixed(2) || '0.00',
-          change: sensex.regularMarketChangePercent?.toFixed(2) + '%',
-          up: (sensex.regularMarketChangePercent || 0) >= 0
-        }
-      ];
+      const [nifty, sensex] = await Promise.all([
+        yahooFinance.quote('^NSEI').catch(() => null),
+        yahooFinance.quote('^BSESN').catch(() => null),
+      ]) as [any, any];
+
+      if (nifty && sensex) {
+        const result = [
+          {
+            name: 'NIFTY 50',
+            value: nifty.regularMarketPrice?.toFixed(2) || '0.00',
+            change: nifty.regularMarketChangePercent?.toFixed(2) + '%',
+            up: (nifty.regularMarketChangePercent || 0) >= 0
+          },
+          {
+            name: 'SENSEX',
+            value: sensex.regularMarketPrice?.toFixed(2) || '0.00',
+            change: sensex.regularMarketChangePercent?.toFixed(2) + '%',
+            up: (sensex.regularMarketChangePercent || 0) >= 0
+          }
+        ];
+        this.cache.set('market-summary', { data: result, expiresAt: Date.now() + 60000 });
+        return result;
+      }
+      throw new Error('Incomplete quote response');
     } catch (error) {
-      this.logger.warn(`Failed to fetch market indices, falling back to db stocks. Error: ${error.message}`);
-      // Fallback: just return the top 2 stocks in DB as pseudo-indices
-      this.logger.log('Fetching from DB...');
+      this.logger.warn(`Failed to fetch market indices, falling back to DB stocks. Error: ${error.message}`);
       const stocks = await this.db.client.stock.findMany({ take: 2 });
-      this.logger.log('DB fetch complete. Building summary...');
       const summary = [];
       for (const stock of stocks) {
-        let quote: any = null;
-        try {
-          quote = await yahooFinance.quote(stock.ticker);
-        } catch (e) {
-          quote = null;
-        }
         summary.push({
           name: stock.name,
-          value: quote?.regularMarketPrice?.toFixed(2) || '0.00',
-          change: (quote?.regularMarketChangePercent?.toFixed(2) || '0') + '%',
-          up: (quote?.regularMarketChangePercent || 0) >= 0
+          value: '0.00',
+          change: '0.00%',
+          up: true
         });
       }
+      this.cache.set('market-summary', { data: summary, expiresAt: Date.now() + 30000 });
       return summary;
     }
   }
 
   async getTopPicks() {
-    // Fetch top 5 stocks sorted by AI confidence or purely by some technical indicator for now
+    const cached = this.cache.get('top-picks');
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
     const stocks = await this.db.client.stock.findMany({
       include: {
         aiInsights: {
@@ -194,7 +200,7 @@ export class StockService {
       take: 5
     });
 
-    return stocks.map((stock: any) => {
+    const result = stocks.map((stock: any) => {
       const insight = stock.aiInsights[0];
       const latestPrice = stock.priceHistory[0]?.close || 0;
       
@@ -206,6 +212,9 @@ export class StockService {
         confidence: insight?.confidenceScore || 50,
       };
     }).sort((a: any, b: any) => b.confidence - a.confidence);
+
+    this.cache.set('top-picks', { data: result, expiresAt: Date.now() + 60000 });
+    return result;
   }
 
   async getHistoricalData(ticker: string) {
