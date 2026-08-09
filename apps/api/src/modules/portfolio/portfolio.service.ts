@@ -28,12 +28,14 @@ export class PortfolioService {
       }
     });
 
-    return this.db.client.portfolio.create({
+    const created = await this.db.client.portfolio.create({
       data: {
         userId,
         availableCash: 1000000, // ₹10,00,000
       }
     });
+
+    return { ...created, positions: [] };
   }
 
   async getPortfolio(userId: string) {
@@ -59,8 +61,7 @@ export class PortfolioService {
     const stock = await this.db.client.stock.findUnique({ where: { ticker } });
     if (!stock) throw new NotFoundException('Stock not found');
 
-    const portfolio = await this.db.client.portfolio.findUnique({ where: { userId } });
-    if (!portfolio) throw new NotFoundException('Portfolio not found');
+    const portfolio = await this.getPortfolio(userId);
 
     // Fetch real-time price
     const quote = await this.stockService.getLatestQuote(ticker);
@@ -119,7 +120,12 @@ export class PortfolioService {
       });
       
       this.logger.log(`User ${userId} BOUGHT ${quantity} shares of ${ticker} at ${currentPrice}`);
-      return { success: true, message: 'Buy order executed successfully', price: currentPrice };
+      return {
+        success: true,
+        message: 'Buy order executed successfully',
+        price: currentPrice,
+        availableCash: portfolio.availableCash - totalValue,
+      };
 
     } else if (type === TransactionType.SELL) {
       
@@ -164,7 +170,12 @@ export class PortfolioService {
       });
 
       this.logger.log(`User ${userId} SOLD ${quantity} shares of ${ticker} at ${currentPrice}`);
-      return { success: true, message: 'Sell order executed successfully', price: currentPrice };
+      return {
+        success: true,
+        message: 'Sell order executed successfully',
+        price: currentPrice,
+        availableCash: portfolio.availableCash + totalValue,
+      };
     }
   }
 
