@@ -14,7 +14,8 @@ import {
   Zap, 
   ChevronRight, 
   Flame, 
-  Target 
+  Target,
+  BarChart2
 } from 'lucide-react';
 import { useMarketSummary, useMarketStatus, useMarketMovers, useTopPicks, useStockChart, useHighRiskStocks, MarketIndex, MoverItem, TopPickItem, HighRiskStockItem } from '@/hooks/use-stock';
 import { useRouter } from 'next/navigation';
@@ -23,21 +24,35 @@ import { createChart, CandlestickSeries } from 'lightweight-charts';
 
 export default function Dashboard() {
   const router = useRouter();
+  const [selectedIndex, setSelectedIndex] = useState<{ name: string; symbol: string }>({ name: 'NIFTY 50', symbol: '^NSEI' });
+  const [selectedRange, setSelectedRange] = useState<string>('1mo');
+  const [activeMoverTab, setActiveMoverTab] = useState<'gainers' | 'losers' | 'mostActive'>('gainers');
+
   const { data: indices, isLoading: isLoadingSummary } = useMarketSummary();
   const { data: marketStatus } = useMarketStatus();
   const { data: movers, isLoading: isLoadingMovers } = useMarketMovers();
   const { data: topPicks, isLoading: isLoadingPicks } = useTopPicks();
   const { data: highRiskPicks, isLoading: isLoadingHighRisk } = useHighRiskStocks();
-  const { data: niftyChart, isLoading: isLoadingChart } = useStockChart('^NSEI', '1mo');
+  const { data: indexChart, isLoading: isLoadingChart } = useStockChart(selectedIndex.symbol, selectedRange);
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [activeMoverTab, setActiveMoverTab] = useState<'gainers' | 'losers' | 'mostActive'>('gainers');
 
-  // Interactive NIFTY 50 Chart on Dashboard
+  const chartRanges = [
+    { label: '1D', value: '1d' },
+    { label: '1W', value: '1w' },
+    { label: '1M', value: '1mo' },
+    { label: '6M', value: '6mo' },
+    { label: '1Y', value: '1y' },
+  ];
+
+  // Interactive Dynamic Index Candlestick Chart
   useEffect(() => {
-    if (!chartContainerRef.current || !niftyChart || niftyChart.length === 0) return;
+    if (!chartContainerRef.current) return;
+    if (!indexChart || indexChart.length === 0) return;
 
     chartContainerRef.current.innerHTML = '';
+
+    const containerWidth = chartContainerRef.current.clientWidth || 600;
 
     const chart = createChart(chartContainerRef.current, {
       layout: {
@@ -48,7 +63,7 @@ export default function Dashboard() {
         vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
         horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
       },
-      width: chartContainerRef.current.clientWidth,
+      width: containerWidth,
       height: 280,
       timeScale: {
         borderColor: '#374151',
@@ -66,7 +81,7 @@ export default function Dashboard() {
 
     // Sanitize, sort, and strictly deduplicate candle data by timestamp
     const seenTimes = new Set<string | number>();
-    const sanitizedData = [...niftyChart]
+    const sanitizedData = [...indexChart]
       .filter((c) => c && c.time && c.open != null && c.close != null && c.high != null && c.low != null)
       .sort((a, b) => {
         const timeA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
@@ -79,10 +94,10 @@ export default function Dashboard() {
         return true;
       });
 
-    if (sanitizedData.length === 0) return;
-
-    series.setData(sanitizedData as any);
-    chart.timeScale().fitContent();
+    if (sanitizedData.length > 0) {
+      series.setData(sanitizedData as any);
+      chart.timeScale().fitContent();
+    }
 
     const handleResize = () => {
       if (chartContainerRef.current) {
@@ -91,11 +106,18 @@ export default function Dashboard() {
     };
 
     window.addEventListener('resize', handleResize);
+
+    const resizeObserver = new ResizeObserver(() => {
+      handleResize();
+    });
+    resizeObserver.observe(chartContainerRef.current);
+
     return () => {
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       chart.remove();
     };
-  }, [niftyChart]);
+  }, [indexChart, selectedIndex, selectedRange]);
 
   const isMarketOpen = marketStatus?.status === 'OPEN';
 
@@ -141,70 +163,102 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Major Indices Cards ── */}
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        {isLoadingSummary ? (
-          Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i} className="animate-pulse bg-muted/20 border-border/40 h-24" />
-          ))
-        ) : (
-          indices?.map((index: MarketIndex) => {
-            const isPositive = index.changePercent >= 0;
-            return (
-              <Card
-                key={index.symbol}
-                className="overflow-hidden relative bg-gradient-to-br from-card to-card/60 border-border/50 hover:border-primary/30 transition-all shadow-sm group"
-              >
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
-                  <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground group-hover:text-primary transition-colors">
-                    {index.name}
-                  </span>
-                  <Activity className="h-3.5 w-3.5 text-muted-foreground/60" />
-                </CardHeader>
-                <CardContent className="px-4 pb-3">
-                  <div className="text-xl font-extrabold tracking-tight">
-                    {index.value > 0 ? index.value.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}
-                  </div>
-                  <div className={`text-xs font-semibold flex items-center mt-0.5 ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                    {isPositive ? <ArrowUpRight className="h-3 w-3 mr-0.5 shrink-0" /> : <ArrowDownRight className="h-3 w-3 mr-0.5 shrink-0" />}
-                    <span>{isPositive ? '+' : ''}{index.change.toFixed(2)} ({isPositive ? '+' : ''}{index.changePercent.toFixed(2)}%)</span>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })
-        )}
+      {/* ── Interactive Major Indices Cards (Click any to view its chart) ── */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between text-xs text-muted-foreground px-0.5">
+          <span>Benchmark Indices</span>
+          <span className="text-[11px] font-medium text-primary">Click any index to switch chart</span>
+        </div>
+
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          {isLoadingSummary ? (
+            Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className="animate-pulse bg-muted/20 border-border/40 h-24" />
+            ))
+          ) : (
+            indices?.map((index: MarketIndex) => {
+              const isPositive = index.changePercent >= 0;
+              const isSelected = selectedIndex.symbol === index.symbol;
+
+              return (
+                <Card
+                  key={index.symbol}
+                  onClick={() => setSelectedIndex({ name: index.name, symbol: index.symbol })}
+                  className={`overflow-hidden relative transition-all shadow-sm cursor-pointer group hover:-translate-y-0.5 ${
+                    isSelected
+                      ? 'bg-gradient-to-br from-primary/15 via-card to-card border-primary/60 ring-2 ring-primary/40 shadow-md'
+                      : 'bg-gradient-to-br from-card to-card/60 border-border/50 hover:border-primary/40'
+                  }`}
+                >
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`text-xs font-bold uppercase tracking-wider ${isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-primary transition-colors'}`}>
+                        {index.name}
+                      </span>
+                      {isSelected && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-primary animate-ping" />
+                      )}
+                    </div>
+                    <BarChart2 className={`h-3.5 w-3.5 ${isSelected ? 'text-primary' : 'text-muted-foreground/60'}`} />
+                  </CardHeader>
+                  <CardContent className="px-4 pb-3">
+                    <div className="text-xl font-extrabold tracking-tight font-mono">
+                      {index.value > 0 ? index.value.toLocaleString('en-IN', { maximumFractionDigits: 2 }) : '—'}
+                    </div>
+                    <div className={`text-xs font-semibold flex items-center mt-0.5 font-mono ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                      {isPositive ? <ArrowUpRight className="h-3 w-3 mr-0.5 shrink-0" /> : <ArrowDownRight className="h-3 w-3 mr-0.5 shrink-0" />}
+                      <span>{isPositive ? '+' : ''}{index.change.toFixed(2)} ({isPositive ? '+' : ''}{index.changePercent.toFixed(2)}%)</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })
+          )}
+        </div>
       </div>
 
-      {/* ── Row 1: NIFTY Benchmark Chart + Top Monitored Opportunities ── */}
+      {/* ── Row 1: Dynamic Index Benchmark Chart + Top Monitored Opportunities ── */}
       <div className="grid gap-6 lg:grid-cols-7">
-        {/* NIFTY 50 Benchmark Trend */}
-        <Card className="lg:col-span-4 border-border/50 bg-card/60 shadow-sm flex flex-col justify-between">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
+        {/* Dynamic Benchmark Candlestick Chart */}
+        <Card className="lg:col-span-4 border-border/50 bg-card/60 shadow-sm flex flex-col justify-between overflow-hidden">
+          <CardHeader className="pb-2 border-b border-border/30">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
               <div>
                 <CardTitle className="text-base font-bold flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-primary" />
-                  NIFTY 50 Benchmark (1 Month)
+                  {selectedIndex.name} ({selectedRange.toUpperCase()})
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Candlestick price action directly from National Stock Exchange
+                  Candlestick price action directly from {selectedIndex.symbol.includes('BSE') ? 'Bombay Stock Exchange (BSE)' : 'National Stock Exchange (NSE)'}
                 </CardDescription>
               </div>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-muted/60 text-muted-foreground font-mono">
-                1D Interval
-              </span>
+
+              {/* Timeframe selector */}
+              <div className="flex items-center p-1 rounded-lg bg-muted/60 border border-border/40 text-xs font-semibold self-start sm:self-auto">
+                {chartRanges.map((r) => (
+                  <button
+                    key={r.value}
+                    onClick={() => setSelectedRange(r.value)}
+                    className={`px-2.5 py-0.5 rounded-md transition-all ${
+                      selectedRange === r.value
+                        ? 'bg-background text-foreground shadow-sm font-bold'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </CardHeader>
-          <CardContent className="pt-2">
-            {isLoadingChart ? (
-              <div className="h-[280px] w-full flex items-center justify-center">
+          <CardContent className="p-4 relative min-h-[300px]">
+            {isLoadingChart && (
+              <div className="absolute inset-0 bg-background/50 backdrop-blur-xs flex items-center justify-center z-10">
                 <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
-                <span className="text-xs text-muted-foreground">Streaming historical candles...</span>
+                <span className="text-xs text-muted-foreground font-semibold">Streaming candles for {selectedIndex.name}...</span>
               </div>
-            ) : (
-              <div ref={chartContainerRef} className="w-full h-[280px]" />
             )}
+            <div ref={chartContainerRef} className="w-full h-[280px]" />
           </CardContent>
         </Card>
 
