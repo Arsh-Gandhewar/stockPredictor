@@ -5,12 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import {
   ArrowUpRight,
   ArrowDownRight,
-  TrendingUp,
-  TrendingDown,
-  Info,
   Loader2,
   Clock,
-  Activity,
   ShieldCheck,
   Zap,
   ChevronLeft,

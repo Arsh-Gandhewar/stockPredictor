@@ -4,7 +4,6 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   TrendingUp,
-  TrendingDown,
   Activity,
   Zap,
   Clock,
@@ -236,7 +235,7 @@ export default function Dashboard() {
                           {pick.ticker.replace('.NS', '')}
                         </span>
                         {pick.sector && (
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-muted/60 text-muted-foreground">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground">
                             {pick.sector}
                           </span>
                         )}

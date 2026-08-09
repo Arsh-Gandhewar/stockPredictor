@@ -27,8 +27,8 @@ export default function PortfolioPage() {
   const enrichedPositions = positions.map((p: any) => ({
     ...p,
     ltp: p.averagePrice,
-    ticker: p.stock.ticker,
-    name: p.stock.name,
+    ticker: p.stock?.ticker || p.ticker || 'UNKNOWN',
+    name: p.stock?.name || p.name || 'Unknown Asset',
   }));
 
   const calculateTotalValue = () => {

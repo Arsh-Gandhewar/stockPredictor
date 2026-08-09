@@ -18,7 +18,7 @@ model User {
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
   alerts     Alert[]
-  portfolios Portfolio?
+  portfolio  Portfolio?
   watchlists Watchlist[]
 }
 
@@ -43,6 +43,9 @@ model Stock {
   technicalIndicators TechnicalIndicator[]
   transactions        Transaction[]
   watchlistStocks     WatchlistStock[]
+
+  @@index([sector])
+  @@index([isActive])
 }
 
 model PriceHistory {
@@ -128,6 +131,7 @@ model NewsArticleOnStock {
   stock   Stock       @relation(fields: [stockId], references: [id], onDelete: Cascade)
 
   @@id([newsId, stockId])
+  @@index([stockId])
 }
 
 model AIInsight {
@@ -176,6 +180,7 @@ model Position {
   stock        Stock     @relation(fields: [stockId], references: [id], onDelete: Cascade)
 
   @@unique([portfolioId, stockId])
+  @@index([stockId])
 }
 
 model Transaction {
@@ -189,6 +194,10 @@ model Transaction {
   timestamp   DateTime        @default(now())
   portfolio   Portfolio       @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
   stock       Stock           @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@index([portfolioId])
+  @@index([stockId])
+  @@index([timestamp])
 }
 
 model Alert {
@@ -206,6 +215,8 @@ model Alert {
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([stockId])
+  @@index([stockId, isActive])
 }
 
 model Watchlist {
@@ -231,6 +242,7 @@ model WatchlistStock {
   watchlist   Watchlist @relation(fields: [watchlistId], references: [id], onDelete: Cascade)
 
   @@id([watchlistId, stockId])
+  @@index([stockId])
 }
 
 enum Role {

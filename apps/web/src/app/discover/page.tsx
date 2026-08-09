@@ -1,7 +1,7 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Compass, Search, TrendingUp, TrendingDown, Activity, ArrowUpRight, Loader2 } from 'lucide-react';
+import { Compass, Search, ArrowUpRight, Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAllStocks, useMarketMovers } from '@/hooks/use-stock';
@@ -87,7 +87,7 @@ export default function DiscoverPage() {
                     <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors">
                       {stock.ticker.replace('.NS', '')}
                     </span>
-                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-muted text-muted-foreground font-semibold">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-semibold">
                       {stock.exchange}
                     </span>
                   </div>
