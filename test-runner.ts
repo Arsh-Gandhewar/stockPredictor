@@ -229,6 +229,24 @@ async function main() {
     assert(res.status >= 400, `Expected error status for overselling, got ${res.status}`);
   });
 
+  await runTest('Portfolio', 'GET /portfolio/trades returns all-time preserved trades & turnover analytics', async () => {
+    const res = await fetch(`${API_BASE}/portfolio/trades`, {
+      headers: { 'x-user-id': testUserId },
+    });
+    assert(res.ok, `HTTP ${res.status}`);
+    const data = await res.json();
+    assert(Array.isArray(data.trades), 'Expected trades array');
+    assert(data.trades.length === 2, `Expected 2 historical trades (BUY & SELL), got ${data.trades.length}`);
+    assert(data.summary.totalTrades === 2, 'Summary count mismatch');
+    assert(data.summary.totalBuyCount === 1, 'Buy count mismatch');
+    assert(data.summary.totalSellCount === 1, 'Sell count mismatch');
+    assert(data.summary.totalTurnover > 0, 'Total turnover should be > 0');
+    const firstTrade = data.trades[0];
+    assert(typeof firstTrade.id === 'string', 'Trade ID missing');
+    assert(typeof firstTrade.executedPrice === 'number', 'Executed price missing');
+    assert(typeof firstTrade.timestamp === 'string', 'Timestamp missing');
+  });
+
   await runTest('Portfolio', 'GET /portfolio/sell-signals executes AI risk guardian evaluation', async () => {
     const res = await fetch(`${API_BASE}/portfolio/sell-signals`, {
       headers: { 'x-user-id': testUserId },

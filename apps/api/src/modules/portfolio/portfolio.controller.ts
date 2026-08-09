@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Headers } from '@nestjs/common';
+import { Controller, Get, Post, Body, Headers, Query } from '@nestjs/common';
 import { PortfolioService } from './portfolio.service';
 import { TransactionType } from 'db';
 
@@ -12,6 +12,16 @@ export class PortfolioController {
     // For now, we will simulate it with a header or hardcoded 'test_user'
     const id = userId || 'user_123';
     return this.portfolioService.getPortfolio(id);
+  }
+
+  @Get('trades')
+  async getAllTrades(
+    @Headers('x-user-id') userId: string,
+    @Query('ticker') ticker?: string,
+    @Query('type') type?: TransactionType,
+  ) {
+    const id = userId || 'user_123';
+    return this.portfolioService.getAllTrades(id, ticker, type);
   }
 
   @Post('trade')

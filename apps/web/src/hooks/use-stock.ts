@@ -239,6 +239,50 @@ export function usePortfolioSellSignals(userId?: string) {
   });
 }
 
+export interface TradeItem {
+  id: string;
+  ticker: string;
+  name: string;
+  sector: string;
+  type: 'BUY' | 'SELL';
+  orderType: 'MARKET' | 'LIMIT';
+  quantity: number;
+  executedPrice: number;
+  totalValue: number;
+  timestamp: string;
+  currentPrice: number;
+  deltaSinceTrade: number;
+  deltaPercentSinceTrade: number;
+}
+
+export interface TradeHistoryResponse {
+  trades: TradeItem[];
+  summary: {
+    totalTrades: number;
+    totalTurnover: number;
+    totalBuyCount: number;
+    totalSellCount: number;
+    totalBuyVolume: number;
+    totalSellVolume: number;
+    topTraded: { ticker: string; name: string; count: number; volume: number; turnover: number }[];
+  };
+}
+
+export function useTradeHistory(params?: { ticker?: string; type?: string; userId?: string }) {
+  const queryParams = new URLSearchParams();
+  if (params?.ticker) queryParams.set('ticker', params.ticker);
+  if (params?.type && params.type !== 'ALL') queryParams.set('type', params.type);
+  const qStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
+
+  return useQuery({
+    queryKey: ['trade-history', params?.ticker, params?.type, params?.userId],
+    queryFn: () => fetcher<TradeHistoryResponse>(`/portfolio/trades${qStr}`, {
+      headers: params?.userId ? { 'x-user-id': params.userId } : undefined,
+    }),
+    staleTime: 10000,
+  });
+}
+
 export function useExecuteTrade() {
   const queryClient = useQueryClient();
   
@@ -252,6 +296,7 @@ export function useExecuteTrade() {
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['portfolio', variables.userId] });
       queryClient.invalidateQueries({ queryKey: ['portfolio-sell-signals', variables.userId] });
+      queryClient.invalidateQueries({ queryKey: ['trade-history'] });
     },
   });
 }

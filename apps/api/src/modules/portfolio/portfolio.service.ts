@@ -59,6 +59,114 @@ export class PortfolioService {
     return portfolio;
   }
 
+  /**
+   * Retrieves all-time historical trade transactions for a user with rich analytics
+   */
+  async getAllTrades(userId: string, ticker?: string, type?: TransactionType) {
+    const portfolio = await this.getPortfolio(userId);
+    if (!portfolio) {
+      return { trades: [], summary: { totalTrades: 0, totalTurnover: 0, totalBuyVolume: 0, totalSellVolume: 0 } };
+    }
+
+    const whereClause: any = { portfolioId: portfolio.id };
+    if (type) {
+      whereClause.type = type;
+    }
+    if (ticker) {
+      whereClause.stock = { ticker: ticker.toUpperCase() };
+    }
+
+    const transactions = await this.db.client.transaction.findMany({
+      where: whereClause,
+      include: {
+        stock: true,
+      },
+      orderBy: { timestamp: 'desc' },
+    });
+
+    // Compute all-time trade analytics
+    let totalTurnover = 0;
+    let totalBuyVolume = 0;
+    let totalSellVolume = 0;
+    let totalBuyCount = 0;
+    let totalSellCount = 0;
+    const tickerActivity: Record<string, { ticker: string; name: string; count: number; volume: number; turnover: number }> = {};
+
+    const enrichedTrades = await Promise.all(
+      transactions.map(async (tx: any) => {
+        const tradeValue = tx.quantity * tx.price;
+        totalTurnover += tradeValue;
+
+        if (tx.type === TransactionType.BUY) {
+          totalBuyVolume += tx.quantity;
+          totalBuyCount += 1;
+        } else {
+          totalSellVolume += tx.quantity;
+          totalSellCount += 1;
+        }
+
+        const tTicker = tx.stock?.ticker || 'UNKNOWN';
+        if (!tickerActivity[tTicker]) {
+          tickerActivity[tTicker] = {
+            ticker: tTicker,
+            name: tx.stock?.name || tTicker,
+            count: 0,
+            volume: 0,
+            turnover: 0,
+          };
+        }
+        tickerActivity[tTicker].count += 1;
+        tickerActivity[tTicker].volume += tx.quantity;
+        tickerActivity[tTicker].turnover += tradeValue;
+
+        // Fetch current quote for performance analysis since execution
+        let currentPrice = tx.price;
+        try {
+          const q = await this.stockService.getQuote(tTicker).catch(() => null);
+          if (q && q.price) currentPrice = q.price;
+        } catch {
+          // fallback to tx price
+        }
+
+        const deltaSinceTrade = currentPrice - tx.price;
+        const deltaPercentSinceTrade = tx.price > 0 ? (deltaSinceTrade / tx.price) * 100 : 0;
+
+        return {
+          id: tx.id,
+          ticker: tTicker,
+          name: tx.stock?.name || tTicker,
+          sector: tx.stock?.sector || 'General',
+          type: tx.type,
+          orderType: tx.orderType,
+          quantity: tx.quantity,
+          executedPrice: tx.price,
+          totalValue: tradeValue,
+          timestamp: tx.timestamp.toISOString(),
+          currentPrice,
+          deltaSinceTrade: Number(deltaSinceTrade.toFixed(2)),
+          deltaPercentSinceTrade: Number(deltaPercentSinceTrade.toFixed(2)),
+        };
+      })
+    );
+
+    const topTraded = Object.values(tickerActivity)
+      .sort((a, b) => b.turnover - a.turnover)
+      .slice(0, 5);
+
+    return {
+      trades: enrichedTrades,
+      summary: {
+        totalTrades: transactions.length,
+        totalTurnover: Number(totalTurnover.toFixed(2)),
+        totalBuyCount,
+        totalSellCount,
+        totalBuyVolume,
+        totalSellVolume,
+        topTraded,
+      },
+    };
+  }
+
   async executeTrade(userId: string, ticker: string, type: TransactionType, quantity: number, orderType: OrderType = OrderType.MARKET) {
     if (quantity <= 0) throw new BadRequestException('Quantity must be greater than 0');
     
