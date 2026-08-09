@@ -59,7 +59,7 @@ export interface MarketMovers {
 }
 
 export interface Candle {
-  time: string;
+  time: string | number;
   open: number;
   high: number;
   low: number;

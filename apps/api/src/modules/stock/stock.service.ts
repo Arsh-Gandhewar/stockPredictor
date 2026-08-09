@@ -213,10 +213,10 @@ export class StockService {
     const cached = this.getCached<Candle[]>(cacheKey);
     if (cached) return cached;
 
-    // Map range string to yahoo-finance2 chart params
+    // Map range string to yahoo-finance2 chart params (with weekend-safe lookback)
     const rangeMap: Record<string, { period1: string; interval: string }> = {
-      '1d':  { period1: this.daysAgo(1),   interval: '5m' },
-      '1w':  { period1: this.daysAgo(7),   interval: '15m' },
+      '1d':  { period1: this.daysAgo(4),   interval: '5m' },
+      '1w':  { period1: this.daysAgo(10),  interval: '15m' },
       '1mo': { period1: this.daysAgo(30),  interval: '1d' },
       '3mo': { period1: this.daysAgo(90),  interval: '1d' },
       '6mo': { period1: this.daysAgo(180), interval: '1d' },
@@ -236,18 +236,41 @@ export class StockService {
         return [];
       }
 
-      const candles: Candle[] = result.quotes
-        .filter((q: any) => q.close !== null && q.open !== null)
-        .map((q: any) => ({
-          time: q.date instanceof Date
-            ? q.date.toISOString().split('T')[0]
-            : new Date(q.date).toISOString().split('T')[0],
-          open: Number(q.open?.toFixed(2)),
-          high: Number(q.high?.toFixed(2)),
-          low: Number(q.low?.toFixed(2)),
-          close: Number(q.close?.toFixed(2)),
-          volume: q.volume || 0,
-        }));
+      const rawCandles = result.quotes
+        .filter((q: any) => q.close !== null && q.open !== null && q.high !== null && q.low !== null)
+        .map((q: any) => {
+          const dt = q.date instanceof Date ? q.date : new Date(q.date);
+          const isIntraday = ['1d', '1w'].includes(range);
+          return {
+            time: isIntraday 
+              ? Math.floor(dt.getTime() / 1000) 
+              : dt.toISOString().split('T')[0],
+            rawTime: dt.getTime(),
+            open: Number(q.open?.toFixed(2)),
+            high: Number(q.high?.toFixed(2)),
+            low: Number(q.low?.toFixed(2)),
+            close: Number(q.close?.toFixed(2)),
+            volume: q.volume || 0,
+          };
+        })
+        .sort((a: any, b: any) => a.rawTime - b.rawTime);
+
+      // Strictly deduplicate by time key to guarantee Lightweight Charts never receives duplicate timestamps
+      const seenTimes = new Set<string | number>();
+      const candles: Candle[] = [];
+      for (const c of rawCandles) {
+        if (!seenTimes.has(c.time)) {
+          seenTimes.add(c.time);
+          candles.push({
+            time: c.time as any,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+            volume: c.volume,
+          });
+        }
+      }
 
       // Cache charts longer since historical data doesn't change often
       this.setCache(cacheKey, candles, range === '1d' ? 60_000 : 600_000);

@@ -66,7 +66,24 @@ export default function StockDetailsPage() {
       wickDownColor: '#ef4444',
     });
 
-    candlestickSeries.setData(chartData as any);
+    // Sanitize, sort, and strictly deduplicate candle data by timestamp
+    const seenTimes = new Set<string | number>();
+    const sanitizedData = [...chartData]
+      .filter((c) => c && c.time && c.open != null && c.close != null && c.high != null && c.low != null)
+      .sort((a, b) => {
+        const timeA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
+        const timeB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
+        return timeA - timeB;
+      })
+      .filter((c) => {
+        if (seenTimes.has(c.time)) return false;
+        seenTimes.add(c.time);
+        return true;
+      });
+
+    if (sanitizedData.length === 0) return;
+
+    candlestickSeries.setData(sanitizedData as any);
     chart.timeScale().fitContent();
 
     const handleResize = () => {
