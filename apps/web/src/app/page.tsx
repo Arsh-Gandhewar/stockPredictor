@@ -3,7 +3,6 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { 
   TrendingUp, 
-  TrendingDown, 
   Activity, 
   Search, 
   Clock, 
@@ -15,8 +14,7 @@ import {
   Zap, 
   ChevronRight, 
   Flame, 
-  Target, 
-  AlertTriangle 
+  Target 
 } from 'lucide-react';
 import { useMarketSummary, useMarketStatus, useMarketMovers, useTopPicks, useStockChart, useHighRiskStocks, MarketIndex, MoverItem, TopPickItem, HighRiskStockItem } from '@/hooks/use-stock';
 import { useRouter } from 'next/navigation';
@@ -102,7 +100,7 @@ export default function Dashboard() {
   const isMarketOpen = marketStatus?.status === 'OPEN';
 
   return (
-    <div className="space-y-8 pb-16 animate-in fade-in duration-500">
+    <div className="space-y-6 pb-12 animate-in fade-in duration-500">
       {/* ── Top Market Bar ── */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border-b border-border/40 pb-4">
         <div>
@@ -178,127 +176,7 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── High Risk • High Reward Category Section ── */}
-      <div className="space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2 border-b border-border/30 pb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <div className="p-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-amber-500">
-                <Flame className="h-5 w-5" />
-              </div>
-              <h2 className="text-xl font-extrabold tracking-tight text-foreground flex items-center gap-2">
-                High Risk • High Reward Opportunities
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 font-bold border border-amber-500/30">
-                  High Beta Alpha
-                </span>
-              </h2>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              High-volatility growth equities with asymmetric risk-to-reward ratios (&gt;1:3.0) and quantified target/stop boundaries.
-            </p>
-          </div>
-          <span className="text-[11px] text-muted-foreground font-mono self-start md:self-auto">
-            Updated dynamically with real-time NSE quotes
-          </span>
-        </div>
-
-        {isLoadingHighRisk ? (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i} className="animate-pulse bg-muted/20 border-border/40 h-48" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {highRiskPicks?.map((stock: HighRiskStockItem) => {
-              const isGain = stock.changePercent >= 0;
-              return (
-                <Card
-                  key={stock.ticker}
-                  onClick={() => router.push(`/stock/${stock.ticker}`)}
-                  className="bg-gradient-to-br from-card via-card/80 to-muted/20 border-amber-500/20 hover:border-amber-500/50 transition-all shadow-sm cursor-pointer group hover:-translate-y-0.5 flex flex-col justify-between"
-                >
-                  <CardHeader className="p-4 pb-2">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-extrabold text-base font-mono text-foreground group-hover:text-amber-400 transition-colors">
-                            {stock.ticker.replace('.NS', '')}
-                          </span>
-                          <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${
-                            stock.riskLevel === 'VERY HIGH'
-                              ? 'bg-red-500/10 text-red-400 border-red-500/30'
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
-                          }`}>
-                            {stock.riskLevel}
-                          </span>
-                        </div>
-                        <div className="text-[11px] text-muted-foreground line-clamp-1 mt-0.5">
-                          {stock.name}
-                        </div>
-                      </div>
-
-                      <div className="text-right">
-                        <div className="font-extrabold text-sm font-mono text-foreground">
-                          ₹{stock.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </div>
-                        <div className={`text-[11px] font-bold ${isGain ? 'text-green-500' : 'text-red-500'}`}>
-                          {isGain ? '+' : ''}{stock.changePercent.toFixed(2)}%
-                        </div>
-                      </div>
-                    </div>
-                  </CardHeader>
-
-                  <CardContent className="p-4 pt-2 space-y-3">
-                    {/* Catalyst Tag */}
-                    <div className="p-2 rounded-lg bg-muted/40 border border-border/30 text-[11px]">
-                      <span className="font-semibold text-primary block text-[10px] uppercase tracking-wider mb-0.5">
-                        Catalyst
-                      </span>
-                      <p className="text-muted-foreground line-clamp-2 leading-tight">
-                        {stock.catalyst}
-                      </p>
-                    </div>
-
-                    {/* Target & Risk Boundaries */}
-                    <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
-                      <div className="p-1.5 rounded bg-green-500/10 border border-green-500/20">
-                        <div className="text-[10px] text-green-400 font-bold flex items-center gap-1">
-                          <Target className="h-3 w-3" /> Target
-                        </div>
-                        <div className="font-extrabold text-green-400 font-mono mt-0.5">
-                          +{stock.targetUpsidePercent}% (₹{stock.targetPrice})
-                        </div>
-                      </div>
-
-                      <div className="p-1.5 rounded bg-red-500/10 border border-red-500/20">
-                        <div className="text-[10px] text-red-400 font-bold flex items-center gap-1">
-                          <AlertTriangle className="h-3 w-3" /> Stop-Loss
-                        </div>
-                        <div className="font-extrabold text-red-400 font-mono mt-0.5">
-                          {stock.stopLossPercent}% (₹{stock.stopLossPrice})
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Beta & Risk/Reward Footer */}
-                    <div className="flex items-center justify-between text-[11px] text-muted-foreground pt-1 border-t border-border/30">
-                      <span className="font-semibold font-mono">
-                        ⚡ {stock.beta}x Beta
-                      </span>
-                      <span className="font-extrabold text-foreground font-mono px-2 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
-                        R:R {stock.riskRewardRatio}
-                      </span>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* ── Main Grid: NIFTY Chart + Top AI Opportunities ── */}
+      {/* ── Row 1: NIFTY Benchmark Chart + Top Monitored Opportunities ── */}
       <div className="grid gap-6 lg:grid-cols-7">
         {/* NIFTY 50 Benchmark Trend */}
         <Card className="lg:col-span-4 border-border/50 bg-card/60 shadow-sm flex flex-col justify-between">
@@ -402,112 +280,180 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* ── Market Movers: Gainers, Losers, Most Active ── */}
-      <Card className="border-border/50 bg-card/60 shadow-sm">
-        <CardHeader className="pb-3 border-b border-border/40">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <CardTitle className="text-base font-bold flex items-center gap-2">
-                <Radio className="h-4 w-4 text-primary animate-pulse" />
-                Market Movers & Unusual Activity
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Real-time intraday momentum across the NIFTY universe
-              </CardDescription>
+      {/* ── Row 2: High Beta Alpha (Top 5) + Market Movers ── */}
+      <div className="grid gap-6 lg:grid-cols-7">
+        {/* Top 5 High Beta Alpha Opportunities Section */}
+        <Card className="lg:col-span-3 border-border/50 bg-card/60 shadow-sm flex flex-col">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-bold flex items-center gap-2">
+                  <Flame className="h-4 w-4 text-amber-500" />
+                  High Beta Alpha (Top 5)
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  High-volatility growth setups with asymmetric reward
+                </CardDescription>
+              </div>
+              <span className="text-[10px] font-extrabold text-amber-400 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                &gt;1:3.0 R:R
+              </span>
             </div>
+          </CardHeader>
+          <CardContent className="p-0 divide-y divide-border/30 overflow-hidden">
+            {isLoadingHighRisk ? (
+              <div className="flex items-center justify-center py-16">
+                <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
+              </div>
+            ) : (
+              highRiskPicks?.slice(0, 5).map((stock: HighRiskStockItem) => {
+                const isGain = stock.changePercent >= 0;
+                return (
+                  <div
+                    key={stock.ticker}
+                    onClick={() => router.push(`/stock/${stock.ticker}`)}
+                    className="flex items-center justify-between p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-sm text-foreground group-hover:text-amber-400 transition-colors font-mono">
+                          {stock.ticker.replace('.NS', '')}
+                        </span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/10 text-amber-400 font-semibold border border-amber-500/20">
+                          {stock.beta}x Beta
+                        </span>
+                      </div>
+                      <span className="text-xs text-muted-foreground line-clamp-1">{stock.name}</span>
+                    </div>
 
-            <div className="flex items-center p-1 rounded-lg bg-muted/60 border border-border/40 text-xs font-semibold">
-              <button
-                onClick={() => setActiveMoverTab('gainers')}
-                className={`px-3 py-1 rounded-md transition-all ${
-                  activeMoverTab === 'gainers' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Top Gainers
-              </button>
-              <button
-                onClick={() => setActiveMoverTab('losers')}
-                className={`px-3 py-1 rounded-md transition-all ${
-                  activeMoverTab === 'losers' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Top Losers
-              </button>
-              <button
-                onClick={() => setActiveMoverTab('mostActive')}
-                className={`px-3 py-1 rounded-md transition-all ${
-                  activeMoverTab === 'mostActive' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                Most Active
-              </button>
+                    <div className="flex items-center gap-3 text-right">
+                      <div>
+                        <div className="font-extrabold text-sm font-mono">
+                          ₹{stock.price > 0 ? stock.price.toLocaleString('en-IN', { minimumFractionDigits: 2 }) : '—'}
+                        </div>
+                        <div className={`text-xs font-semibold flex items-center justify-end ${isGain ? 'text-green-500' : 'text-red-500'}`}>
+                          {isGain ? '+' : ''}{stock.changePercent.toFixed(2)}%
+                        </div>
+                      </div>
+
+                      <div className="hidden sm:flex flex-col items-end">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 flex items-center gap-0.5">
+                          <Target className="h-3 w-3" /> +{stock.targetUpsidePercent}%
+                        </span>
+                      </div>
+
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Market Movers: Gainers, Losers, Most Active */}
+        <Card className="lg:col-span-4 border-border/50 bg-card/60 shadow-sm flex flex-col justify-between">
+          <CardHeader className="pb-3 border-b border-border/40">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div>
+                <CardTitle className="text-base font-bold flex items-center gap-2">
+                  <Radio className="h-4 w-4 text-primary animate-pulse" />
+                  Market Movers & Unusual Activity
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  Real-time intraday momentum across the NIFTY universe
+                </CardDescription>
+              </div>
+
+              <div className="flex items-center p-1 rounded-lg bg-muted/60 border border-border/40 text-xs font-semibold">
+                <button
+                  onClick={() => setActiveMoverTab('gainers')}
+                  className={`px-3 py-1 rounded-md transition-all ${
+                    activeMoverTab === 'gainers' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Gainers
+                </button>
+                <button
+                  onClick={() => setActiveMoverTab('losers')}
+                  className={`px-3 py-1 rounded-md transition-all ${
+                    activeMoverTab === 'losers' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Losers
+                </button>
+                <button
+                  onClick={() => setActiveMoverTab('mostActive')}
+                  className={`px-3 py-1 rounded-md transition-all ${
+                    activeMoverTab === 'mostActive' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                  }`}
+                >
+                  Most Active
+                </button>
+              </div>
             </div>
-          </div>
-        </CardHeader>
-        <CardContent className="p-0">
-          {isLoadingMovers ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
-              <span className="text-xs text-muted-foreground">Scanning stock universe...</span>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-muted/30 text-muted-foreground border-b border-border/40 uppercase tracking-wider font-semibold">
-                  <tr>
-                    <th className="py-2.5 px-4">Stock</th>
-                    <th className="py-2.5 px-4 text-right">LTP (₹)</th>
-                    <th className="py-2.5 px-4 text-right">Change (₹)</th>
-                    <th className="py-2.5 px-4 text-right">Change (%)</th>
-                    <th className="py-2.5 px-4 text-right">Volume</th>
-                    <th className="py-2.5 px-4 text-right">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/20">
-                  {(movers?.[activeMoverTab] || []).map((item: MoverItem) => {
-                    const isPositive = item.changePercent >= 0;
-                    return (
-                      <tr
-                        key={item.ticker}
-                        className="hover:bg-muted/30 transition-colors cursor-pointer"
-                        onClick={() => router.push(`/stock/${item.ticker}`)}
-                      >
-                        <td className="py-3 px-4 font-bold text-foreground flex flex-col">
-                          <span className="font-mono">{item.ticker.replace('.NS', '')}</span>
-                          <span className="text-[10px] text-muted-foreground font-normal line-clamp-1">{item.name}</span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-extrabold text-foreground font-mono">
-                          ₹{item.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </td>
-                        <td className={`py-3 px-4 text-right font-semibold font-mono ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                          {isPositive ? '+' : ''}{item.change.toFixed(2)}
-                        </td>
-                        <td className={`py-3 px-4 text-right font-bold font-mono ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
-                          {isPositive ? '+' : ''}{item.changePercent.toFixed(2)}%
-                        </td>
-                        <td className="py-3 px-4 text-right text-muted-foreground font-mono">
-                          {item.volume ? item.volume.toLocaleString('en-IN') : '—'}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              router.push(`/stock/${item.ticker}`);
-                            }}
-                            className="px-2.5 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-[11px] transition-colors"
-                          >
-                            Analyze
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoadingMovers ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
+                <span className="text-xs text-muted-foreground">Scanning stock universe...</span>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-muted/30 text-muted-foreground border-b border-border/40 uppercase tracking-wider font-semibold">
+                    <tr>
+                      <th className="py-2.5 px-4">Stock</th>
+                      <th className="py-2.5 px-4 text-right">LTP (₹)</th>
+                      <th className="py-2.5 px-4 text-right">Change (%)</th>
+                      <th className="py-2.5 px-4 text-right">Volume</th>
+                      <th className="py-2.5 px-4 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/20">
+                    {(movers?.[activeMoverTab] || []).slice(0, 5).map((item: MoverItem) => {
+                      const isPositive = item.changePercent >= 0;
+                      return (
+                        <tr
+                          key={item.ticker}
+                          className="hover:bg-muted/30 transition-colors cursor-pointer"
+                          onClick={() => router.push(`/stock/${item.ticker}`)}
+                        >
+                          <td className="py-2.5 px-4 font-bold text-foreground flex flex-col">
+                            <span className="font-mono">{item.ticker.replace('.NS', '')}</span>
+                            <span className="text-[10px] text-muted-foreground font-normal line-clamp-1">{item.name}</span>
+                          </td>
+                          <td className="py-2.5 px-4 text-right font-extrabold text-foreground font-mono">
+                            ₹{item.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          </td>
+                          <td className={`py-2.5 px-4 text-right font-bold font-mono ${isPositive ? 'text-green-500' : 'text-red-500'}`}>
+                            {isPositive ? '+' : ''}{item.changePercent.toFixed(2)}%
+                          </td>
+                          <td className="py-2.5 px-4 text-right text-muted-foreground font-mono">
+                            {item.volume ? item.volume.toLocaleString('en-IN') : '—'}
+                          </td>
+                          <td className="py-2.5 px-4 text-right">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(`/stock/${item.ticker}`);
+                              }}
+                              className="px-2.5 py-1 rounded bg-primary/10 hover:bg-primary/20 text-primary font-semibold text-[11px] transition-colors"
+                            >
+                              Analyze
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
