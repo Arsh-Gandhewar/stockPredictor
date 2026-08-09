@@ -25,6 +25,11 @@ export class StockController {
     return this.stockService.getTopPicks();
   }
 
+  @Get('high-risk-high-reward')
+  async getHighRiskHighReward() {
+    return this.stockService.getHighRiskHighRewardOpportunities();
+  }
+
   @Get('search')
   async searchStocks(@Query('q') query: string) {
     return this.stockService.searchStocks(query);

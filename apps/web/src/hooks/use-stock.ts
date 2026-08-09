@@ -106,7 +106,37 @@ export interface TopPickItem {
   timestamp: string;
 }
 
+export interface HighRiskStockItem {
+  ticker: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  dayHigh: number;
+  dayLow: number;
+  volume: number;
+  beta: number;
+  intradayVolatility: number;
+  catalyst: string;
+  targetUpsidePercent: number;
+  stopLossPercent: number;
+  targetPrice: number;
+  stopLossPrice: number;
+  riskRewardRatio: string;
+  riskLevel: 'HIGH' | 'VERY HIGH';
+  convictionScore: number;
+}
+
 // ── Hooks ──────────────────────────────────────────────────────────────
+
+export function useHighRiskStocks() {
+  return useQuery({
+    queryKey: ['high-risk-high-reward'],
+    queryFn: () => fetcher<HighRiskStockItem[]>('/stock/high-risk-high-reward'),
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+}
 
 export function useMarketSummary() {
   return useQuery({

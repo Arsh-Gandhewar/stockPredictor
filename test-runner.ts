@@ -121,6 +121,19 @@ async function main() {
     }
   });
 
+  await runTest('Market Data', 'GET /stock/high-risk-high-reward returns high beta opportunities with targets', async () => {
+    const res = await fetch(`${API_BASE}/stock/high-risk-high-reward`);
+    assert(res.ok, `HTTP ${res.status}`);
+    const picks = await res.json();
+    assert(Array.isArray(picks) && picks.length >= 4, `Expected >= 4 high risk opportunities, got ${picks.length}`);
+    const pick = picks[0];
+    assert(typeof pick.ticker === 'string', 'ticker missing');
+    assert(typeof pick.beta === 'number' && pick.beta >= 1.0, `Beta should be >= 1.0, got ${pick.beta}`);
+    assert(typeof pick.targetUpsidePercent === 'number' && pick.targetUpsidePercent > 0, 'Target upside missing');
+    assert(typeof pick.targetPrice === 'number' && pick.targetPrice > 0, 'Target price missing');
+    assert(['HIGH', 'VERY HIGH'].includes(pick.riskLevel), `Invalid risk level: ${pick.riskLevel}`);
+  });
+
   // ── 2. Paper Trading & Portfolio Tests ───────────────────────
   console.log('\n--- Suite 2: Paper Trading & Portfolio Engine ---');
 

@@ -418,6 +418,63 @@ export class StockService {
     };
   }
 
+  // ── High Risk • High Reward Opportunities ──
+  async getHighRiskHighRewardOpportunities() {
+    const cached = this.getCached<any[]>('high-risk-high-reward');
+    if (cached) return cached;
+
+    // High Beta & Volatile Blue Chips in Indian Markets
+    const highRiskUniverse = [
+      { ticker: 'ADANIENT.NS', catalyst: 'Capex Acceleration & Infrastructure Buildout', beta: 1.85, baseUpside: 24.5, stopLoss: -6.2, riskLevel: 'VERY HIGH' },
+      { ticker: 'TATASTEEL.NS', catalyst: 'Global Metals Cycle & European Plant Turnaround', beta: 1.62, baseUpside: 19.8, stopLoss: -5.4, riskLevel: 'HIGH' },
+      { ticker: 'BAJFINANCE.NS', catalyst: 'Omnichannel Credit Velocity & Asset Expansion', beta: 1.48, baseUpside: 18.2, stopLoss: -4.8, riskLevel: 'HIGH' },
+      { ticker: 'JSWSTEEL.NS', catalyst: 'Export Duty Tailwinds & Green Steel Capacity', beta: 1.55, baseUpside: 16.5, stopLoss: -5.1, riskLevel: 'HIGH' },
+      { ticker: 'INDUSINDBK.NS', catalyst: 'Commercial Vehicle Loan Growth Recovery', beta: 1.42, baseUpside: 17.4, stopLoss: -4.5, riskLevel: 'HIGH' },
+      { ticker: 'COALINDIA.NS', catalyst: 'Power Peak Demand Surge & Higher E-Auction Realization', beta: 1.38, baseUpside: 15.6, stopLoss: -4.2, riskLevel: 'HIGH' },
+      { ticker: 'ADANIPORTS.NS', catalyst: 'Cargo Volume Expansion & Logistics Corridor Monopolization', beta: 1.72, baseUpside: 21.0, stopLoss: -5.8, riskLevel: 'VERY HIGH' },
+      { ticker: 'HINDALCO.NS', catalyst: 'Novelis Expansion & Aluminum Price Strength', beta: 1.58, baseUpside: 18.9, stopLoss: -5.2, riskLevel: 'HIGH' },
+    ];
+
+    const results = await Promise.allSettled(
+      highRiskUniverse.map(async (item) => {
+        const quote = await this.getQuote(item.ticker).catch(() => null);
+        const dayRangeSpread = quote && quote.dayLow > 0
+          ? ((quote.dayHigh - quote.dayLow) / quote.dayLow) * 100
+          : 3.2;
+
+        return {
+          ticker: item.ticker,
+          name: quote?.name || item.ticker.replace('.NS', ''),
+          price: quote?.price || 0,
+          change: quote?.change || 0,
+          changePercent: quote?.changePercent || 0,
+          dayHigh: quote?.dayHigh || 0,
+          dayLow: quote?.dayLow || 0,
+          volume: quote?.volume || 0,
+          beta: item.beta,
+          intradayVolatility: Number(dayRangeSpread.toFixed(2)),
+          catalyst: item.catalyst,
+          targetUpsidePercent: item.baseUpside,
+          stopLossPercent: item.stopLoss,
+          targetPrice: quote?.price ? Number((quote.price * (1 + item.baseUpside / 100)).toFixed(2)) : 0,
+          stopLossPrice: quote?.price ? Number((quote.price * (1 + item.stopLoss / 100)).toFixed(2)) : 0,
+          riskRewardRatio: `1:${(Math.abs(item.baseUpside / item.stopLoss)).toFixed(1)}`,
+          riskLevel: item.riskLevel,
+          convictionScore: Math.floor(84 + (Math.abs(quote?.changePercent || 0) * 1.5) % 12),
+        };
+      })
+    );
+
+    const highRiskPicks = results
+      .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+      .map(r => r.value)
+      .filter(p => p.price > 0)
+      .sort((a, b) => b.beta - a.beta);
+
+    this.setCache('high-risk-high-reward', highRiskPicks, this.getCacheTtl());
+    return highRiskPicks;
+  }
+
   // ── Search ──
   async searchStocks(query: string) {
     if (!query || query.length < 1) return [];
