@@ -24,11 +24,9 @@ export default function PortfolioPage() {
   const transactions = portfolio?.transactions || [];
   const availableCash = portfolio?.availableCash || 0;
 
-  // In a real app we'd fetch real-time LTP. For now, let's assume LTP is close to average for seeded data.
-  // We'll just mock LTP as avgPrice * some random multiplier for the sake of the UI until real socket is attached
   const enrichedPositions = positions.map((p: any) => ({
     ...p,
-    ltp: p.averagePrice * (1 + (Math.random() * 0.1 - 0.05)), // +/- 5%
+    ltp: p.averagePrice,
     ticker: p.stock.ticker,
     name: p.stock.name,
   }));
@@ -97,10 +95,10 @@ export default function PortfolioPage() {
             {totalPnL >= 0 ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
           </CardHeader>
           <CardContent>
-            <div className={`text-2xl font-bold \${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            <div className={`text-2xl font-bold ${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {totalPnL >= 0 ? '+' : ''}{formatCurrency(totalPnL)}
             </div>
-            <p className={`text-xs \${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            <p className={`text-xs ${totalPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
               {totalPnL >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
             </p>
           </CardContent>
@@ -242,7 +240,7 @@ export default function PortfolioPage() {
                         <td className="px-4 py-3">{pos.quantity}</td>
                         <td className="px-4 py-3">{formatCurrency(pos.averagePrice)}</td>
                         <td className="px-4 py-3">{formatCurrency(pos.ltp)}</td>
-                        <td className={`px-4 py-3 font-medium \${isProfit ? 'text-green-500' : 'text-red-500'}`}>
+                        <td className={`px-4 py-3 font-medium ${isProfit ? 'text-green-500' : 'text-red-500'}`}>
                           {isProfit ? '+' : ''}{formatCurrency(pnl)}
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -281,7 +279,7 @@ export default function PortfolioPage() {
                     <div className="text-xs text-muted-foreground">{new Date(tx.timestamp).toLocaleString()}</div>
                   </div>
                   <div className="text-right">
-                    <div className={`font-bold \${tx.type === 'BUY' ? 'text-blue-500' : 'text-orange-500'}`}>
+                    <div className={`font-bold ${tx.type === 'BUY' ? 'text-blue-500' : 'text-orange-500'}`}>
                       {tx.type}
                     </div>
                     <div className="text-xs font-medium text-foreground">

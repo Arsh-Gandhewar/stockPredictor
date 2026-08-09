@@ -9,14 +9,18 @@ import {
   Newspaper, 
   Wallet, 
   Settings, 
-  BellRing
+  BellRing,
+  Compass,
+  Star
 } from 'lucide-react';
 
 const routes = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
+  { label: 'Discover', icon: Compass, href: '/discover' },
   { label: 'Markets', icon: LineChart, href: '/markets' },
-  { label: 'News', icon: Newspaper, href: '/news' },
+  { label: 'Watchlist', icon: Star, href: '/watchlist' },
   { label: 'Portfolio', icon: Wallet, href: '/portfolio' },
+  { label: 'News', icon: Newspaper, href: '/news' },
   { label: 'Alerts', icon: BellRing, href: '/alerts' },
   { label: 'Settings', icon: Settings, href: '/settings' },
 ];

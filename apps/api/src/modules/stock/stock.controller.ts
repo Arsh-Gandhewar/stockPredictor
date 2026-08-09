@@ -1,4 +1,4 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Param, Query } from '@nestjs/common';
 import { StockService } from './stock.service';
 
 @Controller('stock')
@@ -10,14 +10,42 @@ export class StockController {
     return this.stockService.getMarketSummary();
   }
 
+  @Get('market-status')
+  async getMarketStatus() {
+    return this.stockService.getMarketStatusInfo();
+  }
+
+  @Get('movers')
+  async getMarketMovers() {
+    return this.stockService.getMarketMovers();
+  }
+
   @Get('top-picks')
   async getTopPicks() {
     return this.stockService.getTopPicks();
   }
 
+  @Get('search')
+  async searchStocks(@Query('q') query: string) {
+    return this.stockService.searchStocks(query);
+  }
+
+  @Get('all')
+  async getAllStocks() {
+    return this.stockService.getAllStocks();
+  }
+
+  @Get(':ticker/quote')
+  async getQuote(@Param('ticker') ticker: string) {
+    return this.stockService.getQuote(ticker);
+  }
+
   @Get(':ticker/chart')
-  async getChartData(@Param('ticker') ticker: string) {
-    return this.stockService.getHistoricalData(ticker);
+  async getChartData(
+    @Param('ticker') ticker: string,
+    @Query('range') range: string = '6mo',
+  ) {
+    return this.stockService.getChartData(ticker, range);
   }
 
   @Get(':ticker/profile')

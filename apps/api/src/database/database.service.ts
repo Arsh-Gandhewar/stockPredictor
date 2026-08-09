@@ -12,7 +12,6 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     this.logger.log('Connecting to the database via Prisma...');
-    this.logger.log(`DATABASE_URL is: ${process.env.DATABASE_URL}`);
     await this.client.$connect();
     this.logger.log('Database connected successfully.');
   }
