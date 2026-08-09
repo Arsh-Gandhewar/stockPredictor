@@ -52,6 +52,10 @@ export class PortfolioService {
       portfolio = await this.createPortfolio(userId) as any;
     }
 
+    if (!portfolio) {
+      throw new NotFoundException('Could not load or initialize portfolio');
+    }
+
     return portfolio;
   }
 
@@ -62,10 +66,11 @@ export class PortfolioService {
     if (!stock) throw new NotFoundException('Stock not found');
 
     const portfolio = await this.getPortfolio(userId);
+    if (!portfolio) throw new NotFoundException('Portfolio not found');
 
     // Fetch real-time price
     const quote = await this.stockService.getLatestQuote(ticker);
-    const currentPrice = (quote as any).regularMarketPrice;
+    const currentPrice = (quote as any)?.price || (quote as any)?.regularMarketPrice;
     if (!currentPrice) throw new BadRequestException('Could not fetch real-time price for ' + ticker);
 
     const totalValue = currentPrice * quantity;
@@ -191,37 +196,41 @@ export class PortfolioService {
     const sellSignals = [];
 
     for (const position of portfolio.positions) {
-      const stock = position.stock;
-      if (!stock) continue;
-
-      let quote: any = null;
       try {
-        quote = await this.stockService.getLatestQuote(stock.ticker);
-      } catch (e) {
-        quote = null;
-      }
+        const stock = position.stock;
+        if (!stock) continue;
 
-      const currentPrice = quote?.regularMarketPrice || position.averagePrice;
-      const unrealizedPnLPercent = ((currentPrice - position.averagePrice) / position.averagePrice) * 100;
+        let quote: any = null;
+        try {
+          quote = await this.stockService.getLatestQuote(stock.ticker);
+        } catch {
+          quote = null;
+        }
 
-      // Evaluate AI sell signal for this holding
-      const evaluation = await this.aiService.evaluatePortfolioSellOpportunity({
-        ticker: stock.ticker,
-        name: stock.name,
-        avgPrice: position.averagePrice,
-        currentPrice: currentPrice,
-        unrealizedPnLPercent: unrealizedPnLPercent,
-      });
+        const currentPrice = (quote as any)?.price || (quote as any)?.regularMarketPrice || position.averagePrice;
+        const unrealizedPnLPercent = ((currentPrice - position.averagePrice) / position.averagePrice) * 100;
 
-      // Filter: Show ONLY if confidence is >= 80% and recommendation is SELL or STRONG_SELL
-      if (evaluation.confidenceScore >= 80 && ['SELL', 'STRONG_SELL'].includes(evaluation.recommendation)) {
-        sellSignals.push({
-          ...evaluation,
-          quantityHeld: position.quantity,
-          avgPurchasePrice: position.averagePrice,
+        // Evaluate AI sell signal for this holding
+        const evaluation = await this.aiService.evaluatePortfolioSellOpportunity({
+          ticker: stock.ticker,
+          name: stock.name,
+          avgPrice: position.averagePrice,
           currentPrice: currentPrice,
-          unrealizedPnLPercent: Number(unrealizedPnLPercent.toFixed(2)),
+          unrealizedPnLPercent: unrealizedPnLPercent,
         });
+
+        // Filter: Show ONLY if confidence is >= 80% and recommendation is SELL or STRONG_SELL
+        if (evaluation && evaluation.confidenceScore >= 80 && ['SELL', 'STRONG_SELL'].includes(evaluation.recommendation)) {
+          sellSignals.push({
+            ...evaluation,
+            quantityHeld: position.quantity,
+            avgPurchasePrice: position.averagePrice,
+            currentPrice: currentPrice,
+            unrealizedPnLPercent: Number(unrealizedPnLPercent.toFixed(2)),
+          });
+        }
+      } catch (e) {
+        this.logger.error(`Error evaluating position for sell signals:`, e);
       }
     }
 

@@ -1,10 +1,87 @@
 'use client';
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Star, Plus, Trash2, ArrowUpRight, ArrowDownRight, Loader2, Search } from 'lucide-react';
+import { Star, Plus, Trash2, ArrowUpRight, ArrowDownRight, Search } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAllStocks } from '@/hooks/use-stock';
+import { useAllStocks, useStockQuote } from '@/hooks/use-stock';
+
+function WatchlistRow({
+  ticker,
+  stockInfo,
+  onRemove,
+  onClick,
+}: {
+  ticker: string;
+  stockInfo?: { name: string; sector: string | null };
+  onRemove: () => void;
+  onClick: () => void;
+}) {
+  const { data: quote, isLoading } = useStockQuote(ticker);
+  const isPositive = (quote?.changePercent || 0) >= 0;
+
+  return (
+    <tr
+      className="hover:bg-muted/30 transition-colors cursor-pointer"
+      onClick={onClick}
+    >
+      <td className="py-3.5 px-4 font-bold text-foreground">
+        <div className="flex items-center gap-2">
+          <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
+          <span className="font-mono">{ticker.replace('.NS', '')}</span>
+        </div>
+        <div className="text-[11px] text-muted-foreground font-normal line-clamp-1 ml-5.5">
+          {stockInfo?.name || ticker}
+        </div>
+      </td>
+      <td className="py-3.5 px-4 text-muted-foreground">
+        <span className="px-2 py-0.5 rounded bg-muted/60 text-[10px] font-medium">
+          {stockInfo?.sector || 'NSE'}
+        </span>
+      </td>
+      <td className="py-3.5 px-4 text-right font-mono font-bold">
+        {isLoading ? (
+          <span className="text-muted-foreground animate-pulse">...</span>
+        ) : (
+          `₹${(quote?.price || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+        )}
+      </td>
+      <td className="py-3.5 px-4 text-right">
+        {isLoading ? (
+          <span className="text-muted-foreground animate-pulse">...</span>
+        ) : (
+          <span
+            className={`inline-flex items-center font-bold px-2 py-0.5 rounded text-[11px] ${
+              isPositive
+                ? 'bg-green-500/10 text-green-400 border border-green-500/20'
+                : 'bg-red-500/10 text-red-400 border border-red-500/20'
+            }`}
+          >
+            {isPositive ? (
+              <ArrowUpRight className="h-3 w-3 mr-0.5" />
+            ) : (
+              <ArrowDownRight className="h-3 w-3 mr-0.5" />
+            )}
+            {isPositive ? '+' : ''}
+            {(quote?.changePercent || 0).toFixed(2)}%
+          </span>
+        )}
+      </td>
+      <td className="py-3.5 px-4 text-right">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+          title="Remove from watchlist"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </td>
+    </tr>
+  );
+}
 
 export default function WatchlistPage() {
   const router = useRouter();
@@ -14,7 +91,6 @@ export default function WatchlistPage() {
 
   const { data: allStocks } = useAllStocks();
 
-  // Load from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('user_watchlist');
     if (saved) {
@@ -55,7 +131,7 @@ export default function WatchlistPage() {
             Personal Watchlist
           </h1>
           <p className="text-xs text-muted-foreground mt-1">
-            Pin and track your highest-conviction ideas across Indian markets.
+            Pin and stream real-time price action across your highest-conviction Indian market equities.
           </p>
         </div>
         <button
@@ -81,6 +157,8 @@ export default function WatchlistPage() {
                   <tr>
                     <th className="py-3 px-4">Stock</th>
                     <th className="py-3 px-4">Sector</th>
+                    <th className="py-3 px-4 text-right">Live Price</th>
+                    <th className="py-3 px-4 text-right">Day Change</th>
                     <th className="py-3 px-4 text-right">Action</th>
                   </tr>
                 </thead>
@@ -88,38 +166,13 @@ export default function WatchlistPage() {
                   {watchlist.map((ticker) => {
                     const stockInfo = (allStocks || []).find((s) => s.ticker === ticker);
                     return (
-                      <tr
+                      <WatchlistRow
                         key={ticker}
-                        className="hover:bg-muted/30 transition-colors cursor-pointer"
+                        ticker={ticker}
+                        stockInfo={stockInfo}
+                        onRemove={() => removeStock(ticker)}
                         onClick={() => router.push(`/stock/${ticker}`)}
-                      >
-                        <td className="py-3.5 px-4 font-bold text-foreground">
-                          <div className="flex items-center gap-2">
-                            <Star className="h-3.5 w-3.5 fill-amber-400 text-amber-400 shrink-0" />
-                            <span>{ticker.replace('.NS', '')}</span>
-                          </div>
-                          <div className="text-[11px] text-muted-foreground font-normal line-clamp-1 ml-5.5">
-                            {stockInfo?.name || ticker}
-                          </div>
-                        </td>
-                        <td className="py-3.5 px-4 text-muted-foreground">
-                          <span className="px-2 py-0.5 rounded bg-muted/60 text-[10px] font-medium">
-                            {stockInfo?.sector || 'NSE'}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-right">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              removeStock(ticker);
-                            }}
-                            className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            title="Remove from watchlist"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </td>
-                      </tr>
+                      />
                     );
                   })}
                 </tbody>
@@ -134,7 +187,7 @@ export default function WatchlistPage() {
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card border border-border/60 rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-4 animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center border-b border-border/40 pb-3">
-              <h3 className="font-extrabold text-base">Add to Watchlist</h3>
+              <h3 className="font-extrabold text-base">Add Stock to Watchlist</h3>
               <button onClick={() => setIsAddOpen(false)} className="text-xs text-muted-foreground hover:text-foreground">
                 ✕
               </button>
@@ -144,7 +197,7 @@ export default function WatchlistPage() {
               <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <input
                 type="text"
-                placeholder="Search stocks to add..."
+                placeholder="Search by symbol or company name..."
                 value={addSearch}
                 onChange={(e) => setAddSearch(e.target.value)}
                 className="w-full h-9 pl-9 pr-3 text-xs rounded-lg bg-muted/40 border border-border/40 focus:outline-none focus:ring-1 focus:ring-primary text-foreground"
