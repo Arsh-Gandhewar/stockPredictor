@@ -44,16 +44,16 @@ function PositionRow({
 
   const { data: quote, isLoading } = useStockQuote(ticker);
 
-  const ltp = quote?.price || avgPrice;
-  const dayChange = quote?.change || 0;
-  const dayChangePercent = quote?.changePercent || 0;
+  const ltp = quote?.price || position.currentPrice || avgPrice;
+  const dayChange = quote?.change ?? position.dayChange ?? 0;
+  const dayChangePercent = quote?.changePercent ?? position.dayChangePercent ?? 0;
 
   // Calculations
-  const currentValue = quantity * ltp;
-  const investedValue = quantity * avgPrice;
-  const overallPnL = currentValue - investedValue;
-  const overallPnLPercent = investedValue > 0 ? (overallPnL / investedValue) * 100 : 0;
-  const todayPnL = quantity * dayChange;
+  const currentValue = position.currentValue || (quantity * ltp);
+  const investedValue = position.investedValue || (quantity * avgPrice);
+  const overallPnL = position.overallPnL !== undefined ? position.overallPnL : (currentValue - investedValue);
+  const overallPnLPercent = position.overallPnLPercent !== undefined ? position.overallPnLPercent : (investedValue > 0 ? (overallPnL / investedValue) * 100 : 0);
+  const todayPnL = position.todayPnL !== undefined ? position.todayPnL : (quantity * dayChange);
 
   const isTodayProfit = todayPnL >= 0;
   const isOverallProfit = overallPnL >= 0;
@@ -142,10 +142,18 @@ export default function PortfolioPage() {
   const positions = portfolio?.positions || [];
   const availableCash = portfolio?.availableCash || 0;
 
-  const totalInvested = positions.reduce((acc: number, pos: any) => acc + (pos.quantity * pos.averagePrice), 0);
-  const totalValue = positions.reduce((acc: number, pos: any) => acc + (pos.quantity * pos.averagePrice), 0);
-  const totalOverallPnL = totalValue - totalInvested;
-  const totalOverallPnLPercent = totalInvested > 0 ? (totalOverallPnL / totalInvested) * 100 : 0;
+  const totalInvested = portfolio?.totalInvested ?? positions.reduce((acc: number, pos: any) => acc + (pos.quantity * pos.averagePrice), 0);
+  const totalCurrentValue = portfolio?.totalCurrentValue ?? positions.reduce((acc: number, pos: any) => acc + (pos.quantity * (pos.currentPrice || pos.averagePrice)), 0);
+  const totalPortfolioValue = portfolio?.totalPortfolioValue ?? (availableCash + totalCurrentValue);
+  
+  const totalTodayPnL = portfolio?.totalTodayPnL ?? positions.reduce((acc: number, pos: any) => acc + (pos.todayPnL || 0), 0);
+  const totalTodayPnLPercent = portfolio?.totalTodayPnLPercent ?? (totalInvested > 0 ? (totalTodayPnL / totalInvested) * 100 : 0);
+  
+  const totalOverallPnL = portfolio?.totalOverallPnL ?? (totalCurrentValue - totalInvested);
+  const totalOverallPnLPercent = portfolio?.totalOverallPnLPercent ?? (totalInvested > 0 ? (totalOverallPnL / totalInvested) * 100 : 0);
+
+  const isTodayPositive = totalTodayPnL >= 0;
+  const isOverallPositive = totalOverallPnL >= 0;
 
   const handleSell = (ticker: string, quantity: number) => {
     executeTrade.mutate({ ticker, type: 'SELL', quantity });
@@ -243,7 +251,7 @@ export default function PortfolioPage() {
           </CardHeader>
           <CardContent className="px-4 pb-3">
             <div className="text-xl font-extrabold font-mono tracking-tight text-foreground">
-              {formatCurrency(totalValue + availableCash)}
+              {formatCurrency(totalPortfolioValue)}
             </div>
             <div className="text-[11px] text-muted-foreground mt-0.5">Cash + Equity Holdings</div>
           </CardContent>
@@ -284,12 +292,12 @@ export default function PortfolioPage() {
             <Clock className="h-4 w-4 text-primary" />
           </CardHeader>
           <CardContent className="px-4 pb-3">
-            <div className={`text-xl font-extrabold font-mono flex items-center ${totalOverallPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {totalOverallPnL >= 0 ? '+' : ''}{formatCurrency(totalOverallPnL * 0.35)}
+            <div className={`text-xl font-extrabold font-mono flex items-center ${isTodayPositive ? 'text-green-500' : 'text-red-500'}`}>
+              {isTodayPositive ? '+' : ''}{formatCurrency(totalTodayPnL)}
             </div>
-            <div className={`text-[11px] font-bold flex items-center mt-0.5 ${totalOverallPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {totalOverallPnL >= 0 ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
-              {totalOverallPnL >= 0 ? '+' : ''}{(totalOverallPnLPercent * 0.4).toFixed(2)}% session
+            <div className={`text-[11px] font-bold flex items-center mt-0.5 ${isTodayPositive ? 'text-green-400' : 'text-red-400'}`}>
+              {isTodayPositive ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
+              {isTodayPositive ? '+' : ''}{totalTodayPnLPercent.toFixed(2)}% session
             </div>
           </CardContent>
         </Card>
@@ -298,15 +306,15 @@ export default function PortfolioPage() {
         <Card className="bg-card/70 border-border/50 shadow-sm">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-1 pt-3 px-4">
             <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Overall P&L</span>
-            {totalOverallPnL >= 0 ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
+            {isOverallPositive ? <TrendingUp className="h-4 w-4 text-green-500" /> : <TrendingDown className="h-4 w-4 text-red-500" />}
           </CardHeader>
           <CardContent className="px-4 pb-3">
-            <div className={`text-xl font-extrabold font-mono flex items-center ${totalOverallPnL >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-              {totalOverallPnL >= 0 ? '+' : ''}{formatCurrency(totalOverallPnL)}
+            <div className={`text-xl font-extrabold font-mono flex items-center ${isOverallPositive ? 'text-green-500' : 'text-red-500'}`}>
+              {isOverallPositive ? '+' : ''}{formatCurrency(totalOverallPnL)}
             </div>
-            <div className={`text-[11px] font-bold flex items-center mt-0.5 ${totalOverallPnL >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-              {totalOverallPnL >= 0 ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
-              {totalOverallPnL >= 0 ? '+' : ''}{totalOverallPnLPercent.toFixed(2)}% all-time
+            <div className={`text-[11px] font-bold flex items-center mt-0.5 ${isOverallPositive ? 'text-green-400' : 'text-red-400'}`}>
+              {isOverallPositive ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
+              {isOverallPositive ? '+' : ''}{totalOverallPnLPercent.toFixed(2)}% all-time
             </div>
           </CardContent>
         </Card>

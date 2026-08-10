@@ -218,13 +218,51 @@ export function useAllStocks() {
   });
 }
 
+export interface PortfolioPosition {
+  id: string;
+  portfolioId: string;
+  stockId: string;
+  quantity: number;
+  averagePrice: number;
+  currentPrice: number;
+  dayChange: number;
+  dayChangePercent: number;
+  investedValue: number;
+  currentValue: number;
+  todayPnL: number;
+  overallPnL: number;
+  overallPnLPercent: number;
+  stock: {
+    id: string;
+    ticker: string;
+    name: string;
+    sector: string | null;
+    exchange: string;
+  };
+}
+
+export interface PortfolioData {
+  id: string;
+  userId: string;
+  availableCash: number;
+  positions: PortfolioPosition[];
+  totalInvested: number;
+  totalCurrentValue: number;
+  totalPortfolioValue: number;
+  totalTodayPnL: number;
+  totalTodayPnLPercent: number;
+  totalOverallPnL: number;
+  totalOverallPnLPercent: number;
+}
+
 export function usePortfolio(userId?: string) {
   return useQuery({
     queryKey: ['portfolio', userId],
-    queryFn: () => fetcher<any>('/portfolio', {
+    queryFn: () => fetcher<PortfolioData>('/portfolio', {
       headers: userId ? { 'x-user-id': userId } : undefined,
     }),
-    staleTime: 10000,
+    refetchInterval: 15000,
+    staleTime: 5000,
   });
 }
 

@@ -56,7 +56,73 @@ export class PortfolioService {
       throw new NotFoundException('Could not load or initialize portfolio');
     }
 
-    return portfolio;
+    let totalInvested = 0;
+    let totalCurrentValue = 0;
+    let totalTodayPnL = 0;
+
+    const enrichedPositions = await Promise.all(
+      portfolio.positions.map(async (pos) => {
+        let currentPrice = pos.averagePrice;
+        let dayChange = 0;
+        let dayChangePercent = 0;
+        let name = pos.stock?.name || pos.stock?.ticker || 'Equity';
+
+        try {
+          const quote = await this.stockService.getQuote(pos.stock.ticker);
+          if (quote && quote.price) {
+            currentPrice = quote.price;
+            dayChange = quote.change || 0;
+            dayChangePercent = quote.changePercent || 0;
+            name = quote.name || name;
+          }
+        } catch (e) {
+          // Fallback to average price if quote unavailable
+        }
+
+        const investedValue = pos.quantity * pos.averagePrice;
+        const currentValue = pos.quantity * currentPrice;
+        const todayPnL = pos.quantity * dayChange;
+        const overallPnL = currentValue - investedValue;
+        const overallPnLPercent = investedValue > 0 ? (overallPnL / investedValue) * 100 : 0;
+
+        totalInvested += investedValue;
+        totalCurrentValue += currentValue;
+        totalTodayPnL += todayPnL;
+
+        return {
+          ...pos,
+          stock: {
+            ...pos.stock,
+            name,
+          },
+          currentPrice,
+          dayChange,
+          dayChangePercent,
+          investedValue: parseFloat(investedValue.toFixed(2)),
+          currentValue: parseFloat(currentValue.toFixed(2)),
+          todayPnL: parseFloat(todayPnL.toFixed(2)),
+          overallPnL: parseFloat(overallPnL.toFixed(2)),
+          overallPnLPercent: parseFloat(overallPnLPercent.toFixed(2)),
+        };
+      })
+    );
+
+    const totalPortfolioValue = portfolio.availableCash + totalCurrentValue;
+    const totalOverallPnL = totalCurrentValue - totalInvested;
+    const totalOverallPnLPercent = totalInvested > 0 ? (totalOverallPnL / totalInvested) * 100 : 0;
+    const totalTodayPnLPercent = totalInvested > 0 ? (totalTodayPnL / totalInvested) * 100 : 0;
+
+    return {
+      ...portfolio,
+      positions: enrichedPositions,
+      totalInvested: parseFloat(totalInvested.toFixed(2)),
+      totalCurrentValue: parseFloat(totalCurrentValue.toFixed(2)),
+      totalPortfolioValue: parseFloat(totalPortfolioValue.toFixed(2)),
+      totalTodayPnL: parseFloat(totalTodayPnL.toFixed(2)),
+      totalTodayPnLPercent: parseFloat(totalTodayPnLPercent.toFixed(2)),
+      totalOverallPnL: parseFloat(totalOverallPnL.toFixed(2)),
+      totalOverallPnLPercent: parseFloat(totalOverallPnLPercent.toFixed(2)),
+    };
   }
 
   /**
