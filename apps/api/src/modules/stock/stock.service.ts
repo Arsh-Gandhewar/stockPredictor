@@ -101,7 +101,7 @@ export class StockService {
 
   private getCacheTtl(): number {
     const status = getMarketStatus();
-    return status === 'OPEN' ? 30_000 : 300_000; // 30s during market, 5min otherwise
+    return status === 'OPEN' ? 5_000 : 30_000; // 5s during market, 30s otherwise
   }
 
   // ── Live Quote ──

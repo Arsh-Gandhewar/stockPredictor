@@ -133,8 +133,8 @@ export function useHighRiskStocks() {
   return useQuery({
     queryKey: ['high-risk-high-reward'],
     queryFn: () => fetcher<HighRiskStockItem[]>('/stock/high-risk-high-reward'),
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: 5000, // 5s live auto-refresh
+    staleTime: 2000,
   });
 }
 
@@ -142,8 +142,8 @@ export function useMarketSummary() {
   return useQuery({
     queryKey: ['market-summary'],
     queryFn: () => fetcher<MarketIndex[]>('/stock/market-summary'),
-    refetchInterval: 30000, // 30s auto-refresh
-    staleTime: 15000,
+    refetchInterval: 5000, // 5s live auto-refresh
+    staleTime: 2000,
   });
 }
 
@@ -151,8 +151,8 @@ export function useMarketStatus() {
   return useQuery({
     queryKey: ['market-status'],
     queryFn: () => fetcher<MarketStatusInfo>('/stock/market-status'),
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 10000,
+    staleTime: 5000,
   });
 }
 
@@ -160,8 +160,8 @@ export function useMarketMovers() {
   return useQuery({
     queryKey: ['market-movers'],
     queryFn: () => fetcher<MarketMovers>('/stock/movers'),
-    refetchInterval: 45000,
-    staleTime: 30000,
+    refetchInterval: 5000, // 5s live auto-refresh
+    staleTime: 2000,
   });
 }
 
@@ -169,7 +169,8 @@ export function useTopPicks() {
   return useQuery({
     queryKey: ['top-picks'],
     queryFn: () => fetcher<TopPickItem[]>('/stock/top-picks'),
-    staleTime: 60000,
+    refetchInterval: 5000, // 5s live auto-refresh
+    staleTime: 2000,
   });
 }
 
@@ -178,8 +179,8 @@ export function useStockQuote(ticker: string) {
     queryKey: ['stock-quote', ticker],
     queryFn: () => fetcher<StockQuote>(`/stock/${ticker}/quote`),
     enabled: !!ticker,
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: 5000, // 5s live auto-refresh
+    staleTime: 2000,
   });
 }
 
@@ -188,7 +189,8 @@ export function useStockChart(ticker: string, range: string = '6mo') {
     queryKey: ['stock-chart', ticker, range],
     queryFn: () => fetcher<Candle[]>(`/stock/${ticker}/chart?range=${range}`),
     enabled: !!ticker,
-    staleTime: 120000, // 2 mins
+    refetchInterval: range === '1d' ? 5000 : 60000, // 5s for intraday 1D, 1m for multi-day
+    staleTime: range === '1d' ? 2000 : 30000,
   });
 }
 
@@ -197,7 +199,8 @@ export function useStockProfile(ticker: string) {
     queryKey: ['stock-profile', ticker],
     queryFn: () => fetcher<StockProfile>(`/stock/${ticker}/profile`),
     enabled: !!ticker,
-    staleTime: 30000,
+    refetchInterval: 5000, // 5s live auto-refresh
+    staleTime: 2000,
   });
 }
 
@@ -261,8 +264,8 @@ export function usePortfolio(userId?: string) {
     queryFn: () => fetcher<PortfolioData>('/portfolio', {
       headers: userId ? { 'x-user-id': userId } : undefined,
     }),
-    refetchInterval: 15000,
-    staleTime: 5000,
+    refetchInterval: 5000, // 5s live auto-refresh
+    staleTime: 2000,
   });
 }
 
@@ -272,8 +275,8 @@ export function usePortfolioSellSignals(userId?: string) {
     queryFn: () => fetcher<any[]>('/portfolio/sell-signals', {
       headers: userId ? { 'x-user-id': userId } : undefined,
     }),
-    refetchInterval: 120000, // 2 minutes
-    staleTime: 60000,
+    refetchInterval: 30000, // 30s
+    staleTime: 15000,
   });
 }
 
