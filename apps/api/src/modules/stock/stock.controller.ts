@@ -57,4 +57,9 @@ export class StockController {
   async getStockProfile(@Param('ticker') ticker: string) {
     return this.stockService.getStockProfile(ticker);
   }
+
+  @Get(':ticker/catalyst')
+  async getMovementCatalyst(@Param('ticker') ticker: string) {
+    return this.stockService.getMovementCatalyst(ticker);
+  }
 }

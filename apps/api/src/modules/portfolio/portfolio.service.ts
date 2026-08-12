@@ -3,6 +3,44 @@ import { DatabaseService } from '../../database/database.service';
 import { StockService } from '../stock/stock.service';
 import { AiService } from '../ai/ai.service';
 import { TransactionType, OrderType } from 'db';
+import { Money } from '../../common/utils/money.util';
+
+export interface PortfolioPositionWithLiveMetrics {
+  id: string;
+  portfolioId: string;
+  stockId: string;
+  quantity: number;
+  averagePrice: number;
+  currentPrice: number;
+  dayChange: number;
+  dayChangePercent: number;
+  investedValue: number;
+  currentValue: number;
+  todayPnL: number;
+  overallPnL: number;
+  overallPnLPercent: number;
+  stock: {
+    id: string;
+    ticker: string;
+    name: string;
+    sector: string | null;
+    exchange: string;
+  };
+}
+
+export interface PortfolioSummary {
+  id: string;
+  userId: string;
+  availableCash: number;
+  positions: PortfolioPositionWithLiveMetrics[];
+  totalInvested: number;
+  totalCurrentValue: number;
+  totalPortfolioValue: number;
+  totalTodayPnL: number;
+  totalTodayPnLPercent: number;
+  totalOverallPnL: number;
+  totalOverallPnLPercent: number;
+}
 
 @Injectable()
 export class PortfolioService {
@@ -11,403 +49,375 @@ export class PortfolioService {
   constructor(
     private readonly db: DatabaseService,
     private readonly stockService: StockService,
-    private readonly aiService: AiService
+    private readonly aiService: AiService,
   ) {}
 
-  /**
-   * Initialize a portfolio for a new user with 1,000,000 INR
-   */
-  async createPortfolio(userId: string) {
-    await this.db.client.user.upsert({
-      where: { id: userId },
-      update: {},
-      create: {
-        id: userId,
-        clerkId: `clerk_${userId}`,
-        email: `${userId}@example.com`,
-      }
-    });
-
-    const created = await this.db.client.portfolio.create({
-      data: {
-        userId,
-        availableCash: 1000000, // ₹10,00,000
-      }
-    });
-
-    return { ...created, positions: [] };
+  private async getOrCreateUser(userId: string) {
+    try {
+      return await this.db.client.user.upsert({
+        where: { clerkId: userId },
+        update: {},
+        create: { clerkId: userId, email: `${userId}@quantx.internal`, firstName: 'QuantX', lastName: 'Trader' },
+      });
+    } catch {
+      return await this.db.client.user.findUniqueOrThrow({ where: { clerkId: userId } });
+    }
   }
 
-  async getPortfolio(userId: string) {
-    let portfolio = await this.db.client.portfolio.findUnique({
-      where: { userId },
-      include: {
-        positions: {
-          include: { stock: true }
-        }
-      }
-    });
-
-    if (!portfolio) {
-      portfolio = await this.createPortfolio(userId) as any;
+  /**
+   * Retrieves or initializes the user's paper trading portfolio with real-time live P&L
+   */
+  async getPortfolio(userId: string): Promise<PortfolioSummary> {
+    const user = await this.getOrCreateUser(userId);
+    let portfolio;
+    try {
+      portfolio = await this.db.client.portfolio.upsert({
+        where: { userId: user.id },
+        update: {},
+        create: { userId: user.id, availableCash: 1000000 },
+        include: { positions: { include: { stock: true } } },
+      });
+    } catch {
+      portfolio = await this.db.client.portfolio.findUniqueOrThrow({
+        where: { userId: user.id },
+        include: { positions: { include: { stock: true } } },
+      });
     }
-
-    if (!portfolio) {
-      throw new NotFoundException('Could not load or initialize portfolio');
-    }
-
     let totalInvested = 0;
     let totalCurrentValue = 0;
     let totalTodayPnL = 0;
 
-    const enrichedPositions = await Promise.all(
-      portfolio.positions.map(async (pos) => {
-        let currentPrice = pos.averagePrice;
+    const tickers = portfolio.positions.map((p) => p.stock.ticker);
+    const quotes = tickers.length > 0 ? await this.stockService.getQuotes(tickers).catch(() => []) : [];
+    const quoteMap = new Map(quotes.map((q) => [q.ticker, q]));
+
+    const hydratedPositions: PortfolioPositionWithLiveMetrics[] = portfolio.positions.map((pos) => {
+        let currentPrice = Number(pos.averagePrice);
         let dayChange = 0;
         let dayChangePercent = 0;
-        let name = pos.stock?.name || pos.stock?.ticker || 'Equity';
+        let prevClose = Number(pos.averagePrice);
 
-        try {
-          const quote = await this.stockService.getQuote(pos.stock.ticker);
-          if (quote && quote.price) {
-            currentPrice = quote.price;
-            dayChange = quote.change || 0;
-            dayChangePercent = quote.changePercent || 0;
-            name = quote.name || name;
-          }
-        } catch (e) {
-          // Fallback to average price if quote unavailable
+        const quote = quoteMap.get(pos.stock.ticker);
+        if (quote) {
+          currentPrice = quote.price;
+          dayChange = quote.change;
+          dayChangePercent = quote.changePercent;
+          prevClose = quote.prevClose || quote.price - quote.change;
         }
 
-        const investedValue = pos.quantity * pos.averagePrice;
-        const currentValue = pos.quantity * currentPrice;
-        const todayPnL = pos.quantity * dayChange;
-        const overallPnL = currentValue - investedValue;
-        const overallPnLPercent = investedValue > 0 ? (overallPnL / investedValue) * 100 : 0;
+        const investedValue = Money.multiply(pos.quantity, Number(pos.averagePrice));
+        const currentValue = Money.multiply(pos.quantity, currentPrice);
+        const overallPnL = Money.subtract(currentValue, investedValue);
+        const overallPnLPercent = Money.calculateReturnPercent(currentValue, investedValue);
+        const todayPnL = Money.multiply(pos.quantity, currentPrice - prevClose);
 
-        totalInvested += investedValue;
-        totalCurrentValue += currentValue;
-        totalTodayPnL += todayPnL;
+        totalInvested = Money.add(totalInvested, investedValue);
+        totalCurrentValue = Money.add(totalCurrentValue, currentValue);
+        totalTodayPnL = Money.add(totalTodayPnL, todayPnL);
 
         return {
-          ...pos,
-          stock: {
-            ...pos.stock,
-            name,
-          },
+          id: pos.id,
+          portfolioId: pos.portfolioId,
+          stockId: pos.stockId,
+          quantity: pos.quantity,
+          averagePrice: Number(pos.averagePrice),
           currentPrice,
           dayChange,
           dayChangePercent,
-          investedValue: parseFloat(investedValue.toFixed(2)),
-          currentValue: parseFloat(currentValue.toFixed(2)),
-          todayPnL: parseFloat(todayPnL.toFixed(2)),
-          overallPnL: parseFloat(overallPnL.toFixed(2)),
-          overallPnLPercent: parseFloat(overallPnLPercent.toFixed(2)),
+          investedValue,
+          currentValue,
+          todayPnL,
+          overallPnL,
+          overallPnLPercent,
+          stock: {
+            id: pos.stock.id,
+            ticker: pos.stock.ticker,
+            name: pos.stock.name,
+            sector: pos.stock.sector,
+            exchange: pos.stock.exchange,
+          },
         };
-      })
-    );
+      });
 
-    const totalPortfolioValue = portfolio.availableCash + totalCurrentValue;
-    const totalOverallPnL = totalCurrentValue - totalInvested;
-    const totalOverallPnLPercent = totalInvested > 0 ? (totalOverallPnL / totalInvested) * 100 : 0;
-    const totalTodayPnLPercent = totalInvested > 0 ? (totalTodayPnL / totalInvested) * 100 : 0;
+    const totalOverallPnL = Money.subtract(totalCurrentValue, totalInvested);
+    const totalOverallPnLPercent = Money.calculateReturnPercent(totalCurrentValue, totalInvested);
+    const totalPortfolioValue = Money.add(Number(portfolio.availableCash), totalCurrentValue);
+    const totalTodayPnLPercent = totalPortfolioValue > 0 ? Money.round((totalTodayPnL / totalPortfolioValue) * 100) : 0;
 
     return {
-      ...portfolio,
-      positions: enrichedPositions,
-      totalInvested: parseFloat(totalInvested.toFixed(2)),
-      totalCurrentValue: parseFloat(totalCurrentValue.toFixed(2)),
-      totalPortfolioValue: parseFloat(totalPortfolioValue.toFixed(2)),
-      totalTodayPnL: parseFloat(totalTodayPnL.toFixed(2)),
-      totalTodayPnLPercent: parseFloat(totalTodayPnLPercent.toFixed(2)),
-      totalOverallPnL: parseFloat(totalOverallPnL.toFixed(2)),
-      totalOverallPnLPercent: parseFloat(totalOverallPnLPercent.toFixed(2)),
+      id: portfolio.id,
+      userId: portfolio.userId,
+      availableCash: Money.round(Number(portfolio.availableCash)),
+      positions: hydratedPositions,
+      totalInvested: Money.round(totalInvested),
+      totalCurrentValue: Money.round(totalCurrentValue),
+      totalPortfolioValue: Money.round(totalPortfolioValue),
+      totalTodayPnL: Money.round(totalTodayPnL),
+      totalTodayPnLPercent,
+      totalOverallPnL: Money.round(totalOverallPnL),
+      totalOverallPnLPercent,
     };
   }
 
   /**
-   * Retrieves all-time historical trade transactions for a user with rich analytics
+   * Executes atomic paper trade (BUY or SELL) with database transaction and balance validation
    */
-  async getAllTrades(userId: string, ticker?: string, type?: TransactionType) {
-    const portfolio = await this.getPortfolio(userId);
-    if (!portfolio) {
-      return { trades: [], summary: { totalTrades: 0, totalTurnover: 0, totalBuyVolume: 0, totalSellVolume: 0 } };
+  async executeTrade(
+    userId: string,
+    ticker: string,
+    type: TransactionType,
+    quantity: number,
+    orderType: OrderType = OrderType.MARKET
+  ) {
+    if (!quantity || quantity <= 0) {
+      throw new BadRequestException('Order quantity must be a positive integer');
     }
 
-    const whereClause: any = { portfolioId: portfolio.id };
-    if (type) {
-      whereClause.type = type;
-    }
-    if (ticker) {
-      whereClause.stock = { ticker: ticker.toUpperCase() };
-    }
+    // 1. Fetch live market price
+    const quote = await this.stockService.getQuote(ticker);
+    const executionPrice = quote.price;
+    const totalCost = Money.multiply(quantity, executionPrice);
 
-    const transactions = await this.db.client.transaction.findMany({
-      where: whereClause,
-      include: {
-        stock: true,
-      },
-      orderBy: { timestamp: 'desc' },
+    // 2. Ensure stock record exists in DB
+    let stock = await this.db.client.stock.findUnique({
+      where: { ticker },
     });
 
-    // Compute all-time trade analytics
-    let totalTurnover = 0;
-    let totalBuyVolume = 0;
-    let totalSellVolume = 0;
-    let totalBuyCount = 0;
-    let totalSellCount = 0;
-    const tickerActivity: Record<string, { ticker: string; name: string; count: number; volume: number; turnover: number }> = {};
+    if (!stock) {
+      stock = await this.db.client.stock.create({
+        data: {
+          ticker,
+          name: quote.name || ticker.replace('.NS', ''),
+          exchange: 'NSE',
+          sector: 'Equities',
+        },
+      });
+    }
 
-    const enrichedTrades = await Promise.all(
-      transactions.map(async (tx: any) => {
-        const tradeValue = tx.quantity * tx.price;
-        totalTurnover += tradeValue;
+    // 3. Ensure portfolio exists
+    const portfolioSummary = await this.getPortfolio(userId);
+    const user = await this.db.client.user.findUnique({ where: { clerkId: userId } });
 
-        if (tx.type === TransactionType.BUY) {
-          totalBuyVolume += tx.quantity;
-          totalBuyCount += 1;
-        } else {
-          totalSellVolume += tx.quantity;
-          totalSellCount += 1;
-        }
+    if (!user) {
+      throw new NotFoundException('User could not be found or initialized');
+    }
 
-        const tTicker = tx.stock?.ticker || 'UNKNOWN';
-        if (!tickerActivity[tTicker]) {
-          tickerActivity[tTicker] = {
-            ticker: tTicker,
-            name: tx.stock?.name || tTicker,
-            count: 0,
-            volume: 0,
-            turnover: 0,
-          };
-        }
-        tickerActivity[tTicker].count += 1;
-        tickerActivity[tTicker].volume += tx.quantity;
-        tickerActivity[tTicker].turnover += tradeValue;
+    // 4. Atomic Execution inside Prisma Transaction (reads INSIDE to prevent stale data race conditions)
+    return await this.db.client.$transaction(async (tx) => {
+      const portfolio = await tx.portfolio.findUnique({
+        where: { userId: user.id },
+        include: { positions: true },
+      });
 
-        // Fetch current quote for performance analysis since execution
-        let currentPrice = tx.price;
-        try {
-          const q = await this.stockService.getQuote(tTicker).catch(() => null);
-          if (q && q.price) currentPrice = q.price;
-        } catch {
-          // fallback to tx price
-        }
-
-        const deltaSinceTrade = currentPrice - tx.price;
-        const deltaPercentSinceTrade = tx.price > 0 ? (deltaSinceTrade / tx.price) * 100 : 0;
-
-        return {
-          id: tx.id,
-          ticker: tTicker,
-          name: tx.stock?.name || tTicker,
-          sector: tx.stock?.sector || 'General',
-          type: tx.type,
-          orderType: tx.orderType,
-          quantity: tx.quantity,
-          executedPrice: tx.price,
-          totalValue: tradeValue,
-          timestamp: tx.timestamp.toISOString(),
-          currentPrice,
-          deltaSinceTrade: Number(deltaSinceTrade.toFixed(2)),
-          deltaPercentSinceTrade: Number(deltaPercentSinceTrade.toFixed(2)),
-        };
-      })
-    );
-
-    const topTraded = Object.values(tickerActivity)
-      .sort((a, b) => b.turnover - a.turnover)
-      .slice(0, 5);
-
-    return {
-      trades: enrichedTrades,
-      summary: {
-        totalTrades: transactions.length,
-        totalTurnover: Number(totalTurnover.toFixed(2)),
-        totalBuyCount,
-        totalSellCount,
-        totalBuyVolume,
-        totalSellVolume,
-        topTraded,
-      },
-    };
-  }
-
-  async executeTrade(userId: string, ticker: string, type: TransactionType, quantity: number, orderType: OrderType = OrderType.MARKET) {
-    if (quantity <= 0) throw new BadRequestException('Quantity must be greater than 0');
-    
-    const stock = await this.db.client.stock.findUnique({ where: { ticker } });
-    if (!stock) throw new NotFoundException('Stock not found');
-
-    const portfolio = await this.getPortfolio(userId);
-    if (!portfolio) throw new NotFoundException('Portfolio not found');
-
-    // Fetch real-time price
-    const quote = await this.stockService.getLatestQuote(ticker);
-    const currentPrice = (quote as any)?.price || (quote as any)?.regularMarketPrice;
-    if (!currentPrice) throw new BadRequestException('Could not fetch real-time price for ' + ticker);
-
-    const totalValue = currentPrice * quantity;
-
-    if (type === TransactionType.BUY) {
-      if (portfolio.availableCash < totalValue) {
-        throw new BadRequestException('Insufficient funds');
+      if (!portfolio) {
+        throw new NotFoundException('Portfolio could not be found or initialized');
       }
 
-      // Execute BUY
-      await this.db.client.$transaction(async (tx: any) => {
-        // Deduct cash
+      const existingPosition = portfolio.positions.find((p) => p.stockId === stock!.id);
+
+      if (type === TransactionType.BUY) {
+        if (Number(portfolio.availableCash) < totalCost) {
+          throw new BadRequestException(
+            `Insufficient virtual capital. Required: ${Money.formatINR(totalCost)}, Available: ${Money.formatINR(Number(portfolio.availableCash))}`
+          );
+        }
+
+        // Deduct available cash
+        const updatedCash = Money.subtract(Number(portfolio.availableCash), totalCost);
         await tx.portfolio.update({
           where: { id: portfolio.id },
-          data: { availableCash: { decrement: totalValue } }
+          data: { availableCash: updatedCash },
         });
 
-        // Record transaction
-        await tx.transaction.create({
-          data: {
-            portfolioId: portfolio.id,
-            stockId: stock.id,
-            type: TransactionType.BUY,
-            orderType,
-            quantity,
-            price: currentPrice
-          }
-        });
-
-        // Update Position
-        const existingPosition = await tx.position.findUnique({
-          where: { portfolioId_stockId: { portfolioId: portfolio.id, stockId: stock.id } }
-        });
-
+        // Update or create position with weighted average buy price
         if (existingPosition) {
-          const newQuantity = existingPosition.quantity + quantity;
-          const newAvgPrice = ((existingPosition.averagePrice * existingPosition.quantity) + totalValue) / newQuantity;
+          const newAvgPrice = Money.calculateNewAveragePrice(
+            existingPosition.quantity,
+            Number(existingPosition.averagePrice),
+            quantity,
+            executionPrice
+          );
+          const newQty = existingPosition.quantity + quantity;
+
           await tx.position.update({
             where: { id: existingPosition.id },
-            data: { quantity: newQuantity, averagePrice: newAvgPrice }
+            data: {
+              quantity: newQty,
+              averagePrice: newAvgPrice,
+            },
           });
         } else {
           await tx.position.create({
             data: {
               portfolioId: portfolio.id,
-              stockId: stock.id,
+              stockId: stock!.id,
               quantity,
-              averagePrice: currentPrice
-            }
+              averagePrice: executionPrice,
+            },
           });
         }
-      });
-      
-      this.logger.log(`User ${userId} BOUGHT ${quantity} shares of ${ticker} at ${currentPrice}`);
-      return {
-        success: true,
-        message: 'Buy order executed successfully',
-        price: currentPrice,
-        availableCash: portfolio.availableCash - totalValue,
-      };
+      } else if (type === TransactionType.SELL) {
+        if (!existingPosition || existingPosition.quantity < quantity) {
+          const held = existingPosition ? existingPosition.quantity : 0;
+          throw new BadRequestException(
+            `Insufficient shares to sell. Attempted to sell ${quantity} shares of ${ticker}, but only hold ${held} shares.`
+          );
+        }
 
-    } else if (type === TransactionType.SELL) {
-      
-      const existingPosition = await this.db.client.position.findUnique({
-        where: { portfolioId_stockId: { portfolioId: portfolio.id, stockId: stock.id } }
-      });
-
-      if (!existingPosition || existingPosition.quantity < quantity) {
-        throw new BadRequestException('Insufficient shares to sell');
-      }
-
-      // Execute SELL
-      await this.db.client.$transaction(async (tx: any) => {
-        // Add cash
+        // Add proceeds to cash
+        const updatedCash = Money.add(Number(portfolio.availableCash), totalCost);
         await tx.portfolio.update({
           where: { id: portfolio.id },
-          data: { availableCash: { increment: totalValue } }
+          data: { availableCash: updatedCash },
         });
 
-        // Record transaction
-        await tx.transaction.create({
-          data: {
-            portfolioId: portfolio.id,
-            stockId: stock.id,
-            type: TransactionType.SELL,
-            orderType,
-            quantity,
-            price: currentPrice
-          }
-        });
-
-        // Update Position
-        const newQuantity = existingPosition.quantity - quantity;
-        if (newQuantity === 0) {
-          await tx.position.delete({ where: { id: existingPosition.id } });
+        // Reduce or delete position
+        if (existingPosition.quantity === quantity) {
+          await tx.position.delete({
+            where: { id: existingPosition.id },
+          });
         } else {
           await tx.position.update({
             where: { id: existingPosition.id },
-            data: { quantity: newQuantity }
+            data: {
+              quantity: existingPosition.quantity - quantity,
+            },
           });
         }
+      }
+
+      // Record immutable transaction audit trail
+      const transaction = await tx.transaction.create({
+        data: {
+          portfolioId: portfolio.id,
+          stockId: stock!.id,
+          type,
+          orderType,
+          quantity,
+          price: executionPrice,
+        },
       });
 
-      this.logger.log(`User ${userId} SOLD ${quantity} shares of ${ticker} at ${currentPrice}`);
       return {
         success: true,
-        message: 'Sell order executed successfully',
-        price: currentPrice,
-        availableCash: portfolio.availableCash + totalValue,
+        message: `Simulated ${type} order for ${quantity} shares of ${ticker} executed successfully at ₹${executionPrice.toFixed(2)}`,
+        transactionId: transaction.id,
+        ticker,
+        type,
+        quantity,
+        executionPrice,
+        totalCost,
       };
-    }
+    }, { maxWait: 15000, timeout: 30000 });
   }
 
   /**
-   * Scans all positions in user's portfolio and evaluates high-confidence (>80%) sell signals
+   * Retrieves complete trade history for the user
    */
-  async getPortfolioSellSignals(userId: string) {
+  async getAllTrades(userId: string, ticker?: string, type?: TransactionType, page: number = 1, limit: number = 50) {
+    const user = await this.db.client.user.findUnique({ where: { clerkId: userId } });
+    if (!user) return [];
+
+    const portfolio = await this.db.client.portfolio.findUnique({
+      where: { userId: user.id },
+    });
+
+    if (!portfolio) return [];
+
+    const where: any = { portfolioId: portfolio.id };
+    if (type) where.type = type;
+    if (ticker) {
+      where.stock = { ticker };
+    }
+
+    const trades = await this.db.client.transaction.findMany({
+      where,
+      include: { stock: true },
+      orderBy: { timestamp: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    const uniqueTickers = [...new Set(trades.map((t) => t.stock.ticker))];
+    const quotes = uniqueTickers.length > 0 ? await this.stockService.getQuotes(uniqueTickers).catch(() => []) : [];
+    const quoteMap = new Map(quotes.map((q) => [q.ticker, q]));
+
+    return trades.map((t) => {
+        const currentPrice = quoteMap.get(t.stock.ticker)?.price ?? Number(t.price);
+
+        const deltaSinceTrade = Money.subtract(currentPrice, Number(t.price));
+        const deltaPercentSinceTrade = Money.calculateReturnPercent(currentPrice, Number(t.price));
+
+        return {
+          id: t.id,
+          ticker: t.stock.ticker,
+          name: t.stock.name,
+          sector: t.stock.sector || 'Equities',
+          type: t.type,
+          orderType: t.orderType,
+          quantity: t.quantity,
+          price: Number(t.price),
+          executedPrice: Number(t.price),
+          currentPrice,
+          deltaSinceTrade,
+          deltaPercentSinceTrade,
+          totalValue: Money.multiply(t.quantity, Number(t.price)),
+          timestamp: t.timestamp.toISOString(),
+        };
+      });
+  }
+
+  /**
+   * Resets virtual portfolio back to clean starting balance of ₹10,00,000
+   */
+  async resetPortfolio(userId: string) {
+    const user = await this.db.client.user.findUnique({
+      where: { clerkId: userId },
+      include: { portfolio: true },
+    });
+
+    if (user && user.portfolio) {
+      await this.db.client.$transaction([
+        this.db.client.position.deleteMany({
+          where: { portfolioId: user.portfolio.id },
+        }),
+        this.db.client.transaction.deleteMany({
+          where: { portfolioId: user.portfolio.id },
+        }),
+        this.db.client.portfolio.update({
+          where: { id: user.portfolio.id },
+          data: { availableCash: 1000000 },
+        }),
+      ]);
+    }
+
+    return this.getPortfolio(userId);
+  }
+
+  /**
+   * AI Risk Guardian: scans user portfolio positions for exit signals
+   */
+  async getPortfolioSellSignals(userId: string): Promise<any[]> {
     const portfolio = await this.getPortfolio(userId);
-    if (!portfolio || !portfolio.positions || portfolio.positions.length === 0) {
+    if (!portfolio.positions || portfolio.positions.length === 0) {
       return [];
     }
 
-    const sellSignals = [];
-
-    for (const position of portfolio.positions) {
-      try {
-        const stock = position.stock;
-        if (!stock) continue;
-
-        let quote: any = null;
-        try {
-          quote = await this.stockService.getLatestQuote(stock.ticker);
-        } catch {
-          quote = null;
-        }
-
-        const currentPrice = (quote as any)?.price || (quote as any)?.regularMarketPrice || position.averagePrice;
-        const unrealizedPnLPercent = ((currentPrice - position.averagePrice) / position.averagePrice) * 100;
-
-        // Evaluate AI sell signal for this holding
-        const evaluation = await this.aiService.evaluatePortfolioSellOpportunity({
-          ticker: stock.ticker,
-          name: stock.name,
-          avgPrice: position.averagePrice,
-          currentPrice: currentPrice,
-          unrealizedPnLPercent: unrealizedPnLPercent,
+    const signals = await Promise.allSettled(
+      portfolio.positions.map(async (pos) => {
+        return this.aiService.evaluatePortfolioSellOpportunity({
+          ticker: pos.stock.ticker,
+          name: pos.stock.name,
+          avgPrice: pos.averagePrice,
+          currentPrice: pos.currentPrice,
+          unrealizedPnLPercent: pos.overallPnLPercent,
         });
+      })
+    );
 
-        // Filter: Show ONLY if confidence is >= 80% and recommendation is SELL or STRONG_SELL
-        if (evaluation && evaluation.confidenceScore >= 80 && ['SELL', 'STRONG_SELL'].includes(evaluation.recommendation)) {
-          sellSignals.push({
-            ...evaluation,
-            quantityHeld: position.quantity,
-            avgPurchasePrice: position.averagePrice,
-            currentPrice: currentPrice,
-            unrealizedPnLPercent: Number(unrealizedPnLPercent.toFixed(2)),
-          });
-        }
-      } catch (e) {
-        this.logger.error(`Error evaluating position for sell signals:`, e);
-      }
-    }
-
-    return sellSignals;
+    return signals
+      .filter((s): s is PromiseFulfilledResult<any> => s.status === 'fulfilled')
+      .map((s) => s.value)
+      .filter((val) => val && val.recommendation !== 'HOLD');
   }
 }

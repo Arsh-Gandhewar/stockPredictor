@@ -1,46 +1,58 @@
-import { Controller, Get, Post, Body, Headers, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, Req } from '@nestjs/common';
 import { PortfolioService } from './portfolio.service';
 import { TransactionType } from 'db';
+import { AuthGuard } from '../../common/guards/auth.guard';
+import { ExecuteTradeDto } from '../../common/dto/trade.dto';
 
 @Controller('portfolio')
+@UseGuards(AuthGuard)
 export class PortfolioController {
   constructor(private readonly portfolioService: PortfolioService) {}
 
   @Get()
-  async getPortfolio(@Headers('x-user-id') userId: string) {
-    // In a real app we'd extract the user ID from the Clerk JWT Token using a Guard
-    // For now, we will simulate it with a header or hardcoded 'test_user'
-    const id = userId || 'user_123';
-    return this.portfolioService.getPortfolio(id);
+  async getPortfolio(@Req() req: any) {
+    const userId = req.userId || 'default_user';
+    return this.portfolioService.getPortfolio(userId);
   }
 
   @Get('trades')
   async getAllTrades(
-    @Headers('x-user-id') userId: string,
+    @Req() req: any,
     @Query('ticker') ticker?: string,
     @Query('type') type?: TransactionType,
-  ) {
-    const id = userId || 'user_123';
-    return this.portfolioService.getAllTrades(id, ticker, type);
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ): Promise<any[]> {
+    const userId = req.userId || 'default_user';
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 50;
+    return this.portfolioService.getAllTrades(userId, ticker, type, pageNum, limitNum);
   }
 
   @Post('trade')
   async executeTrade(
-    @Headers('x-user-id') userId: string,
-    @Body() tradeData: { ticker: string; type: TransactionType; quantity: number }
+    @Req() req: any,
+    @Body() tradeData: ExecuteTradeDto
   ) {
-    const id = userId || 'user_123';
+    const userId = req.userId || 'default_user';
     return this.portfolioService.executeTrade(
-      id,
+      userId,
       tradeData.ticker,
       tradeData.type,
-      tradeData.quantity
+      tradeData.quantity,
+      tradeData.orderType
     );
   }
 
   @Get('sell-signals')
-  async getPortfolioSellSignals(@Headers('x-user-id') userId: string) {
-    const id = userId || 'user_123';
-    return this.portfolioService.getPortfolioSellSignals(id);
+  async getPortfolioSellSignals(@Req() req: any) {
+    const userId = req.userId || 'default_user';
+    return this.portfolioService.getPortfolioSellSignals(userId);
+  }
+
+  @Post('reset')
+  async resetPortfolio(@Req() req: any) {
+    const userId = req.userId || 'default_user';
+    return this.portfolioService.resetPortfolio(userId);
   }
 }

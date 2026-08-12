@@ -1,10 +1,14 @@
 import { Module } from '@nestjs/common';
-import { StockService } from './stock.service';
 import { StockController } from './stock.controller';
+import { StockService } from './stock.service';
+import { DatabaseModule } from '../../database/database.module';
+import { NewsModule } from '../news/news.module';
+import { YahooMarketDataProvider } from './providers/yahoo-market-data.provider';
 
 @Module({
-  providers: [StockService],
+  imports: [DatabaseModule, NewsModule],
   controllers: [StockController],
-  exports: [StockService]
+  providers: [StockService, YahooMarketDataProvider],
+  exports: [StockService, YahooMarketDataProvider],
 })
 export class StockModule {}

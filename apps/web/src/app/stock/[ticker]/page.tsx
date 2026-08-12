@@ -7,7 +7,6 @@ import {
   TrendingUp, 
   TrendingDown, 
   Clock, 
-  DollarSign, 
   Activity, 
   BarChart2, 
   ShieldCheck, 
@@ -17,10 +16,12 @@ import {
   Zap, 
   ArrowUpRight, 
   ArrowDownRight, 
-  Info 
+  Flame,
+  Layers,
+  Gauge
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { createChart, CandlestickSeries } from 'lightweight-charts';
+import { useEffect, useState } from 'react';
+import CandlestickChart from '@/components/charts/candlestick-chart';
 
 export default function StockDetailsPage() {
   const params = useParams();
@@ -32,86 +33,12 @@ export default function StockDetailsPage() {
   const [tradeType, setTradeType] = useState<'BUY' | 'SELL'>('BUY');
   const [tradeQuantity, setTradeQuantity] = useState<number>(10);
   const [tradeSuccessMsg, setTradeSuccessMsg] = useState<string | null>(null);
+  const [tradeErrorMsg, setTradeErrorMsg] = useState<string | null>(null);
 
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-  
   const { data: profile, isLoading: isProfileLoading } = useStockProfile(ticker);
   const { data: chartData, isLoading: isChartLoading } = useStockChart(ticker, selectedRange);
   const { data: portfolio } = usePortfolio();
   const executeTrade = useExecuteTrade();
-
-  useEffect(() => {
-    if (!chartContainerRef.current) return;
-    if (!chartData || chartData.length === 0) return;
-    
-    chartContainerRef.current.innerHTML = '';
-
-    const containerWidth = chartContainerRef.current.clientWidth || 800;
-
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { color: 'transparent' },
-        textColor: '#9ca3af',
-      },
-      grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
-      },
-      width: containerWidth,
-      height: 420,
-      timeScale: {
-        borderColor: '#374151',
-        timeVisible: true,
-      },
-    });
-
-    const candlestickSeries = chart.addSeries(CandlestickSeries, {
-      upColor: '#22c55e',
-      downColor: '#ef4444',
-      borderVisible: false,
-      wickUpColor: '#22c55e',
-      wickDownColor: '#ef4444',
-    });
-
-    // Sanitize, sort, and strictly deduplicate candle data by timestamp
-    const seenTimes = new Set<string | number>();
-    const sanitizedData = [...chartData]
-      .filter((c) => c && c.time && c.open != null && c.close != null && c.high != null && c.low != null)
-      .sort((a, b) => {
-        const timeA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
-        const timeB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
-        return timeA - timeB;
-      })
-      .filter((c) => {
-        if (seenTimes.has(c.time)) return false;
-        seenTimes.add(c.time);
-        return true;
-      });
-
-    if (sanitizedData.length > 0) {
-      candlestickSeries.setData(sanitizedData as any);
-      chart.timeScale().fitContent();
-    }
-
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    const resizeObserver = new ResizeObserver(() => {
-      handleResize();
-    });
-    resizeObserver.observe(chartContainerRef.current);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      resizeObserver.disconnect();
-      chart.remove();
-    };
-  }, [chartData, selectedRange, isProfileLoading]);
 
   const ranges = [
     { label: '1D', value: '1d' },
@@ -127,12 +54,12 @@ export default function StockDetailsPage() {
     return (
       <div className="flex flex-col justify-center items-center h-[60vh] gap-3">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        <p className="text-xs text-muted-foreground">Streaming real-time quote and historical records...</p>
+        <p className="text-xs text-muted-foreground">Streaming real-time quote, technicals, and catalyst data...</p>
       </div>
     );
   }
 
-  if (!profile) {
+  if (!profile || !profile.quote) {
     return (
       <div className="p-8 text-center space-y-4">
         <p className="text-muted-foreground">Stock "{ticker}" not found in monitored universe.</p>
@@ -146,11 +73,13 @@ export default function StockDetailsPage() {
     );
   }
 
-  const isGain = profile.changePercent >= 0;
-  const currentPrice = profile.price || 0;
+  const quote = profile.quote;
+  const isGain = quote.changePercent >= 0;
+  const currentPrice = quote.price || 0;
   const totalTradeAmount = currentPrice * tradeQuantity;
 
   const handleConfirmTrade = () => {
+    setTradeErrorMsg(null);
     executeTrade.mutate(
       { ticker, type: tradeType, quantity: tradeQuantity },
       {
@@ -161,6 +90,9 @@ export default function StockDetailsPage() {
             setTradeSuccessMsg(null);
           }, 1500);
         },
+        onError: (err: any) => {
+          setTradeErrorMsg(err.response?.data?.message || err.message || 'Trade execution failed');
+        }
       }
     );
   };
@@ -177,7 +109,7 @@ export default function StockDetailsPage() {
         </button>
         <span className="text-xs font-medium text-muted-foreground flex items-center gap-1.5">
           <Clock className="h-3 w-3" />
-          Data: {profile.freshness} • {new Date(profile.timestamp).toLocaleTimeString('en-IN')} IST
+          Data: {quote.freshness} • {new Date(quote.timestamp).toLocaleTimeString('en-IN', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })} IST
         </span>
       </div>
 
@@ -185,29 +117,29 @@ export default function StockDetailsPage() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 p-6 rounded-2xl bg-gradient-to-br from-card via-card to-card/60 border border-border/50 shadow-md">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
-              {profile.ticker.replace('.NS', '')}
+            <h1 className="text-3xl font-extrabold tracking-tight text-foreground font-mono">
+              {quote.ticker.replace('.NS', '')}
             </h1>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-primary/10 text-primary border border-primary/20">
-              {profile.exchange}
+              {quote.exchange || 'NSE'}
             </span>
-            {profile.sector && (
+            {profile.stock?.sector && (
               <span className="px-2.5 py-0.5 rounded-full text-xs font-medium bg-muted/60 text-muted-foreground">
-                {profile.sector}
+                {profile.stock.sector}
               </span>
             )}
           </div>
-          <p className="text-sm text-muted-foreground mt-1">{profile.name}</p>
+          <p className="text-sm text-muted-foreground mt-1">{quote.name}</p>
         </div>
 
         <div className="flex items-center gap-6">
           <div className="text-right">
-            <div className="text-3xl font-extrabold tracking-tight">
+            <div className="text-3xl font-extrabold tracking-tight font-mono">
               ₹{currentPrice.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
             </div>
             <div className={`text-sm font-bold flex items-center justify-end ${isGain ? 'text-green-500' : 'text-red-500'}`}>
               {isGain ? <ArrowUpRight className="h-4 w-4 mr-0.5" /> : <ArrowDownRight className="h-4 w-4 mr-0.5" />}
-              {isGain ? '+' : ''}{profile.change?.toFixed(2)} ({isGain ? '+' : ''}{profile.changePercent?.toFixed(2)}%)
+              {isGain ? '+' : ''}{quote.change?.toFixed(2)} ({isGain ? '+' : ''}{quote.changePercent?.toFixed(2)}%)
             </div>
           </div>
 
@@ -216,12 +148,43 @@ export default function StockDetailsPage() {
               setTradeType('BUY');
               setIsTradeModalOpen(true);
             }}
-            className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-sm shadow-md transition-all flex items-center gap-1.5"
+            className="px-5 py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-black font-extrabold text-sm shadow-md transition-all flex items-center gap-1.5"
           >
-            <Zap className="h-4 w-4" /> Trade
+            <Zap className="h-4 w-4" /> Paper Trade
           </button>
         </div>
       </div>
+
+      {/* ── "Why is this Stock Moving Today?" Catalyst Engine ── */}
+      {profile.catalyst && (
+        <Card className="border-primary/30 bg-gradient-to-r from-primary/10 via-card to-card shadow-sm overflow-hidden">
+          <CardHeader className="py-3 px-6 border-b border-primary/20 flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Flame className="h-4 w-4 text-amber-400 animate-pulse" />
+              <CardTitle className="text-sm font-bold text-foreground">
+                Why is {quote.ticker.replace('.NS', '')} Moving Today?
+              </CardTitle>
+            </div>
+            <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+              {profile.catalyst.catalystType.replace(/_/g, ' ')}
+            </span>
+          </CardHeader>
+          <CardContent className="p-5 space-y-3">
+            <p className="text-xs font-semibold text-foreground leading-relaxed">
+              {profile.catalyst.primaryDriver}
+            </p>
+
+            <div className="grid sm:grid-cols-2 gap-2 text-xs pt-1">
+              {profile.catalyst.keyFactors?.map((f, i) => (
+                <div key={i} className="flex items-center gap-2 p-2.5 rounded-lg bg-muted/40 border border-border/30 text-muted-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                  <span className="text-[11px]">{f}</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Candlestick Chart with Range Selector ── */}
       <Card className="border-border/50 bg-card/60 shadow-sm overflow-hidden">
@@ -232,7 +195,6 @@ export default function StockDetailsPage() {
               <CardTitle className="text-sm font-bold">Interactive Price Action</CardTitle>
             </div>
 
-            {/* Timeframe selector */}
             <div className="flex items-center p-1 rounded-lg bg-muted/60 border border-border/40 text-xs font-semibold">
               {ranges.map((r) => (
                 <button
@@ -257,66 +219,107 @@ export default function StockDetailsPage() {
               <span className="text-xs text-muted-foreground font-semibold">Rendering candles for {selectedRange.toUpperCase()}...</span>
             </div>
           )}
-          <div ref={chartContainerRef} className="w-full h-[420px]" />
+          <CandlestickChart data={chartData || []} height={420} />
         </CardContent>
       </Card>
 
-      {/* ── Key Metrics & Financials ── */}
+      {/* ── Key Metrics, Technical Indicators & AI Thesis ── */}
       <div className="grid gap-6 md:grid-cols-3">
-        {/* Left 2 Cols: Fundamental Data */}
+        {/* Left 2 Cols: Fundamental Ratios & Technicals */}
         <div className="md:col-span-2 space-y-6">
+          {/* Key Financial Ratios */}
           <Card className="border-border/50 bg-card/60 shadow-sm">
             <CardHeader className="pb-3 border-b border-border/40">
               <CardTitle className="text-base font-bold flex items-center gap-2">
-                <Activity className="h-4 w-4 text-primary" /> Key Financial Ratios
+                <Activity className="h-4 w-4 text-primary" /> Key Financial Metrics
               </CardTitle>
             </CardHeader>
             <CardContent className="p-6">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 text-xs font-mono">
                 <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
-                  <div className="text-muted-foreground mb-1">52-Week High</div>
+                  <div className="text-muted-foreground mb-1 font-sans">52-Week High</div>
                   <div className="font-bold text-foreground">
-                    ₹{profile.weekHigh52 ? profile.weekHigh52.toFixed(2) : 'N/A'}
+                    ₹{quote.weekHigh52 ? quote.weekHigh52.toFixed(2) : 'N/A'}
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
-                  <div className="text-muted-foreground mb-1">52-Week Low</div>
+                  <div className="text-muted-foreground mb-1 font-sans">52-Week Low</div>
                   <div className="font-bold text-foreground">
-                    ₹{profile.weekLow52 ? profile.weekLow52.toFixed(2) : 'N/A'}
+                    ₹{quote.weekLow52 ? quote.weekLow52.toFixed(2) : 'N/A'}
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
-                  <div className="text-muted-foreground mb-1">Price-to-Earnings (P/E)</div>
+                  <div className="text-muted-foreground mb-1 font-sans">Price-to-Earnings (P/E)</div>
                   <div className="font-bold text-foreground">
-                    {profile.pe ? profile.pe.toFixed(2) : 'N/A'}
+                    {quote.pe ? quote.pe.toFixed(2) : 'N/A'}
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
-                  <div className="text-muted-foreground mb-1">Market Cap</div>
+                  <div className="text-muted-foreground mb-1 font-sans">Day High</div>
                   <div className="font-bold text-foreground">
-                    {profile.marketCap ? `₹${(profile.marketCap / 1e7).toFixed(0)} Cr` : 'N/A'}
+                    ₹{quote.dayHigh?.toFixed(2)}
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
-                  <div className="text-muted-foreground mb-1">Opening Price</div>
+                  <div className="text-muted-foreground mb-1 font-sans">Day Low</div>
                   <div className="font-bold text-foreground">
-                    ₹{profile.open?.toFixed(2)}
+                    ₹{quote.dayLow?.toFixed(2)}
                   </div>
                 </div>
 
                 <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
-                  <div className="text-muted-foreground mb-1">Market State</div>
-                  <div className="font-bold text-primary">
-                    {profile.marketState}
+                  <div className="text-muted-foreground mb-1 font-sans">Market State</div>
+                  <div className="font-bold text-primary font-sans">
+                    {quote.marketState}
                   </div>
                 </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* Technical Indicators */}
+          {profile.technicals && (
+            <Card className="border-border/50 bg-card/60 shadow-sm">
+              <CardHeader className="pb-3 border-b border-border/40">
+                <CardTitle className="text-base font-bold flex items-center gap-2">
+                  <Gauge className="h-4 w-4 text-primary" /> Technical Momentum & Moving Averages
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs font-mono">
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div className="text-muted-foreground mb-1 font-sans">RSI (14)</div>
+                    <div className="font-bold text-foreground text-sm">{profile.technicals.rsi}</div>
+                    <div className="text-[10px] text-muted-foreground font-sans mt-0.5">{profile.technicals.rsiStance}</div>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div className="text-muted-foreground mb-1 font-sans">MACD Trend</div>
+                    <div className="font-bold text-foreground text-sm">{profile.technicals.macd?.trend}</div>
+                    <div className="text-[10px] text-muted-foreground font-sans mt-0.5">Hist: {profile.technicals.macd?.histogram}</div>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div className="text-muted-foreground mb-1 font-sans">50-Day SMA</div>
+                    <div className="font-bold text-foreground text-sm">₹{profile.technicals.sma50?.toFixed(2)}</div>
+                    <div className="text-[10px] text-muted-foreground font-sans mt-0.5">Medium Baseline</div>
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-muted/30 border border-border/30">
+                    <div className="text-muted-foreground mb-1 font-sans">Golden Cross</div>
+                    <div className={`font-bold text-sm font-sans ${profile.technicals.goldenCross ? 'text-green-400' : 'text-amber-400'}`}>
+                      {profile.technicals.goldenCross ? 'Bullish Alignment' : 'Neutral / Under'}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground font-sans mt-0.5">SMA 50 vs 200</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right Col: Structured AI Insight */}
@@ -327,43 +330,34 @@ export default function StockDetailsPage() {
                 <CardTitle className="text-sm font-bold text-primary flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4" /> AI Research Thesis
                 </CardTitle>
-                {profile.insight && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary">
-                    {profile.insight.confidenceScore}% Confidence
-                  </span>
-                )}
+                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary">
+                  QuantX Guardian
+                </span>
               </div>
             </CardHeader>
             <CardContent className="p-5 space-y-4 text-xs">
-              {profile.insight ? (
-                <>
-                  <div className="flex items-center justify-between p-3 rounded-lg bg-background/60 border border-border/40">
-                    <span className="text-muted-foreground font-medium">Stance</span>
-                    <span className="font-extrabold text-sm text-green-500">{profile.insight.recommendation}</span>
-                  </div>
+              <div className="flex items-center justify-between p-3 rounded-lg bg-background/60 border border-border/40">
+                <span className="text-muted-foreground font-medium">Stance</span>
+                <span className={`font-extrabold text-sm ${isGain ? 'text-green-400' : 'text-amber-400'}`}>
+                  {isGain ? 'BULLISH MOMENTUM' : 'CONSOLIDATION WATCH'}
+                </span>
+              </div>
 
-                  <div className="space-y-1.5">
-                    <span className="font-semibold text-foreground">Thesis & Drivers:</span>
-                    <p className="text-muted-foreground leading-relaxed bg-muted/30 p-3 rounded-lg border border-border/30">
-                      {profile.insight.reasoning}
-                    </p>
-                  </div>
+              <div className="space-y-1.5">
+                <span className="font-semibold text-foreground">Quantitative View:</span>
+                <p className="text-muted-foreground leading-relaxed bg-muted/30 p-3 rounded-lg border border-border/30">
+                  {profile.catalyst?.primaryDriver || `Trading actively with institutional liquidity support in ${profile.stock?.sector || 'equities'} sector.`}
+                </p>
+              </div>
 
-                  <div className="space-y-1.5">
-                    <span className="font-semibold text-foreground flex items-center gap-1">
-                      <AlertTriangle className="h-3.5 w-3.5 text-amber-500" /> Invalidation Level:
-                    </span>
-                    <p className="text-muted-foreground bg-amber-500/5 border border-amber-500/20 p-2.5 rounded-lg">
-                      Thesis is invalidated on high-volume close below 50-day moving average.
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <div className="py-6 text-center text-muted-foreground">
-                  <ShieldCheck className="h-8 w-8 mx-auto mb-2 opacity-40 text-primary" />
-                  Generating quant research models...
-                </div>
-              )}
+              <div className="space-y-1.5">
+                <span className="font-semibold text-foreground flex items-center gap-1">
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" /> Invalidation Level:
+                </span>
+                <p className="text-muted-foreground bg-amber-500/5 border border-amber-500/20 p-2.5 rounded-lg font-mono">
+                  Thesis is invalidated on high-volume close below ₹{profile.catalyst?.invalidationLevel?.toFixed(2) || (currentPrice * 0.95).toFixed(2)}.
+                </p>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -391,11 +385,18 @@ export default function StockDetailsPage() {
               </div>
             ) : (
               <>
+                {tradeErrorMsg && (
+                  <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/30 text-destructive text-xs font-bold mb-3 flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 shrink-0" />
+                    <span>{tradeErrorMsg}</span>
+                  </div>
+                )}
+                
                 <div className="grid grid-cols-2 gap-2 p-1 rounded-lg bg-muted/60 border border-border/40 text-xs font-bold">
                   <button
                     onClick={() => setTradeType('BUY')}
                     className={`py-2 rounded-md transition-all ${
-                      tradeType === 'BUY' ? 'bg-primary text-black font-bold shadow-sm' : 'text-muted-foreground'
+                      tradeType === 'BUY' ? 'bg-white text-black font-extrabold shadow-sm' : 'text-muted-foreground'
                     }`}
                   >
                     BUY
@@ -413,38 +414,38 @@ export default function StockDetailsPage() {
                 <div className="space-y-3 text-xs">
                   <div className="flex justify-between items-center">
                     <span className="text-muted-foreground">Market Price</span>
-                    <span className="font-bold text-foreground">₹{currentPrice.toFixed(2)}</span>
+                    <span className="font-bold text-foreground font-mono">₹{currentPrice.toFixed(2)}</span>
                   </div>
 
                   <div>
-                    <label className="text-muted-foreground block mb-1">Quantity (Shares)</label>
+                    <label className="text-muted-foreground block mb-1 font-semibold">Quantity (Shares)</label>
                     <input
                       type="number"
                       min="1"
                       value={tradeQuantity}
                       onChange={(e) => setTradeQuantity(Math.max(1, parseInt(e.target.value) || 1))}
-                      className="w-full h-10 rounded-lg border border-input bg-muted/40 px-3 text-sm font-bold text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
+                      className="w-full h-10 rounded-lg border border-input bg-muted/40 px-3 text-sm font-bold text-foreground font-mono focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-primary"
                     />
                   </div>
 
                   <div className="flex justify-between items-center p-3 rounded-lg bg-muted/30 border border-border/30">
                     <span className="text-muted-foreground">Estimated Total</span>
-                    <span className="font-extrabold text-sm text-foreground">
+                    <span className="font-extrabold text-sm text-foreground font-mono">
                       ₹{totalTradeAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                     </span>
                   </div>
 
                   <div className="flex justify-between items-center text-[11px] text-muted-foreground">
                     <span>Virtual Cash Balance</span>
-                    <span>₹{portfolio?.availableCash ? portfolio.availableCash.toLocaleString('en-IN') : '10,00,000'}</span>
+                    <span className="font-mono">₹{portfolio?.availableCash ? portfolio.availableCash.toLocaleString('en-IN') : '10,00,000'}</span>
                   </div>
                 </div>
 
                 <button
                   onClick={handleConfirmTrade}
                   disabled={executeTrade.isPending}
-                  className={`w-full py-3 rounded-xl font-bold text-sm transition-all shadow-md disabled:opacity-50 ${
-                    tradeType === 'BUY' ? 'bg-primary text-black font-bold hover:bg-primary/90' : 'bg-destructive text-white font-bold hover:bg-destructive/90'
+                  className={`w-full py-3 rounded-xl font-extrabold text-sm transition-all shadow-md disabled:opacity-50 ${
+                    tradeType === 'BUY' ? 'bg-white text-black font-extrabold hover:bg-neutral-200' : 'bg-destructive text-white font-bold hover:bg-destructive/90'
                   }`}
                 >
                   {executeTrade.isPending ? 'Executing Virtual Order...' : `Confirm ${tradeType} Order`}

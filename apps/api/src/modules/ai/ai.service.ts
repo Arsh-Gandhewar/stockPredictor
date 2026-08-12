@@ -15,13 +15,26 @@ export class AiService {
     }
     this.genAI = new GoogleGenerativeAI(apiKey);
     
-    const modelName = this.configService.get<string>('GEMINI_MODEL') || 'gemini-1.5-pro-latest';
+    const modelName = this.configService.get<string>('GEMINI_MODEL') || 'gemini-1.5-pro';
     this.model = this.genAI.getGenerativeModel({
       model: modelName,
       generationConfig: {
         temperature: 0, // Strict, factual responses
       },
     });
+  }
+
+  private cleanAndParseJson<T>(text: string, fallback: T): T {
+    try {
+      let cleaned = text.trim();
+      const match = cleaned.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      if (match && match[1]) {
+        cleaned = match[1].trim();
+      }
+      return JSON.parse(cleaned) as T;
+    } catch {
+      return fallback;
+    }
   }
 
   /**
@@ -60,15 +73,7 @@ export class AiService {
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
-      
-      // Clean up markdown block if present
-      if (text.startsWith('\`\`\`json')) {
-        text = text.substring(7, text.length - 3).trim();
-      } else if (text.startsWith('\`\`\`')) {
-        text = text.substring(3, text.length - 3).trim();
-      }
-
-      return JSON.parse(text);
+      return this.cleanAndParseJson<any>(text, null);
     } catch (error) {
       this.logger.error(`Failed to generate AI insight for ${stockTicker}`, error);
       throw error;
@@ -98,21 +103,14 @@ export class AiService {
 
     try {
       const flashModel = this.genAI.getGenerativeModel({
-        model: this.configService.get<string>('GEMINI_FLASH_MODEL') || 'gemini-1.5-flash-latest',
+        model: this.configService.get<string>('GEMINI_FLASH_MODEL') || 'gemini-1.5-flash',
         generationConfig: { temperature: 0 },
       });
       
       const result = await flashModel.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
-      
-      if (text.startsWith('\`\`\`json')) {
-        text = text.substring(7, text.length - 3).trim();
-      } else if (text.startsWith('\`\`\`')) {
-        text = text.substring(3, text.length - 3).trim();
-      }
-
-      return JSON.parse(text);
+      return this.cleanAndParseJson<any>(text, null);
     } catch (error) {
       this.logger.error(`Failed to analyze news sentiment`, error);
       throw error;
@@ -160,36 +158,30 @@ export class AiService {
       }
     `;
 
+    const fallback = {
+      ticker: holding.ticker,
+      name: holding.name,
+      recommendation: holding.unrealizedPnLPercent > 15 ? 'SELL' : 'HOLD',
+      confidenceScore: holding.unrealizedPnLPercent > 15 ? 85 : 50,
+      targetExitPrice: holding.currentPrice * 1.02,
+      financialReasoning: `Profit target reached (+${holding.unrealizedPnLPercent.toFixed(1)}%). Technical indicators signal potential consolidation.`,
+      newsImpact: 'Neutral market sentiment with sector profit booking observed.',
+      gmpAnalysis: 'Grey market momentum indicates upper bounds reached near current levels.'
+    };
+
     try {
       const flashModel = this.genAI.getGenerativeModel({
-        model: this.configService.get<string>('GEMINI_FLASH_MODEL') || 'gemini-1.5-flash-latest',
+        model: this.configService.get<string>('GEMINI_FLASH_MODEL') || 'gemini-1.5-flash',
         generationConfig: { temperature: 0 },
       });
 
       const result = await flashModel.generateContent(prompt);
       const response = await result.response;
       let text = response.text();
-
-      if (text.startsWith('```json')) {
-        text = text.substring(7, text.length - 3).trim();
-      } else if (text.startsWith('```')) {
-        text = text.substring(3, text.length - 3).trim();
-      }
-
-      return JSON.parse(text);
+      return this.cleanAndParseJson<any>(text, fallback);
     } catch (error) {
       this.logger.error(`Failed to evaluate sell opportunity for ${holding.ticker}`, error);
-      // Fallback response for fallback safety
-      return {
-        ticker: holding.ticker,
-        name: holding.name,
-        recommendation: holding.unrealizedPnLPercent > 15 ? 'SELL' : 'HOLD',
-        confidenceScore: holding.unrealizedPnLPercent > 15 ? 85 : 50,
-        targetExitPrice: holding.currentPrice * 1.02,
-        financialReasoning: `Profit target reached (+${holding.unrealizedPnLPercent.toFixed(1)}%). Technical indicators signal potential consolidation.`,
-        newsImpact: 'Neutral market sentiment with sector profit booking observed.',
-        gmpAnalysis: 'Grey market momentum indicates upper bounds reached near current levels.'
-      };
+      return fallback;
     }
   }
 }

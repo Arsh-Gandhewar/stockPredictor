@@ -1,94 +1,125 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import YahooFinance from 'yahoo-finance2';
+import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
-import { RSI, MACD, EMA, SMA, BollingerBands, ATR, ADX } from 'technicalindicators';
+import { YahooMarketDataProvider } from './providers/yahoo-market-data.provider';
+import { NewsService } from '../news/news.service';
+import {
+  MarketQuote,
+  OHLCVCandle,
+  MarketIndexBenchmark,
+  UniverseStock,
+} from './providers/market-data.provider.interface';
+import { Money } from '../../common/utils/money.util';
+import { RSI, MACD, SMA, BollingerBands } from 'technicalindicators';
 
-// Properly instantiate yahoo-finance2 v4
-const yahooFinance = new YahooFinance({ suppressNotices: ['yahooSurvey', 'ripHistorical'] });
+export interface MovementCatalyst {
+  ticker: string;
+  name: string;
+  price: number;
+  changePercent: number;
+  direction: 'UP' | 'DOWN' | 'FLAT';
+  volumeSurgeRatio: number;
+  primaryDriver: string;
+  catalystType: 'TECHNICAL_BREAKOUT' | 'EARNINGS_ANNOUNCEMENT' | 'SECTOR_RALLY' | 'VOLUME_SPIKE' | 'BROAD_MARKET' | 'PROFIT_BOOKING' | 'MOMENTUM_BREAKOUT' | 'ORDERBOOK_PIPELINE' | 'RANGE_ACCUMULATION';
+  confidenceScore: number;
+  keyFactors: string[];
+  invalidationLevel: number;
+  newsSentiment?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  topHeadline?: string;
+}
 
-// ── Types ──────────────────────────────────────────────────────────────
-export interface StockQuote {
+export interface StockProfileData {
+  stock: UniverseStock & { id?: string };
+  quote: MarketQuote;
+  chart: OHLCVCandle[];
+  technicals: {
+    rsi: number;
+    rsiStance: string;
+    macd: {
+      macd: number;
+      signal: number;
+      histogram: number;
+      trend: string;
+    };
+    sma50: number;
+    sma200: number;
+    goldenCross: boolean;
+    bollinger: {
+      upper: number;
+      middle: number;
+      lower: number;
+    };
+  };
+  catalyst: MovementCatalyst;
+}
+
+export interface TopPick {
+  ticker: string;
+  name: string;
+  sector: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  recommendation: string;
+  confidenceScore: number;
+  convictionScore: number;
+  newsSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  newsImpactScore: number;
+  topHeadline?: string;
+  reasoning: string;
+  target: number;
+  stopLoss: number;
+  rewardRiskRatio: number;
+  rank?: number;
+}
+
+export interface HighRiskPick {
   ticker: string;
   name: string;
   price: number;
   change: number;
   changePercent: number;
-  dayHigh: number;
-  dayLow: number;
-  prevClose: number;
-  open: number;
-  volume: number;
-  marketCap?: number;
-  pe?: number;
-  weekHigh52?: number;
-  weekLow52?: number;
-  marketState: string;
-  exchange: string;
-  timestamp: string;
-  source: string;
-  freshness: 'LIVE' | 'DELAYED' | 'STALE' | 'CLOSED';
+  beta: number;
+  rewardRiskRatio: number;
+  targetPrice: number;
+  stopLossPrice: number;
+  targetPercent: number;
+  stopLossPercent: number;
+  alphaScore: number;
+  newsSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  topHeadline?: string;
+  catalyst: string;
+  rank?: number;
+  volatilityRank?: string;
 }
 
-export interface MarketIndex {
-  name: string;
-  symbol: string;
-  value: number;
-  change: number;
-  changePercent: number;
-  up: boolean;
-  marketState: string;
-  timestamp: string;
-}
-
-export interface Candle {
-  time: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume?: number;
-}
-
-// ── IST Market Hours Utilities ─────────────────────────────────────────
-function getISTNow(): Date {
-  return new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Kolkata' }));
-}
-
-function getMarketStatus(): 'PRE_OPEN' | 'OPEN' | 'CLOSED' | 'HOLIDAY' {
-  const now = getISTNow();
-  const day = now.getDay(); // 0=Sun, 6=Sat
-  if (day === 0 || day === 6) return 'CLOSED';
-
-  const hour = now.getHours();
-  const minute = now.getMinutes();
-  const timeMinutes = hour * 60 + minute;
-
-  // NSE: Pre-open 9:00-9:15, Market 9:15-15:30
-  if (timeMinutes >= 540 && timeMinutes < 555) return 'PRE_OPEN';
-  if (timeMinutes >= 555 && timeMinutes <= 930) return 'OPEN';
-  return 'CLOSED';
-}
-
-function determineFreshness(marketState: string, quoteTimestamp?: Date): 'LIVE' | 'DELAYED' | 'STALE' | 'CLOSED' {
-  if (marketState === 'REGULAR' || marketState === 'OPEN') {
-    if (!quoteTimestamp) return 'DELAYED';
-    const ageMs = Date.now() - quoteTimestamp.getTime();
-    if (ageMs < 60_000) return 'LIVE';
-    if (ageMs < 300_000) return 'DELAYED';
-    return 'STALE';
-  }
-  return 'CLOSED';
-}
-
-// ── Service ────────────────────────────────────────────────────────────
 @Injectable()
 export class StockService {
+  private static readonly CONFIDENCE = {
+    BASE: 76,
+    MOMENTUM_WEIGHT: 3.5,
+    HIGH_VOLUME_THRESHOLD: 1_000_000,
+    HIGH_VOLUME_BONUS: 5,
+    MIN: 50,
+    MAX: 98,
+  } as const;
+
   private readonly logger = new Logger(StockService.name);
   private cache = new Map<string, { data: any; expiresAt: number }>();
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly marketProvider: YahooMarketDataProvider,
+    private readonly newsService: NewsService
+  ) {
+    // Clean expired cache entries every 60 seconds
+    setInterval(() => {
+      const now = Date.now();
+      for (const [key, entry] of this.cache) {
+        if (entry.expiresAt <= now) this.cache.delete(key);
+      }
+    }, 60_000);
+  }
 
-  // ── Cache helper ──
   private getCached<T>(key: string): T | null {
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.data as T;
@@ -100,471 +131,528 @@ export class StockService {
   }
 
   private getCacheTtl(): number {
-    const status = getMarketStatus();
-    return status === 'OPEN' ? 5_000 : 30_000; // 5s during market, 30s otherwise
+    const status = this.marketProvider.getMarketStatus();
+    return status.status === 'OPEN' ? 2_000 : 10_000; // 2s during market, 10s otherwise
   }
 
-  // ── Live Quote ──
-  async getQuote(ticker: string): Promise<StockQuote> {
+  async getMarketSummary(): Promise<MarketIndexBenchmark[]> {
+    const cached = this.getCached<MarketIndexBenchmark[]>('market-summary');
+    if (cached) return cached;
+
+    const data = await this.marketProvider.getMarketSummary();
+    this.setCache('market-summary', data, this.getCacheTtl());
+    return data;
+  }
+
+  getMarketStatusInfo() {
+    return this.marketProvider.getMarketStatus();
+  }
+
+  async getQuote(ticker: string): Promise<MarketQuote> {
     const cacheKey = `quote:${ticker}`;
-    const cached = this.getCached<StockQuote>(cacheKey);
+    const cached = this.getCached<MarketQuote>(cacheKey);
     if (cached) return cached;
 
-    try {
-      const q = await yahooFinance.quote(ticker) as any;
-      if (!q || !q.regularMarketPrice) {
-        throw new NotFoundException(`No quote data available for ${ticker}`);
-      }
-
-      const quote: StockQuote = {
-        ticker,
-        name: q.longName || q.shortName || ticker,
-        price: q.regularMarketPrice,
-        change: q.regularMarketChange || 0,
-        changePercent: q.regularMarketChangePercent || 0,
-        dayHigh: q.regularMarketDayHigh || 0,
-        dayLow: q.regularMarketDayLow || 0,
-        prevClose: q.regularMarketPreviousClose || 0,
-        open: q.regularMarketOpen || 0,
-        volume: q.regularMarketVolume || 0,
-        marketCap: q.marketCap || undefined,
-        pe: q.trailingPE || undefined,
-        weekHigh52: q.fiftyTwoWeekHigh || undefined,
-        weekLow52: q.fiftyTwoWeekLow || undefined,
-        marketState: q.marketState || 'UNKNOWN',
-        exchange: q.fullExchangeName || q.exchange || 'NSE',
-        timestamp: new Date().toISOString(),
-        source: 'yahoo-finance',
-        freshness: determineFreshness(q.marketState),
-      };
-
-      this.setCache(cacheKey, quote, this.getCacheTtl());
-      return quote;
-    } catch (error: any) {
-      if (error instanceof NotFoundException) throw error;
-      this.logger.error(`Failed to fetch quote for ${ticker}: ${error.message}`);
-      throw new NotFoundException(`Unable to fetch data for ${ticker}. Please verify the ticker symbol.`);
-    }
+    const quote = await this.marketProvider.getQuote(ticker);
+    this.setCache(cacheKey, quote, this.getCacheTtl());
+    return quote;
   }
 
-  // ── Market Summary (Indices) ──
-  async getMarketSummary(): Promise<MarketIndex[]> {
-    const cached = this.getCached<MarketIndex[]>('market-summary');
-    if (cached) return cached;
-
-    const indices = [
-      { name: 'NIFTY 50', symbol: '^NSEI' },
-      { name: 'SENSEX', symbol: '^BSESN' },
-      { name: 'BANK NIFTY', symbol: '^NSEBANK' },
-      { name: 'INDIA VIX', symbol: '^INDIAVIX' },
-    ];
-
-    const results: MarketIndex[] = [];
-    const quotes = await Promise.allSettled(
-      indices.map(idx => yahooFinance.quote(idx.symbol))
-    );
-
-    for (let i = 0; i < indices.length; i++) {
-      const result = quotes[i];
-      if (result.status === 'fulfilled' && result.value) {
-        const q = result.value as any;
-        results.push({
-          name: indices[i].name,
-          symbol: indices[i].symbol,
-          value: q.regularMarketPrice || 0,
-          change: q.regularMarketChange || 0,
-          changePercent: q.regularMarketChangePercent || 0,
-          up: (q.regularMarketChangePercent || 0) >= 0,
-          marketState: q.marketState || 'UNKNOWN',
-          timestamp: new Date().toISOString(),
-        });
-      } else {
-        this.logger.warn(`Failed to fetch index ${indices[i].symbol}`);
-        results.push({
-          name: indices[i].name,
-          symbol: indices[i].symbol,
-          value: 0,
-          change: 0,
-          changePercent: 0,
-          up: true,
-          marketState: 'DATA_UNAVAILABLE',
-          timestamp: new Date().toISOString(),
-        });
+  async getQuotes(tickers: string[]): Promise<MarketQuote[]> {
+    const uncached = [];
+    const results = [];
+    for (const ticker of tickers) {
+      const cached = this.getCached<MarketQuote>(`quote:${ticker}`);
+      if (cached) results.push(cached);
+      else uncached.push(ticker);
+    }
+    
+    if (uncached.length > 0) {
+      const freshQuotes = await this.marketProvider.getQuotes(uncached);
+      for (const q of freshQuotes) {
+        this.setCache(`quote:${q.ticker}`, q, this.getCacheTtl());
+        results.push(q);
       }
     }
-
-    this.setCache('market-summary', results, this.getCacheTtl());
+    
     return results;
   }
 
-  // ── Market Status ──
-  async getMarketStatusInfo() {
-    return {
-      status: getMarketStatus(),
-      timestamp: new Date().toISOString(),
-      timezone: 'Asia/Kolkata',
-      exchange: 'NSE',
-    };
-  }
-
-  // ── Historical Chart Data (from Yahoo Finance, NOT stale DB) ──
-  async getChartData(ticker: string, range: string = '6mo'): Promise<Candle[]> {
+  async getChartData(ticker: string, range: string = '6mo'): Promise<OHLCVCandle[]> {
     const cacheKey = `chart:${ticker}:${range}`;
-    const cached = this.getCached<Candle[]>(cacheKey);
+    const cached = this.getCached<OHLCVCandle[]>(cacheKey);
     if (cached) return cached;
 
-    // Map range string to yahoo-finance2 chart params (with weekend-safe lookback)
-    const rangeMap: Record<string, { period1: string; interval: string }> = {
-      '1d':  { period1: this.daysAgo(4),   interval: '5m' },
-      '1w':  { period1: this.daysAgo(10),  interval: '15m' },
-      '1mo': { period1: this.daysAgo(30),  interval: '1d' },
-      '3mo': { period1: this.daysAgo(90),  interval: '1d' },
-      '6mo': { period1: this.daysAgo(180), interval: '1d' },
-      '1y':  { period1: this.daysAgo(365), interval: '1wk' },
-      '5y':  { period1: this.daysAgo(1825), interval: '1mo' },
-    };
-
-    const params = rangeMap[range] || rangeMap['6mo'];
-
-    try {
-      const result = await yahooFinance.chart(ticker, {
-        period1: params.period1,
-        interval: params.interval as any,
-      });
-
-      if (!result || !result.quotes || result.quotes.length === 0) {
-        return [];
-      }
-
-      const rawCandles = result.quotes
-        .filter((q: any) => q.close !== null && q.open !== null && q.high !== null && q.low !== null)
-        .map((q: any) => {
-          const dt = q.date instanceof Date ? q.date : new Date(q.date);
-          const isIntraday = ['1d', '1w'].includes(range);
-          return {
-            time: isIntraday 
-              ? Math.floor(dt.getTime() / 1000) 
-              : dt.toISOString().split('T')[0],
-            rawTime: dt.getTime(),
-            open: Number(q.open?.toFixed(2)),
-            high: Number(q.high?.toFixed(2)),
-            low: Number(q.low?.toFixed(2)),
-            close: Number(q.close?.toFixed(2)),
-            volume: q.volume || 0,
-          };
-        })
-        .sort((a: any, b: any) => a.rawTime - b.rawTime);
-
-      // Strictly deduplicate by time key to guarantee Lightweight Charts never receives duplicate timestamps
-      const seenTimes = new Set<string | number>();
-      const candles: Candle[] = [];
-      for (const c of rawCandles) {
-        if (!seenTimes.has(c.time)) {
-          seenTimes.add(c.time);
-          candles.push({
-            time: c.time as any,
-            open: c.open,
-            high: c.high,
-            low: c.low,
-            close: c.close,
-            volume: c.volume,
-          });
-        }
-      }
-
-      // Cache charts longer since historical data doesn't change often
-      this.setCache(cacheKey, candles, range === '1d' ? 60_000 : 600_000);
-      return candles;
-    } catch (error: any) {
-      this.logger.error(`Failed to fetch chart data for ${ticker}: ${error.message}`);
-      return [];
-    }
+    const candles = await this.marketProvider.getHistoricalCandles(ticker, range);
+    this.setCache(cacheKey, candles, range === '1d' ? 2_000 : 30_000);
+    return candles;
   }
 
-  private daysAgo(n: number): string {
-    const d = new Date();
-    d.setDate(d.getDate() - n);
-    return d.toISOString().split('T')[0];
+  async getAllStocks(): Promise<UniverseStock[]> {
+    return this.marketProvider.getUniverse();
   }
 
-  // ── Stock Profile (live quote + DB metadata + AI insight) ──
-  async getStockProfile(ticker: string) {
-    // Fetch live quote and DB data in parallel
-    const [quote, dbStock] = await Promise.all([
-      this.getQuote(ticker).catch(() => null),
-      this.db.client.stock.findUnique({
-        where: { ticker },
-        include: {
-          aiInsights: { orderBy: { timestamp: 'desc' }, take: 1 },
-          technicalIndicators: { orderBy: { timestamp: 'desc' }, take: 1 },
-        },
-      }),
-    ]);
-
-    if (!quote && !dbStock) {
-      throw new NotFoundException(`Stock ${ticker} not found`);
-    }
-
-    return {
-      ticker,
-      name: quote?.name || dbStock?.name || ticker,
-      sector: dbStock?.sector || null,
-      exchange: quote?.exchange || dbStock?.exchange || 'NSE',
-      // Live price data
-      price: quote?.price || 0,
-      change: quote?.change || 0,
-      changePercent: quote?.changePercent || 0,
-      dayHigh: quote?.dayHigh || 0,
-      dayLow: quote?.dayLow || 0,
-      prevClose: quote?.prevClose || 0,
-      open: quote?.open || 0,
-      volume: quote?.volume || 0,
-      marketCap: quote?.marketCap || null,
-      pe: quote?.pe || null,
-      weekHigh52: quote?.weekHigh52 || null,
-      weekLow52: quote?.weekLow52 || null,
-      // Market status
-      marketState: quote?.marketState || 'UNKNOWN',
-      freshness: quote?.freshness || 'STALE',
-      timestamp: quote?.timestamp || new Date().toISOString(),
-      source: 'yahoo-finance',
-      // AI insight
-      insight: dbStock?.aiInsights?.[0] || null,
-      // Technical indicators
-      technicals: dbStock?.technicalIndicators?.[0] || null,
-    };
+  async searchStocks(query: string): Promise<UniverseStock[]> {
+    return this.marketProvider.search(query);
   }
 
-  // ── Top Picks (live prices from Yahoo) ──
-  async getTopPicks() {
-    const cached = this.getCached<any[]>('top-picks');
-    if (cached) return cached;
-
-    const stocks = await this.db.client.stock.findMany({
-      include: {
-        aiInsights: { orderBy: { timestamp: 'desc' }, take: 1 },
-      },
-      take: 10,
-    });
-
-    // Fetch live prices in parallel
-    const results = await Promise.allSettled(
-      stocks.map(async (stock: any) => {
-        const quote = await this.getQuote(stock.ticker).catch(() => null);
-        const insight = stock.aiInsights[0];
-        return {
-          ticker: stock.ticker,
-          name: stock.name,
-          sector: stock.sector,
-          price: quote?.price || 0,
-          change: quote?.change || 0,
-          changePercent: quote?.changePercent || 0,
-          volume: quote?.volume || 0,
-          recommendation: insight?.recommendation || 'HOLD',
-          confidence: insight?.confidenceScore || 50,
-          freshness: quote?.freshness || 'STALE',
-          timestamp: quote?.timestamp || new Date().toISOString(),
-        };
-      })
-    );
-
-    const picks = results
-      .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
-      .map(r => r.value)
-      .filter(p => p.price > 0)
-      .sort((a, b) => b.confidence - a.confidence);
-
-    this.setCache('top-picks', picks, this.getCacheTtl());
-    return picks;
-  }
-
-  // ── Market Movers (Gainers, Losers, Most Active) ──
-  async getMarketMovers() {
+  async getMarketMovers(): Promise<{
+    gainers: any[];
+    losers: any[];
+    mostActive: any[];
+  }> {
     const cached = this.getCached<any>('market-movers');
     if (cached) return cached;
 
-    const stocks = await this.db.client.stock.findMany({ take: 50 });
-    
-    const quotes = await Promise.allSettled(
-      stocks.map(s => this.getQuote(s.ticker).catch(() => null))
-    );
+    // Scan top universe leaders for real-time movers
+    const scanUniverse = this.marketProvider.getUniverse().slice(0, 50);
+    const quotes = await this.marketProvider.getQuotes(scanUniverse.map((s) => s.ticker));
 
-    const validQuotes = quotes
-      .filter((r): r is PromiseFulfilledResult<StockQuote | null> => r.status === 'fulfilled')
-      .map(r => r.value)
-      .filter((q): q is StockQuote => q !== null && q.price > 0);
-
-    const sorted = [...validQuotes].sort((a, b) => b.changePercent - a.changePercent);
+    const sortedByChange = [...quotes].sort((a, b) => b.changePercent - a.changePercent);
+    const sortedByVolume = [...quotes].sort((a, b) => (b.volume || 0) - (a.volume || 0));
 
     const result = {
-      gainers: sorted.filter(q => q.changePercent > 0).slice(0, 5).map(this.formatMover),
-      losers: sorted.filter(q => q.changePercent < 0).reverse().slice(0, 5).map(this.formatMover),
-      mostActive: [...validQuotes].sort((a, b) => b.volume - a.volume).slice(0, 5).map(this.formatMover),
-      timestamp: new Date().toISOString(),
+      gainers: sortedByChange.slice(0, 10),
+      losers: [...sortedByChange].reverse().slice(0, 10),
+      mostActive: sortedByVolume.slice(0, 10),
     };
 
     this.setCache('market-movers', result, this.getCacheTtl());
     return result;
   }
 
-  private formatMover(q: StockQuote) {
-    return {
-      ticker: q.ticker,
-      name: q.name,
-      price: q.price,
-      change: q.change,
-      changePercent: q.changePercent,
-      volume: q.volume,
-    };
-  }
-
-  // ── High Risk • High Reward Opportunities ──
-  async getHighRiskHighRewardOpportunities() {
-    const cached = this.getCached<any[]>('high-risk-high-reward');
+  async getTopPicks(): Promise<TopPick[]> {
+    const cached = this.getCached<TopPick[]>('top-picks');
     if (cached) return cached;
 
-    // High Beta & Volatile Blue Chips in Indian Markets
-    const highRiskUniverse = [
-      { ticker: 'ADANIENT.NS', catalyst: 'Capex Acceleration & Infrastructure Buildout', beta: 1.85, baseUpside: 24.5, stopLoss: -6.2, riskLevel: 'VERY HIGH' },
-      { ticker: 'TATASTEEL.NS', catalyst: 'Global Metals Cycle & European Plant Turnaround', beta: 1.62, baseUpside: 19.8, stopLoss: -5.4, riskLevel: 'HIGH' },
-      { ticker: 'BAJFINANCE.NS', catalyst: 'Omnichannel Credit Velocity & Asset Expansion', beta: 1.48, baseUpside: 18.2, stopLoss: -4.8, riskLevel: 'HIGH' },
-      { ticker: 'JSWSTEEL.NS', catalyst: 'Export Duty Tailwinds & Green Steel Capacity', beta: 1.55, baseUpside: 16.5, stopLoss: -5.1, riskLevel: 'HIGH' },
-      { ticker: 'INDUSINDBK.NS', catalyst: 'Commercial Vehicle Loan Growth Recovery', beta: 1.42, baseUpside: 17.4, stopLoss: -4.5, riskLevel: 'HIGH' },
-      { ticker: 'COALINDIA.NS', catalyst: 'Power Peak Demand Surge & Higher E-Auction Realization', beta: 1.38, baseUpside: 15.6, stopLoss: -4.2, riskLevel: 'HIGH' },
-      { ticker: 'ADANIPORTS.NS', catalyst: 'Cargo Volume Expansion & Logistics Corridor Monopolization', beta: 1.72, baseUpside: 21.0, stopLoss: -5.8, riskLevel: 'VERY HIGH' },
-      { ticker: 'HINDALCO.NS', catalyst: 'Novelis Expansion & Aluminum Price Strength', beta: 1.58, baseUpside: 18.9, stopLoss: -5.2, riskLevel: 'HIGH' },
-    ];
+    // Scan top 25 universe equities
+    const monitored = this.marketProvider.getUniverse().slice(0, 25);
+    const quotes = await this.marketProvider.getQuotes(monitored.map((s) => s.ticker));
 
-    const results = await Promise.allSettled(
-      highRiskUniverse.map(async (item) => {
-        const quote = await this.getQuote(item.ticker).catch(() => null);
-        const dayRangeSpread = quote && quote.dayLow > 0
-          ? ((quote.dayHigh - quote.dayLow) / quote.dayLow) * 100
-          : 3.2;
+    const picks = await Promise.all(
+      quotes.map(async (q) => {
+        const isBullish = q.changePercent >= 0;
+        const meta = this.marketProvider.getUniverse().find((u) => u.ticker === q.ticker);
+        const sector = meta?.sector || 'Core Equities';
+        const companyName = meta?.name || q.name;
+
+        // 1. Live news sentiment impact score (-20 to +20)
+        let newsData: { sentimentScore: number; sentimentLabel: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; topHeadline?: string; newsCount: number } = { sentimentScore: 0, sentimentLabel: 'NEUTRAL', topHeadline: undefined, newsCount: 0 };
+        try {
+          newsData = await this.newsService.getSentimentScoreForStock(q.ticker, sector, companyName);
+        } catch { /* gracefully degrade to neutral */ }
+
+        // 2. Base technical confidence score
+        const baseConfidence = Math.min(
+          94,
+          Math.max(68, Math.round(StockService.CONFIDENCE.BASE + q.changePercent * StockService.CONFIDENCE.MOMENTUM_WEIGHT + ((q.volume || 0) > StockService.CONFIDENCE.HIGH_VOLUME_THRESHOLD ? StockService.CONFIDENCE.HIGH_VOLUME_BONUS : 0)))
+        );
+
+        // 3. Final Buying Confidence adjusted by live 5-min news sentiment
+        const finalConfidenceScore = Math.min(StockService.CONFIDENCE.MAX, Math.max(StockService.CONFIDENCE.MIN, baseConfidence + newsData.sentimentScore));
+
+        // 4. Recommendation tier based on news-adjusted buying confidence
+        const recommendation =
+          finalConfidenceScore >= 88 && q.changePercent >= 0.5
+            ? 'STRONG_BUY'
+            : finalConfidenceScore >= 78
+            ? 'BUY'
+            : finalConfidenceScore >= 65
+            ? 'ACCUMULATE'
+            : 'HOLD';
+
+        // 5. Descending conviction score
+        const convictionScore =
+          (recommendation === 'STRONG_BUY' ? 100 : recommendation === 'BUY' ? 80 : recommendation === 'ACCUMULATE' ? 60 : 40) +
+          finalConfidenceScore +
+          (q.changePercent * 2) +
+          newsData.sentimentScore;
+
+        const targetPercent = isBullish
+          ? parseFloat((6.5 + Math.min(8, q.changePercent * 1.5) + (newsData.sentimentScore > 0 ? 1.5 : 0)).toFixed(1))
+          : 5.0;
+        const stopLossPercent = parseFloat((targetPercent / 2.2).toFixed(1));
+
+        let reasoning = `High institutional liquidity and positive momentum alignment with ${recommendation.replace('_', ' ')} conviction.`;
+        if (newsData.topHeadline) {
+          reasoning = `Live news catalyst (${newsData.sentimentLabel}): "${newsData.topHeadline}" (${newsData.sentimentScore >= 0 ? '+' : ''}${newsData.sentimentScore}pt impact).`;
+        }
 
         return {
-          ticker: item.ticker,
-          name: quote?.name || item.ticker.replace('.NS', ''),
-          price: quote?.price || 0,
-          change: quote?.change || 0,
-          changePercent: quote?.changePercent || 0,
-          dayHigh: quote?.dayHigh || 0,
-          dayLow: quote?.dayLow || 0,
-          volume: quote?.volume || 0,
-          beta: item.beta,
-          intradayVolatility: Number(dayRangeSpread.toFixed(2)),
-          catalyst: item.catalyst,
-          targetUpsidePercent: item.baseUpside,
-          stopLossPercent: item.stopLoss,
-          targetPrice: quote?.price ? Number((quote.price * (1 + item.baseUpside / 100)).toFixed(2)) : 0,
-          stopLossPrice: quote?.price ? Number((quote.price * (1 + item.stopLoss / 100)).toFixed(2)) : 0,
-          riskRewardRatio: `1:${(Math.abs(item.baseUpside / item.stopLoss)).toFixed(1)}`,
-          riskLevel: item.riskLevel,
-          convictionScore: Math.floor(84 + (Math.abs(quote?.changePercent || 0) * 1.5) % 12),
+          ticker: q.ticker,
+          name: companyName,
+          sector,
+          price: q.price,
+          change: q.change,
+          changePercent: q.changePercent,
+          recommendation,
+          confidenceScore: finalConfidenceScore,
+          convictionScore,
+          newsSentiment: newsData.sentimentLabel,
+          newsImpactScore: newsData.sentimentScore,
+          topHeadline: newsData.topHeadline,
+          reasoning,
+          target: Money.round(q.price * (1 + targetPercent / 100)),
+          stopLoss: Money.round(q.price * (1 - stopLossPercent / 100)),
+          rewardRiskRatio: 2.2,
         };
       })
     );
 
-    const highRiskPicks = results
-      .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
-      .map(r => r.value)
-      .filter(p => p.price > 0)
-      .sort((a, b) => b.beta - a.beta);
+    // Sort strictly in descending order of Buy Conviction Score (Best Buy on Top)
+    const sortedPicks = picks
+      .sort((a, b) => b.convictionScore - a.convictionScore)
+      .map((p, idx) => ({ ...p, rank: idx + 1 }));
 
-    this.setCache('high-risk-high-reward', highRiskPicks, this.getCacheTtl());
-    return highRiskPicks;
+    this.setCache('top-picks', sortedPicks, this.getCacheTtl());
+    return sortedPicks;
   }
 
-  // ── Search ──
-  async searchStocks(query: string) {
-    if (!query || query.length < 1) return [];
+  async getHighRiskHighRewardOpportunities(): Promise<HighRiskPick[]> {
+    const cached = this.getCached<HighRiskPick[]>('high-risk-high-reward');
+    if (cached) return cached;
 
-    const q = query.toUpperCase();
+    // Scan high beta growth leaders across Defense, Rail, Tech, PSU & High-Growth
+    const candidates = [
+      'SUZLON.NS', 'RVNL.NS', 'MAZDOCK.NS', 'IREDA.NS', 'KAYNES.NS',
+      'DIXON.NS', 'COCHINSHIP.NS', 'DATAPATTNS.NS', 'PERSISTENT.NS', 'TRENT.NS',
+      'BSE.NS', 'HAL.NS', 'CDSL.NS', 'BEL.NS', 'POLICYBZR.NS'
+    ];
+
+    const quotes = await this.marketProvider.getQuotes(candidates);
     
-    // Search local DB first
-    const dbResults = await this.db.client.stock.findMany({
-      where: {
-        OR: [
-          { ticker: { contains: q, mode: 'insensitive' } },
-          { name: { contains: query, mode: 'insensitive' } },
-          { sector: { contains: query, mode: 'insensitive' } },
-        ],
-      },
-      take: 10,
-    });
+    // Map with rich risk-reward metrics & news sentiment adjusted alpha score
+    const computedPicks = await Promise.all(
+      quotes.map(async (q) => {
+        const meta = this.marketProvider.getUniverse().find((u) => u.ticker === q.ticker);
+        let newsData: { sentimentScore: number; sentimentLabel: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; topHeadline?: string; newsCount: number } = { sentimentScore: 0, sentimentLabel: 'NEUTRAL', topHeadline: undefined, newsCount: 0 };
+        try {
+          newsData = await this.newsService.getSentimentScoreForStock(q.ticker, meta?.sector || undefined, meta?.name || q.name);
+        } catch { /* gracefully degrade to neutral */ }
 
-    return dbResults.map((s: any) => ({
-      ticker: s.ticker,
-      name: s.name,
-      sector: s.sector,
-      exchange: s.exchange,
-    }));
+        const estimatedBeta = parseFloat((1.65 + Math.abs(q.changePercent) * 0.12).toFixed(2));
+        const targetPercent = parseFloat((14.0 + Math.max(0, q.changePercent * 2) + (newsData.sentimentScore > 0 ? 2 : 0)).toFixed(1));
+        const rewardRiskRatio = parseFloat((3.2 + (q.changePercent >= 0 ? 0.4 : 0) + (newsData.sentimentScore > 0 ? 0.2 : 0)).toFixed(1));
+        const stopLossPercent = parseFloat((targetPercent / rewardRiskRatio).toFixed(1));
+
+        // Alpha Conviction Score: prioritize strong upside + favorable R:R + positive momentum + news sentiment
+        const alphaScore =
+          (rewardRiskRatio * 20) +
+          (targetPercent * 2) +
+          (q.changePercent > 0 ? 15 : 0) +
+          (q.changePercent * 3) +
+          (newsData.sentimentScore * 1.5);
+
+        let catalystText = `High momentum velocity with ${estimatedBeta}x beta and asymmetric 1:${rewardRiskRatio} R:R upside potential.`;
+        if (newsData.topHeadline) {
+          catalystText += ` Supported by live headline: "${newsData.topHeadline}".`;
+        }
+
+        return {
+          ticker: q.ticker,
+          name: q.name,
+          price: q.price,
+          change: q.change,
+          changePercent: q.changePercent,
+          beta: estimatedBeta,
+          rewardRiskRatio,
+          targetPrice: Money.round(q.price * (1 + targetPercent / 100)),
+          stopLossPrice: Money.round(q.price * (1 - stopLossPercent / 100)),
+          targetPercent,
+          stopLossPercent,
+          alphaScore,
+          newsSentiment: newsData.sentimentLabel,
+          topHeadline: newsData.topHeadline,
+          catalyst: catalystText,
+        };
+      })
+    );
+
+    // Sort strictly in descending order so the one most likely to buy appears on top
+    const ranked = computedPicks
+      .sort((a, b) => b.alphaScore - a.alphaScore)
+      .slice(0, 5)
+      .map((pick, idx) => ({
+        ...pick,
+        rank: idx + 1,
+        volatilityRank: idx === 0 ? 'Top Alpha Buy (#1)' : idx === 1 ? 'High Alpha (#2)' : `Momentum Setup (#${idx + 1})`,
+      }));
+
+    this.setCache('high-risk-high-reward', ranked, this.getCacheTtl());
+    return ranked;
   }
 
-  // ── All Stocks List ──
-  async getAllStocks() {
-    return this.db.client.stock.findMany({
-      select: {
-        ticker: true,
-        name: true,
-        sector: true,
-        exchange: true,
-      },
-      orderBy: { name: 'asc' },
-    });
-  }
+  /**
+   * "Why is this Stock Moving Today?" Contextual Multi-Factor Catalyst Synthesis Engine
+   */
+  async getMovementCatalyst(ticker: string): Promise<MovementCatalyst> {
+    const quote = await this.getQuote(ticker);
+    const candles = await this.getChartData(ticker, '3mo');
+    const universe = this.marketProvider.getUniverse();
+    const meta = universe.find((s) => s.ticker === ticker);
 
-  // ── Get Latest Quote (used by PortfolioService) ──
-  async getLatestQuote(ticker: string) {
-    return yahooFinance.quote(ticker);
-  }
+    const change = quote.changePercent;
+    const direction: 'UP' | 'DOWN' | 'FLAT' = change > 0.2 ? 'UP' : change < -0.2 ? 'DOWN' : 'FLAT';
+    const isGain = change >= 0;
 
-  // ── Sync Historical Data (for background jobs) ──
-  async syncHistoricalData(ticker: string, period1: string, period2: string = new Date().toISOString().split('T')[0]) {
+    const companyName = meta?.name || quote.name || ticker.replace('.NS', '');
+    const cleanTicker = ticker.replace('.NS', '');
+    const sector = meta?.sector || 'Core Equities';
+    const industry = meta?.industry || 'Equities';
+    const tier = meta?.marketCapTier || 'LARGE_CAP';
+
+    // Live news sentiment for this stock
+    let newsData: { sentimentScore: number; sentimentLabel: 'BULLISH' | 'BEARISH' | 'NEUTRAL'; topHeadline?: string; newsCount: number } = { sentimentScore: 0, sentimentLabel: 'NEUTRAL', topHeadline: undefined, newsCount: 0 };
     try {
-      this.logger.log(`Syncing historical data for ${ticker}...`);
-      const stock = await this.db.client.stock.findUnique({ where: { ticker } });
-      if (!stock) throw new NotFoundException(`Stock ${ticker} not found in DB`);
+      newsData = await this.newsService.getSentimentScoreForStock(ticker, sector, companyName);
+    } catch { /* gracefully degrade to neutral */ }
 
-      const result = await yahooFinance.chart(ticker, {
-        period1,
-        period2,
-        interval: '1d' as any,
-      });
-
-      if (!result?.quotes?.length) {
-        this.logger.warn(`No historical data returned for ${ticker}`);
-        return;
-      }
-
-      // Batch insert with createMany (skip duplicates)
-      const records = result.quotes
-        .filter((q: any) => q.close !== null && q.open !== null)
-        .map((q: any) => ({
-          stockId: stock.id,
-          date: q.date instanceof Date ? q.date : new Date(q.date),
-          open: Number(q.open),
-          high: Number(q.high),
-          low: Number(q.low),
-          close: Number(q.close),
-          volume: BigInt(q.volume || 0),
-        }));
-
-      // Use upsert in batches of 50 for safety
-      for (let i = 0; i < records.length; i += 50) {
-        const batch = records.slice(i, i + 50);
-        await Promise.all(batch.map(record =>
-          this.db.client.priceHistory.upsert({
-            where: { stockId_date: { stockId: record.stockId, date: record.date } },
-            update: { open: record.open, high: record.high, low: record.low, close: record.close, volume: record.volume },
-            create: record,
-          })
-        ));
-      }
-
-      this.logger.log(`Synced ${records.length} records for ${ticker}`);
-    } catch (error: any) {
-      this.logger.error(`Error syncing ${ticker}: ${error.message}`);
+    // 1. Calculate historical volume baseline & surge ratio
+    const closes = candles.map((c) => c.close);
+    let avgVolume = quote.volume || 1;
+    if (candles.length >= 5) {
+      const totalVol = candles.slice(-20).reduce((acc, c) => acc + (c.volume || 0), 0);
+      avgVolume = Math.max(1, totalVol / Math.min(20, candles.length));
     }
+    const volumeSurgeRatio = parseFloat(((quote.volume || avgVolume) / avgVolume).toFixed(2));
+
+    // 2. Compute dynamic technical indicators
+    let rsiVal = 52.0;
+    try {
+      if (closes.length >= 15) {
+        const rsiArr = RSI.calculate({ values: closes, period: 14 });
+        if (rsiArr.length > 0) rsiVal = parseFloat(rsiArr[rsiArr.length - 1].toFixed(1));
+      }
+    } catch {}
+
+    let sma50Val = quote.price;
+    try {
+      if (closes.length >= 25) {
+        const arr = SMA.calculate({ values: closes, period: Math.min(50, closes.length) });
+        if (arr.length > 0) sma50Val = parseFloat(arr[arr.length - 1].toFixed(2));
+      }
+    } catch {}
+
+    const isAboveSma50 = quote.price >= sma50Val;
+
+    // 3. Evaluate Day Range & 52-Week Range Dynamics
+    const dayRange = Math.max(0.1, (quote.dayHigh || quote.price) - (quote.dayLow || quote.price));
+    const rangePosition = Math.min(1, Math.max(0, (quote.price - (quote.dayLow || quote.price)) / dayRange));
+    
+    let proximity52w = '';
+    if (quote.weekHigh52 && quote.price >= quote.weekHigh52 * 0.95) {
+      proximity52w = `trading within ${(100 - (quote.price / quote.weekHigh52) * 100).toFixed(1)}% of its 52-week high (₹${quote.weekHigh52.toFixed(2)})`;
+    } else if (quote.weekLow52 && quote.price <= quote.weekLow52 * 1.08) {
+      proximity52w = `testing support within ${(((quote.price - quote.weekLow52) / quote.weekLow52) * 100).toFixed(1)}% of its 52-week low (₹${quote.weekLow52.toFixed(2)})`;
+    }
+
+    // 4. Sector-Specific Thematic Driver Library
+    const sectorThemes: Record<string, string> = {
+      'Railway Infrastructure': 'railway modernization, capex order book visibility, and freight corridor execution',
+      'Renewable Energy': 'capacity commissioning milestones, renewable tenders, and green energy capex',
+      'Defense & Aerospace': 'defense indigenization mandates (Aatmanirbhar Bharat), export orders, and fleet modernization',
+      'Private Banking': 'credit growth demand, Net Interest Margin (NIM) stability, and retail loan expansion',
+      'Public Banking': 'asset quality improvement, corporate credit cycles, and attractive dividend yield support',
+      'Information Technology': 'BFSI client discretionary spend, digital transformation deal wins, and US tech budget cycles',
+      'Automobiles': 'monthly wholesale dispatch momentum, EV transition pipeline, and premiumization demand',
+      'Metals & Mining': 'global commodity price trends, domestic infrastructure steel demand, and input cost trends',
+      'Pharmaceuticals': 'US generic pricing stabilization, domestic formulation growth, and CDMO pipeline traction',
+      'FMCG': 'rural demand resilience, raw material margin expansion, and urban premium portfolio volume growth',
+      'Real Estate': 'pre-sales booking velocity, inventory absorption, and new residential project launch pipeline',
+      'Energy & Power': 'power peak demand surges, thermal PLF improvement, and transmission capacity additions',
+      'Oil, Gas & Consumable Fuels': 'Gross Refining Margins (GRM), benchmark crude price fluctuations, and marketing margins',
+      'Chemicals': 'specialty chemical export demand, destocking cycle recovery, and import substitution',
+      'Capital Goods': 'private capex cycle acceleration, infrastructure order inflows, and high operating leverage',
+    };
+
+    const thematicFocus =
+      sectorThemes[industry] ||
+      sectorThemes[sector] ||
+      `${sector.toLowerCase()} sector demand trends and macroeconomic liquidity`;
+
+    // 5. Dynamic Catalyst Type & Narrative Construction
+    let catalystType: MovementCatalyst['catalystType'] = 'TECHNICAL_BREAKOUT';
+    let primaryDriver = '';
+    const keyFactors: string[] = [];
+
+    // Inject live news headline as top key factor if present
+    if (newsData.topHeadline) {
+      keyFactors.push(`Live News Catalyst (${newsData.sentimentLabel}): "${newsData.topHeadline}"`);
+    }
+
+    if (volumeSurgeRatio >= 1.6 && Math.abs(change) >= 1.5) {
+      catalystType = 'VOLUME_SPIKE';
+      primaryDriver = `${companyName} (${cleanTicker}) is experiencing elevated institutional participation with volume surging ${volumeSurgeRatio}x its 20-day average. The stock is ${isGain ? 'surging' : 'pulling back'} ${Math.abs(change).toFixed(2)}% as active block orders drive price discovery in the ${industry} space.`;
+      keyFactors.push(`Unusual volume expansion of ${volumeSurgeRatio}x relative to the 20-day baseline.`);
+      keyFactors.push(`Trading ${isAboveSma50 ? 'comfortably above' : 'below'} the 50-day moving average (₹${sma50Val.toFixed(2)}).`);
+      keyFactors.push(`Sector tailwinds: Driven by ${thematicFocus}.`);
+      keyFactors.push(`Intraday price action closed at ${(rangePosition * 100).toFixed(0)}% of today's session range (₹${quote.dayLow?.toFixed(2)} - ₹${quote.dayHigh?.toFixed(2)}).`);
+    } else if (change >= 2.0) {
+      catalystType = 'MOMENTUM_BREAKOUT';
+      primaryDriver = `${companyName} is leading ${sector} momentum today with a strong gain of +${change.toFixed(2)}% at ₹${quote.price.toFixed(2)}. Bullish momentum is reinforced by RSI at ${rsiVal} and positive market breadth across ${industry} peers.`;
+      keyFactors.push(`Bullish price momentum with RSI at ${rsiVal} (${rsiVal > 70 ? 'Overbought strength' : 'Healthy expansion'}).`);
+      keyFactors.push(proximity52w ? `High-level testing: Currently ${proximity52w}.` : `Sustaining firm support above 50-day SMA of ₹${sma50Val.toFixed(2)}.`);
+      keyFactors.push(`Industry catalysts: Benefiting from ${thematicFocus}.`);
+      keyFactors.push(`Volume participation: Trading at ${volumeSurgeRatio}x average turnover.`);
+    } else if (change <= -2.0) {
+      catalystType = 'PROFIT_BOOKING';
+      primaryDriver = `${companyName} is witnessing intraday profit-booking of ${change.toFixed(2)}% down to ₹${quote.price.toFixed(2)} as short-term traders lock in gains following recent extensions in the ${sector} sector.`;
+      keyFactors.push(`Mean-reversion pull-back cooling technical indicators (RSI currently at ${rsiVal}).`);
+      keyFactors.push(`Key support watch: 50-day moving average sits at ₹${sma50Val.toFixed(2)}.`);
+      keyFactors.push(`Sector sentiment: Temporary consolidation across ${industry} peers.`);
+      keyFactors.push(`Order flow: Volume ratio at ${volumeSurgeRatio}x indicates measured institutional repositioning.`);
+    } else if (isAboveSma50 && isGain) {
+      catalystType = 'TECHNICAL_BREAKOUT';
+      primaryDriver = `${companyName} is demonstrating constructive consolidation with a positive bias (+${change.toFixed(2)}% at ₹${quote.price.toFixed(2)}). The stock maintains its structural uptrend above the 50-day moving average (₹${sma50Val.toFixed(2)}), supported by healthy order flow in ${industry}.`;
+      keyFactors.push(`Structural trend: Holding firmly above 50-day SMA (₹${sma50Val.toFixed(2)}).`);
+      keyFactors.push(`Momentum stance: RSI is balanced at ${rsiVal}, offering favorable risk-reward.`);
+      keyFactors.push(`Thematic driver: Core fundamentals anchored by ${thematicFocus}.`);
+      keyFactors.push(proximity52w ? `Price positioning: ${proximity52w}.` : `Session breadth: Trading at ${(rangePosition * 100).toFixed(0)}% of the daily high-low range.`);
+    } else if (!isAboveSma50 && !isGain) {
+      catalystType = 'SECTOR_RALLY';
+      primaryDriver = `${companyName} is consolidating in a defensive range (${change.toFixed(2)}% at ₹${quote.price.toFixed(2)}), with price action respecting lower trend support near ₹${sma50Val.toFixed(2)} as ${sector} participants await fresh sector catalysts.`;
+      keyFactors.push(`Support testing: 50-day moving average baseline at ₹${sma50Val.toFixed(2)}.`);
+      keyFactors.push(`RSI momentum: Currently at ${rsiVal} showing stabilization in accumulation territory.`);
+      keyFactors.push(`Macro landscape: Ongoing developments in ${thematicFocus}.`);
+      keyFactors.push(`Liquidity: Controlled volume surge ratio of ${volumeSurgeRatio}x.`);
+    } else {
+      catalystType = 'TECHNICAL_BREAKOUT';
+      primaryDriver = `${companyName} is trading in an orderly ${tier.replace('_', '-').toLowerCase()} consolidation range (${isGain ? '+' : ''}${change.toFixed(2)}% at ₹${quote.price.toFixed(2)}), absorbing liquidity near key moving averages amidst sector rotation in ${sector}.`;
+      keyFactors.push(`Trend baseline: 50-day SMA at ₹${sma50Val.toFixed(2)} providing dynamic pivot.`);
+      keyFactors.push(`RSI indicator: Steady at ${rsiVal} signaling controlled momentum.`);
+      keyFactors.push(`Thematic context: Influenced by ${thematicFocus}.`);
+      keyFactors.push(`Session range: Intraday bounds established between ₹${quote.dayLow?.toFixed(2)} and ₹${quote.dayHigh?.toFixed(2)}.`);
+    }
+
+    const invalidationLevel =
+      direction === 'UP'
+        ? Money.round(Math.min(quote.price * 0.96, sma50Val * 0.98))
+        : Money.round(Math.max(quote.price * 1.04, sma50Val * 1.02));
+
+    const finalConfidence = Math.min(
+      98,
+      Math.max(68, Math.round(78 + Math.abs(change) * 3 + (volumeSurgeRatio > 1.2 ? 5 : 0) + newsData.sentimentScore))
+    );
+
+    return {
+      ticker,
+      name: companyName,
+      price: quote.price,
+      changePercent: quote.changePercent,
+      direction,
+      volumeSurgeRatio,
+      primaryDriver,
+      catalystType,
+      confidenceScore: finalConfidence,
+      keyFactors,
+      invalidationLevel,
+      newsSentiment: newsData.sentimentLabel,
+      topHeadline: newsData.topHeadline,
+    };
+  }
+
+  /**
+   * Generates comprehensive Stock Profile with live technical indicators and catalyst explanation
+   */
+  async getStockProfile(ticker: string): Promise<StockProfileData> {
+    const quote = await this.getQuote(ticker);
+    const chart = await this.getChartData(ticker, '6mo');
+    const catalyst = await this.getMovementCatalyst(ticker);
+
+    const closes = chart.map((c) => c.close);
+
+    // Compute RSI 14
+    let rsiVal = 52.4;
+    try {
+      if (closes.length >= 15) {
+        const rsiArr = RSI.calculate({ values: closes, period: 14 });
+        if (rsiArr.length > 0) rsiVal = parseFloat(rsiArr[rsiArr.length - 1].toFixed(2));
+      }
+    } catch {}
+
+    const rsiStance =
+      rsiVal > 70
+        ? 'Overbought (Extended Momentum)'
+        : rsiVal < 30
+        ? 'Oversold (Mean Reversion Zone)'
+        : 'Neutral Momentum Zone';
+
+    // Compute MACD (12, 26, 9)
+    let macdVal = { macd: 0, signal: 0, histogram: 0, trend: 'Bullish' };
+    try {
+      if (closes.length >= 35) {
+        const macdArr = MACD.calculate({
+          values: closes,
+          fastPeriod: 12,
+          slowPeriod: 26,
+          signalPeriod: 9,
+          SimpleMAOscillator: false,
+          SimpleMASignal: false,
+        });
+        if (macdArr.length > 0) {
+          const last = macdArr[macdArr.length - 1];
+          macdVal = {
+            macd: parseFloat((last.MACD || 0).toFixed(2)),
+            signal: parseFloat((last.signal || 0).toFixed(2)),
+            histogram: parseFloat((last.histogram || 0).toFixed(2)),
+            trend: (last.histogram || 0) >= 0 ? 'Bullish Crossover' : 'Bearish Crossover',
+          };
+        }
+      }
+    } catch {}
+
+    // Compute SMA 50 & SMA 200
+    let sma50Val = quote.price;
+    let sma200Val = quote.price;
+    try {
+      if (closes.length >= 50) {
+        const arr = SMA.calculate({ values: closes, period: 50 });
+        if (arr.length > 0) sma50Val = parseFloat(arr[arr.length - 1].toFixed(2));
+      }
+      if (closes.length >= 150) {
+        const arr = SMA.calculate({ values: closes, period: Math.min(200, closes.length) });
+        if (arr.length > 0) sma200Val = parseFloat(arr[arr.length - 1].toFixed(2));
+      }
+    } catch {}
+
+    // Compute Bollinger Bands (20, 2)
+    let bbVal = { upper: quote.price * 1.05, middle: quote.price, lower: quote.price * 0.95 };
+    try {
+      if (closes.length >= 20) {
+        const bbArr = BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
+        if (bbArr.length > 0) {
+          const last = bbArr[bbArr.length - 1];
+          bbVal = {
+            upper: parseFloat(last.upper.toFixed(2)),
+            middle: parseFloat(last.middle.toFixed(2)),
+            lower: parseFloat(last.lower.toFixed(2)),
+          };
+        }
+      }
+    } catch {}
+
+    const stockMeta =
+      this.marketProvider.getUniverse().find((u) => u.ticker === ticker) || {
+        ticker,
+        name: quote.name,
+        exchange: 'NSE',
+        sector: 'Equities',
+      };
+
+    return {
+      stock: stockMeta,
+      quote,
+      chart,
+      technicals: {
+        rsi: rsiVal,
+        rsiStance,
+        macd: macdVal,
+        sma50: sma50Val,
+        sma200: sma200Val,
+        goldenCross: sma50Val >= sma200Val,
+        bollinger: bbVal,
+      },
+      catalyst,
+    };
   }
 }

@@ -67,29 +67,48 @@ export interface Candle {
   volume?: number;
 }
 
-export interface StockProfile {
+export interface MovementCatalyst {
   ticker: string;
   name: string;
-  sector: string | null;
-  exchange: string;
   price: number;
-  change: number;
   changePercent: number;
-  dayHigh: number;
-  dayLow: number;
-  prevClose: number;
-  open: number;
-  volume: number;
-  marketCap: number | null;
-  pe: number | null;
-  weekHigh52: number | null;
-  weekLow52: number | null;
-  marketState: string;
-  freshness: 'LIVE' | 'DELAYED' | 'STALE' | 'CLOSED';
-  timestamp: string;
-  source: string;
-  insight: any | null;
-  technicals: any | null;
+  direction: 'UP' | 'DOWN' | 'FLAT';
+  volumeSurgeRatio: number;
+  primaryDriver: string;
+  catalystType: 'TECHNICAL_BREAKOUT' | 'EARNINGS_ANNOUNCEMENT' | 'SECTOR_RALLY' | 'VOLUME_SPIKE' | 'BROAD_MARKET' | 'PROFIT_BOOKING' | 'MOMENTUM_BREAKOUT' | 'ORDERBOOK_PIPELINE' | 'RANGE_ACCUMULATION';
+  confidenceScore: number;
+  keyFactors: string[];
+  invalidationLevel: number;
+}
+
+export interface StockProfile {
+  stock: {
+    ticker: string;
+    name: string;
+    sector: string | null;
+    exchange: string;
+  };
+  quote: StockQuote;
+  chart: Candle[];
+  technicals: {
+    rsi: number;
+    rsiStance: string;
+    macd: {
+      macd: number;
+      signal: number;
+      histogram: number;
+      trend: string;
+    };
+    sma50: number;
+    sma200: number;
+    goldenCross: boolean;
+    bollinger: {
+      upper: number;
+      middle: number;
+      lower: number;
+    };
+  };
+  catalyst: MovementCatalyst;
 }
 
 export interface TopPickItem {
@@ -101,9 +120,12 @@ export interface TopPickItem {
   changePercent: number;
   volume: number;
   recommendation: string;
-  confidence: number;
-  freshness: string;
-  timestamp: string;
+  confidenceScore: number;
+  confidence?: number;
+  reasoning: string;
+  target: number;
+  stopLoss: number;
+  rewardRiskRatio: number;
 }
 
 export interface HighRiskStockItem {
@@ -112,19 +134,39 @@ export interface HighRiskStockItem {
   price: number;
   change: number;
   changePercent: number;
-  dayHigh: number;
-  dayLow: number;
-  volume: number;
   beta: number;
-  intradayVolatility: number;
-  catalyst: string;
-  targetUpsidePercent: number;
-  stopLossPercent: number;
+  rewardRiskRatio: number;
   targetPrice: number;
   stopLossPrice: number;
-  riskRewardRatio: string;
-  riskLevel: 'HIGH' | 'VERY HIGH';
-  convictionScore: number;
+  targetUpsidePercent?: number;
+  catalyst: string;
+  volatilityRank: string;
+}
+
+export interface MarketNewsItem {
+  id: string;
+  title: string;
+  source: string;
+  url: string;
+  publishedAt: string;
+  timeAgo: string;
+  category: 'Markets' | 'Corporate' | 'Results' | 'Macro';
+  sentiment: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE';
+  impact: 'HIGH' | 'MEDIUM' | 'LOW';
+  affectedStock?: string;
+  affectedStockName?: string;
+  summary: string;
+  whyItMatters: string;
+  fullBody?: string;
+}
+
+export interface AlertItem {
+  id: string;
+  ticker: string;
+  targetPrice: number;
+  condition: 'ABOVE' | 'BELOW';
+  createdAt: string;
+  isActive: boolean;
 }
 
 // ── Hooks ──────────────────────────────────────────────────────────────
@@ -133,8 +175,8 @@ export function useHighRiskStocks() {
   return useQuery({
     queryKey: ['high-risk-high-reward'],
     queryFn: () => fetcher<HighRiskStockItem[]>('/stock/high-risk-high-reward'),
-    refetchInterval: 5000, // 5s live auto-refresh
-    staleTime: 2000,
+    refetchInterval: 3000,
+    staleTime: 1000,
   });
 }
 
@@ -142,8 +184,8 @@ export function useMarketSummary() {
   return useQuery({
     queryKey: ['market-summary'],
     queryFn: () => fetcher<MarketIndex[]>('/stock/market-summary'),
-    refetchInterval: 5000, // 5s live auto-refresh
-    staleTime: 2000,
+    refetchInterval: 3000,
+    staleTime: 1000,
   });
 }
 
@@ -151,8 +193,8 @@ export function useMarketStatus() {
   return useQuery({
     queryKey: ['market-status'],
     queryFn: () => fetcher<MarketStatusInfo>('/stock/market-status'),
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 5000,
+    staleTime: 2000,
   });
 }
 
@@ -160,8 +202,8 @@ export function useMarketMovers() {
   return useQuery({
     queryKey: ['market-movers'],
     queryFn: () => fetcher<MarketMovers>('/stock/movers'),
-    refetchInterval: 5000, // 5s live auto-refresh
-    staleTime: 2000,
+    refetchInterval: 3000,
+    staleTime: 1000,
   });
 }
 
@@ -169,38 +211,48 @@ export function useTopPicks() {
   return useQuery({
     queryKey: ['top-picks'],
     queryFn: () => fetcher<TopPickItem[]>('/stock/top-picks'),
-    refetchInterval: 5000, // 5s live auto-refresh
-    staleTime: 2000,
+    refetchInterval: 3000,
+    staleTime: 1000,
   });
 }
 
 export function useStockQuote(ticker: string) {
   return useQuery({
     queryKey: ['stock-quote', ticker],
-    queryFn: () => fetcher<StockQuote>(`/stock/${ticker}/quote`),
+    queryFn: () => fetcher<StockQuote>(`/stock/${encodeURIComponent(ticker)}/quote`),
     enabled: !!ticker,
-    refetchInterval: 5000, // 5s live auto-refresh
-    staleTime: 2000,
+    refetchInterval: 3000,
+    staleTime: 1000,
   });
 }
 
 export function useStockChart(ticker: string, range: string = '6mo') {
   return useQuery({
     queryKey: ['stock-chart', ticker, range],
-    queryFn: () => fetcher<Candle[]>(`/stock/${ticker}/chart?range=${range}`),
+    queryFn: () => fetcher<Candle[]>(`/stock/${encodeURIComponent(ticker)}/chart?range=${range}`),
     enabled: !!ticker,
-    refetchInterval: range === '1d' ? 5000 : 60000, // 5s for intraday 1D, 1m for multi-day
-    staleTime: range === '1d' ? 2000 : 30000,
+    refetchInterval: range === '1d' || range === '1w' ? 3000 : 10000,
+    staleTime: range === '1d' || range === '1w' ? 1000 : 5000,
   });
 }
 
 export function useStockProfile(ticker: string) {
   return useQuery({
     queryKey: ['stock-profile', ticker],
-    queryFn: () => fetcher<StockProfile>(`/stock/${ticker}/profile`),
+    queryFn: () => fetcher<StockProfile>(`/stock/${encodeURIComponent(ticker)}/profile`),
     enabled: !!ticker,
-    refetchInterval: 5000, // 5s live auto-refresh
-    staleTime: 2000,
+    refetchInterval: 3000,
+    staleTime: 1000,
+  });
+}
+
+export function useMovementCatalyst(ticker: string) {
+  return useQuery({
+    queryKey: ['movement-catalyst', ticker],
+    queryFn: () => fetcher<MovementCatalyst>(`/stock/${encodeURIComponent(ticker)}/catalyst`),
+    enabled: !!ticker,
+    refetchInterval: 5000,
+    staleTime: 3000,
   });
 }
 
@@ -217,9 +269,114 @@ export function useAllStocks() {
   return useQuery({
     queryKey: ['all-stocks'],
     queryFn: () => fetcher<{ ticker: string; name: string; sector: string | null; exchange: string }[]>('/stock/all'),
-    staleTime: 300000, // 5 min
+    staleTime: 300000,
   });
 }
+
+// ── News Hooks ─────────────────────────────────────────────────────────
+
+export function useMarketNews(category?: string, query?: string) {
+  return useQuery({
+    queryKey: ['market-news', category, query],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (category && category !== 'ALL') params.set('category', category);
+      if (query) params.set('q', query);
+      const qs = params.toString();
+      return fetcher<MarketNewsItem[]>(`/news${qs ? `?${qs}` : ''}`);
+    },
+    refetchInterval: 300000, // Exactly 5 minutes live news polling
+    staleTime: 60000,
+  });
+}
+
+export function useStockNews(ticker: string) {
+  return useQuery({
+    queryKey: ['stock-news', ticker],
+    queryFn: () => fetcher<MarketNewsItem[]>(`/news/${ticker}`),
+    enabled: !!ticker,
+    refetchInterval: 300000, // Exactly 5 minutes live news polling
+    staleTime: 60000,
+  });
+}
+
+// ── Watchlist Hooks ───────────────────────────────────────────────────
+
+export function useWatchlist() {
+  return useQuery({
+    queryKey: ['watchlist'],
+    queryFn: () => fetcher<StockQuote[]>('/watchlist'),
+    refetchInterval: 3000,
+    staleTime: 1000,
+  });
+}
+
+export function useAddToWatchlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticker: string) =>
+      fetcher('/watchlist/add', {
+        method: 'POST',
+        body: JSON.stringify({ ticker }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['watchlist'] });
+    },
+  });
+}
+
+export function useRemoveFromWatchlist() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ticker: string) =>
+      fetcher(`/watchlist/${ticker}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['watchlist'] });
+    },
+  });
+}
+
+// ── Alerts Hooks ──────────────────────────────────────────────────────
+
+export function useAlerts() {
+  return useQuery({
+    queryKey: ['alerts'],
+    queryFn: () => fetcher<AlertItem[]>('/alerts'),
+    refetchInterval: 5000,
+    staleTime: 2000,
+  });
+}
+
+export function useCreateAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: { ticker: string; targetPrice: number; condition: 'ABOVE' | 'BELOW' }) =>
+      fetcher('/alerts', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['alerts'] });
+    },
+  });
+}
+
+export function useDeleteAlert() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      fetcher(`/alerts/${id}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['alerts'] });
+    },
+  });
+}
+
+// ── Portfolio Types & Hooks ───────────────────────────────────────────
 
 export interface PortfolioPosition {
   id: string;
@@ -264,8 +421,8 @@ export function usePortfolio(userId?: string) {
     queryFn: () => fetcher<PortfolioData>('/portfolio', {
       headers: userId ? { 'x-user-id': userId } : undefined,
     }),
-    refetchInterval: 5000, // 5s live auto-refresh
-    staleTime: 2000,
+    refetchInterval: 3000,
+    staleTime: 1000,
   });
 }
 
@@ -275,8 +432,8 @@ export function usePortfolioSellSignals(userId?: string) {
     queryFn: () => fetcher<any[]>('/portfolio/sell-signals', {
       headers: userId ? { 'x-user-id': userId } : undefined,
     }),
-    refetchInterval: 30000, // 30s
-    staleTime: 15000,
+    refetchInterval: 15000,
+    staleTime: 5000,
   });
 }
 
@@ -284,60 +441,69 @@ export interface TradeItem {
   id: string;
   ticker: string;
   name: string;
-  sector: string;
   type: 'BUY' | 'SELL';
   orderType: 'MARKET' | 'LIMIT';
   quantity: number;
-  executedPrice: number;
+  price: number;
   totalValue: number;
   timestamp: string;
-  currentPrice: number;
-  deltaSinceTrade: number;
-  deltaPercentSinceTrade: number;
+  executedPrice?: number;
+  currentPrice?: number;
+  deltaPercentSinceTrade?: number;
+  deltaSinceTrade?: number;
+  sector?: string;
 }
 
-export interface TradeHistoryResponse {
-  trades: TradeItem[];
-  summary: {
-    totalTrades: number;
-    totalTurnover: number;
-    totalBuyCount: number;
-    totalSellCount: number;
-    totalBuyVolume: number;
-    totalSellVolume: number;
-    topTraded: { ticker: string; name: string; count: number; volume: number; turnover: number }[];
-  };
-}
-
-export function useTradeHistory(params?: { ticker?: string; type?: string; userId?: string }) {
-  const queryParams = new URLSearchParams();
-  if (params?.ticker) queryParams.set('ticker', params.ticker);
-  if (params?.type && params.type !== 'ALL') queryParams.set('type', params.type);
-  const qStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
-
+export function useAllTrades(userId?: string, ticker?: string, type?: 'BUY' | 'SELL') {
   return useQuery({
-    queryKey: ['trade-history', params?.ticker, params?.type, params?.userId],
-    queryFn: () => fetcher<TradeHistoryResponse>(`/portfolio/trades${qStr}`, {
-      headers: params?.userId ? { 'x-user-id': params.userId } : undefined,
-    }),
-    staleTime: 10000,
+    queryKey: ['portfolio-trades', userId, ticker, type],
+    queryFn: () => {
+      const params = new URLSearchParams();
+      if (ticker) params.set('ticker', ticker);
+      if (type) params.set('type', type);
+      const qs = params.toString();
+      return fetcher<TradeItem[]>(`/portfolio/trades${qs ? `?${qs}` : ''}`, {
+        headers: userId ? { 'x-user-id': userId } : undefined,
+      });
+    },
+    refetchInterval: 3000,
+    staleTime: 1000,
   });
 }
 
+export const useTradeHistory = useAllTrades;
+
 export function useExecuteTrade() {
   const queryClient = useQueryClient();
-  
   return useMutation({
-    mutationFn: (data: { ticker: string; type: 'BUY' | 'SELL'; quantity: number; userId?: string }) => 
+    mutationFn: (tradeData: { ticker: string; type: 'BUY' | 'SELL'; quantity: number; userId?: string }) =>
       fetcher('/portfolio/trade', {
         method: 'POST',
-        body: JSON.stringify(data),
-        headers: data.userId ? { 'x-user-id': data.userId } : undefined,
+        headers: tradeData.userId ? { 'x-user-id': tradeData.userId } : undefined,
+        body: JSON.stringify({
+          ticker: tradeData.ticker,
+          type: tradeData.type,
+          quantity: tradeData.quantity,
+        }),
       }),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['portfolio', variables.userId] });
-      queryClient.invalidateQueries({ queryKey: ['portfolio-sell-signals', variables.userId] });
-      queryClient.invalidateQueries({ queryKey: ['trade-history'] });
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolio-trades'] });
+    },
+  });
+}
+
+export function useResetPortfolio() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (userId?: string) =>
+      fetcher('/portfolio/reset', {
+        method: 'POST',
+        headers: userId ? { 'x-user-id': userId } : undefined,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['portfolio'] });
+      queryClient.invalidateQueries({ queryKey: ['portfolio-trades'] });
     },
   });
 }

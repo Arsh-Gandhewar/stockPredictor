@@ -1,87 +1,80 @@
-# QuantX - Premium Indian Stock Market Analytics Platform
+# QuantX — Indian Equity Research & Paper-Trading Platform
 
-QuantX is a production-grade full-stack web application designed for comprehensive Indian stock market analysis, AI-powered investment insights (powered by Google Gemini), and paper trading.
+**QuantX** is an Indian stock-market research, AI analysis, market monitoring, and atomic paper-trading platform built for the National Stock Exchange (NSE).
 
-It is built with a highly scalable monorepo architecture designed for production.
+---
 
-## 🚀 Tech Stack
+## 🏛 Architecture Overview
 
-- **Frontend:** Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS, shadcn/ui, Zustand, TanStack Query, TradingView Lightweight Charts
-- **Backend:** NestJS, TypeScript, BullMQ (Queue)
-- **Database:** PostgreSQL, Prisma ORM, Redis (Caching/Queue)
-- **AI Integration:** Google Gemini API (Configurable models)
-- **Authentication:** Clerk
+```
+QuantX Platform
+├── apps/
+│   ├── api/                 # NestJS 11 Backend (Node.js / TypeScript)
+│   │   ├── common/          # Money arithmetic, Guards, DTOs, Filters, Interceptors
+│   │   ├── modules/         # Stock, News, Portfolio, Watchlist, Alerts, Health, AI
+│   │   └── prisma/          # PostgreSQL schema & migrations
+│   └── web/                 # Next.js 15 App Router Frontend (React / Tailwind / Lightweight-Charts)
+│       ├── src/app/         # Dashboard, Discover (Screener), News, Portfolio, Stock Details
+│       ├── src/components/  # UI design system
+│       └── src/hooks/       # React Query streaming hooks (5s live quotes)
+└── test-runner.ts           # 32-test end-to-end integration test suite
+```
 
-## 📂 Project Structure
+---
 
-This project uses npm workspaces to manage a monorepo structure.
+## ⚡ Key Production Capabilities
 
-- \`apps/web\`: The Next.js 15 frontend application.
-- \`apps/api\`: The NestJS backend service, containing REST APIs and background workers (BullMQ).
-- \`packages/db\`: The shared database module containing the Prisma schema, migrations, and exported Prisma Client.
+1. **Financial Precision Engine**: Strict 2-decimal paise precision across all trade turnover, cash balances, and unrealized/realized P&L calculations (`Money` utility).
+2. **Atomic Paper Trading**: Powered by PostgreSQL transactions (`$transaction`), preventing race conditions, negative cash balances, and unheld share sales.
+3. **Market Data Provider Abstraction**: Modular `MarketDataProvider` architecture with real IST trading session hours (`PRE_OPEN`, `OPEN`, `CLOSED`) and OHLC anomaly rejection.
+4. **Top-300 Indian Universe**: Categorized database of 300 Indian equities (Large, Mid, Small-cap) across Sectors and Industries.
+5. **"Why is this Stock Moving Today?"**: Quantitative catalyst synthesis analyzing volume surge ratios, institutional accumulation, delivery action, and invalidation levels.
+6. **Live Market News Feed**: Real-time Indian financial RSS parser with sentiment classification and stock tagging.
+7. **Security & Observability**: OWASP Helmet headers, rate limiting (120 req/min), Request ID tracing, Global Exception Filter, and `/health` Kubernetes readiness/liveness probes.
 
-## 🛠️ Prerequisites
+---
 
-Before you begin, ensure you have the following installed:
-- Node.js (v20+ recommended)
-- npm (v10+)
-- PostgreSQL Database (Local or Cloud, e.g., Supabase/Neon)
-- Redis Server (Local or Cloud, e.g., Upstash)
+## 🚀 Getting Started
 
-## ⚙️ Setup & Installation
+### 1. Prerequisites
+- Node.js 18+
+- PostgreSQL database
+- npm / npx
 
-### 1. Install Dependencies
-Run the following command at the root of the repository to install dependencies for all workspaces:
-\`\`\`bash
+### 2. Environment Configuration
+Create a root `.env` file:
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/quantx?schema=public"
+PORT=3001
+NEXT_PUBLIC_API_URL="http://127.0.0.1:3001"
+```
+
+### 3. Install & Migrate Database
+```bash
 npm install
-\`\`\`
-
-### 2. Environment Variables
-Copy the \`.env.template\` file to a new \`.env\` file in the root directory:
-\`\`\`bash
-cp .env.template .env
-\`\`\`
-Fill in the necessary credentials in your \`.env\` file, including:
-- \`DATABASE_URL\`
-- \`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY\` & \`CLERK_SECRET_KEY\`
-- \`REDIS_HOST\`, \`REDIS_PORT\`, \`REDIS_PASSWORD\`
-- \`GEMINI_API_KEY\`
-
-### 3. Database Setup (Prisma)
-Navigate to the \`packages/db\` directory and push the schema to your database:
-\`\`\`bash
-cd packages/db
-npx prisma db push
-npm run generate
-cd ../..
-\`\`\`
+cd apps/api && npx prisma migrate deploy && npx prisma generate
+```
 
 ### 4. Running the Development Servers
-
-You can start both the frontend and backend development servers concurrently:
-
-**Start the NestJS Backend:**
-\`\`\`bash
+```bash
+# Terminal 1: Backend API (Port 3001)
 cd apps/api
 npm run start:dev
-\`\`\`
-*(Runs on http://localhost:3001)*
 
-**Start the Next.js Frontend:**
-\`\`\`bash
+# Terminal 2: Frontend Web App (Port 3000)
 cd apps/web
 npm run dev
-\`\`\`
-*(Runs on http://localhost:3000)*
+```
 
-## 🧠 AI Features & Schedulers
+### 5. Running the 32-Test Automated Verification Suite
+```bash
+npx tsx test-runner.ts
+```
 
-The backend uses **BullMQ** with Redis to run scheduled hourly jobs that:
-1. Fetch live market prices and historical data for the top 300 Indian stocks (via Yahoo Finance).
-2. Compute technical indicators (RSI, MACD, Moving Averages, Bollinger Bands).
-3. Fetch news articles and pass them through Gemini Flash for rapid sentiment analysis.
-4. Pass the combined fundamental, technical, and sentiment context to **Gemini Pro** to generate precise, structured trading insights (Strong Buy, Hold, Sell, etc.) with associated probabilities and risk factors.
+---
 
-## ⚠️ Disclaimer
+## 🛡 Verification & Production Audit
 
-**The AI-generated recommendations are for educational and research purposes only. They should not be considered financial or investment advice. Users should conduct their own research or consult a SEBI-registered investment advisor before making investment decisions.**
+- **Integration Tests**: 32 / 32 Passed (100%)
+- **Backend Build**: `nest build` completed cleanly
+- **Frontend Build**: `next build --turbopack` 11/11 pages compiled

@@ -21,9 +21,10 @@ import {
   ExternalLink, 
   CheckCircle2, 
   SlidersHorizontal, 
-  X 
+  X,
+  RotateCcw
 } from 'lucide-react';
-import { usePortfolio, useExecuteTrade, usePortfolioSellSignals, useStockQuote, useTradeHistory, TradeItem } from '@/hooks/use-stock';
+import { usePortfolio, useExecuteTrade, usePortfolioSellSignals, useStockQuote, useAllTrades, useResetPortfolio, TradeItem } from '@/hooks/use-stock';
 import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 
@@ -31,10 +32,12 @@ function PositionRow({
   position,
   onSell,
   isSelling,
+  tradeError,
 }: {
   position: any;
   onSell: (ticker: string, quantity: number) => void;
   isSelling: boolean;
+  tradeError?: string | null;
 }) {
   const router = useRouter();
   const ticker = position.stock?.ticker || position.ticker || 'UNKNOWN';
@@ -111,13 +114,20 @@ function PositionRow({
         {formatCurrency(currentValue)}
       </td>
       <td className="px-4 py-3.5 text-right" onClick={(e) => e.stopPropagation()}>
-        <button
-          onClick={() => onSell(ticker, quantity)}
-          disabled={isSelling}
-          className="px-3 py-1 rounded-md bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold transition-all disabled:opacity-50"
-        >
-          SELL ALL
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            onClick={() => onSell(ticker, quantity)}
+            disabled={isSelling}
+            className="px-3 py-1 rounded-md bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-bold transition-all disabled:opacity-50"
+          >
+            SELL ALL
+          </button>
+          {tradeError && (
+            <div className="text-[10px] text-destructive bg-destructive/10 px-1.5 py-0.5 rounded border border-destructive/20 max-w-[120px] text-center leading-tight">
+              {tradeError}
+            </div>
+          )}
+        </div>
       </td>
     </tr>
   );
@@ -130,14 +140,16 @@ export default function PortfolioPage() {
   const [typeFilter, setTypeFilter] = useState<'ALL' | 'BUY' | 'SELL'>('ALL');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'highest_value'>('newest');
   const [selectedTrade, setSelectedTrade] = useState<TradeItem | null>(null);
+  const [tradeErrors, setTradeErrors] = useState<Record<string, string>>({});
 
   const { data: portfolio, isLoading, refetch } = usePortfolio();
   const { data: sellSignals, isLoading: isSignalsLoading } = usePortfolioSellSignals();
-  const { data: tradeHistoryData, isLoading: isTradesLoading } = useTradeHistory({ type: typeFilter });
+  const { data: rawTradesData, isLoading: isTradesLoading } = useAllTrades(undefined, undefined, typeFilter === 'ALL' ? undefined : typeFilter as 'BUY' | 'SELL');
   const executeTrade = useExecuteTrade();
+  const resetPortfolio = useResetPortfolio();
 
-  const formatCurrency = (val: number) =>
-    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(val);
+  const formatCurrency = (val?: number) =>
+    new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 2 }).format(val || 0);
 
   const positions = portfolio?.positions || [];
   const availableCash = portfolio?.availableCash || 0;
@@ -156,24 +168,58 @@ export default function PortfolioPage() {
   const isOverallPositive = totalOverallPnL >= 0;
 
   const handleSell = (ticker: string, quantity: number) => {
-    executeTrade.mutate({ ticker, type: 'SELL', quantity });
+    setTradeErrors((prev) => ({ ...prev, [ticker]: '' }));
+    executeTrade.mutate(
+      { ticker, type: 'SELL', quantity },
+      {
+        onError: (err: any) => {
+          setTradeErrors((prev) => ({
+            ...prev,
+            [ticker]: err.response?.data?.message || err.message || 'Trade execution failed',
+          }));
+        },
+      }
+    );
   };
 
   // Filtered & Sorted Trades for Trade Journal
-  const rawTrades = tradeHistoryData?.trades || [];
+  const rawTrades: TradeItem[] = Array.isArray(rawTradesData) ? rawTradesData : ((rawTradesData as any)?.trades || []);
+  
+  const tradeSummary = useMemo(() => {
+    const totalTrades = rawTrades.length;
+    let totalBuyCount = 0;
+    let totalSellCount = 0;
+    let totalTurnover = 0;
+    let totalBuyVolume = 0;
+    let totalSellVolume = 0;
+
+    rawTrades.forEach((t) => {
+      totalTurnover += (t.totalValue || (t.price * t.quantity));
+      if (t.type === 'BUY') {
+        totalBuyCount++;
+        totalBuyVolume += t.quantity;
+      } else {
+        totalSellCount++;
+        totalSellVolume += t.quantity;
+      }
+    });
+
+    return { totalTrades, totalBuyCount, totalSellCount, totalTurnover, totalBuyVolume, totalSellVolume };
+  }, [rawTrades]);
+
   const filteredTrades = useMemo(() => {
     return rawTrades
-      .filter((t) => {
+      .filter((t: TradeItem) => {
         const matchesSearch = 
           t.ticker.toLowerCase().includes(tradeSearch.toLowerCase()) ||
-          t.name.toLowerCase().includes(tradeSearch.toLowerCase());
+          (t.name && t.name.toLowerCase().includes(tradeSearch.toLowerCase()));
         const matchesType = typeFilter === 'ALL' || t.type === typeFilter;
         return matchesSearch && matchesType;
       })
-      .sort((a, b) => {
+      .sort((a: TradeItem, b: TradeItem) => {
         if (sortOrder === 'newest') return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
         if (sortOrder === 'oldest') return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
-        if (sortOrder === 'highest_value') return b.totalValue - a.totalValue;
+        if (sortOrder === 'highest_value') return (b.totalValue || 0) - (a.totalValue || 0);
         return 0;
       });
   }, [rawTrades, tradeSearch, typeFilter, sortOrder]);
@@ -181,21 +227,19 @@ export default function PortfolioPage() {
   // Export Trade History to CSV
   const exportTradeCSV = () => {
     if (!rawTrades.length) return;
-    const headers = ['Trade ID', 'Timestamp (IST)', 'Ticker', 'Stock Name', 'Type', 'Order Type', 'Quantity', 'Executed Price (INR)', 'Total Value (INR)', 'Current LTP (INR)', 'Delta Since Trade (%)'];
-    const rows = rawTrades.map((t) => [
+    const headers = ['Trade ID', 'Timestamp (IST)', 'Ticker', 'Stock Name', 'Type', 'Order Type', 'Quantity', 'Executed Price (INR)', 'Total Value (INR)'];
+    const rows = rawTrades.map((t: TradeItem) => [
       t.id,
       new Date(t.timestamp).toLocaleString('en-IN'),
       t.ticker,
-      `"${t.name.replace(/"/g, '""')}"`,
+      `"${(t.name || t.ticker).replace(/"/g, '""')}"`,
       t.type,
       t.orderType,
       t.quantity,
-      t.executedPrice,
+      t.price,
       t.totalValue,
-      t.currentPrice,
-      `${t.deltaPercentSinceTrade}%`,
     ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e: (string | number)[]) => e.join(','))].join('\n');
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
@@ -226,6 +270,17 @@ export default function PortfolioPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (window.confirm('Reset virtual portfolio back to ₹10,00,000 starting cash and clear positions?')) {
+                resetPortfolio.mutate(undefined);
+              }
+            }}
+            disabled={resetPortfolio.isPending}
+            className="px-3 py-1.5 rounded-lg bg-destructive/10 hover:bg-destructive/20 text-destructive text-xs font-semibold flex items-center gap-1.5 transition-colors border border-destructive/20"
+          >
+            <RotateCcw className="h-3.5 w-3.5" /> Reset Capital
+          </button>
           <button
             onClick={() => refetch()}
             className="px-3 py-1.5 rounded-lg bg-muted/60 hover:bg-muted text-muted-foreground text-xs font-semibold flex items-center gap-1.5 transition-colors"
@@ -340,7 +395,7 @@ export default function PortfolioPage() {
               : 'bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground'
           }`}
         >
-          <FileSpreadsheet className="h-4 w-4" /> All-Time Trade Journal & Analytics ({tradeHistoryData?.summary?.totalTrades || 0})
+          <FileSpreadsheet className="h-4 w-4" /> All-Time Trade Journal & Analytics ({tradeSummary.totalTrades})
         </button>
       </div>
 
@@ -485,6 +540,7 @@ export default function PortfolioPage() {
                           position={pos}
                           onSell={handleSell}
                           isSelling={executeTrade.isPending}
+                          tradeError={tradeErrors[pos.stock?.ticker || pos.ticker || '']}
                         />
                       ))
                     )}
@@ -504,17 +560,17 @@ export default function PortfolioPage() {
             <Card className="p-4 bg-muted/20 border-border/40">
               <div className="text-xs text-muted-foreground">All-Time Executed Trades</div>
               <div className="text-2xl font-extrabold font-mono text-foreground mt-1">
-                {tradeHistoryData?.summary?.totalTrades || 0}
+                {tradeSummary.totalTrades}
               </div>
               <div className="text-[10px] text-muted-foreground mt-0.5">
-                {tradeHistoryData?.summary?.totalBuyCount || 0} Buys • {tradeHistoryData?.summary?.totalSellCount || 0} Sells
+                {tradeSummary.totalBuyCount} Buys • {tradeSummary.totalSellCount} Sells
               </div>
             </Card>
 
             <Card className="p-4 bg-muted/20 border-border/40">
               <div className="text-xs text-muted-foreground">Total Capital Turnover</div>
               <div className="text-2xl font-extrabold font-mono text-foreground mt-1">
-                {formatCurrency(tradeHistoryData?.summary?.totalTurnover || 0)}
+                {formatCurrency(tradeSummary.totalTurnover)}
               </div>
               <div className="text-[10px] text-muted-foreground mt-0.5">Total transaction volume</div>
             </Card>
@@ -522,10 +578,10 @@ export default function PortfolioPage() {
             <Card className="p-4 bg-muted/20 border-border/40">
               <div className="text-xs text-muted-foreground">Shares Transacted</div>
               <div className="text-2xl font-extrabold font-mono text-foreground mt-1">
-                {((tradeHistoryData?.summary?.totalBuyVolume || 0) + (tradeHistoryData?.summary?.totalSellVolume || 0)).toLocaleString('en-IN')}
+                {(tradeSummary.totalBuyVolume + tradeSummary.totalSellVolume).toLocaleString('en-IN')}
               </div>
               <div className="text-[10px] text-muted-foreground mt-0.5">
-                {tradeHistoryData?.summary?.totalBuyVolume || 0} Bought / {tradeHistoryData?.summary?.totalSellVolume || 0} Sold
+                {tradeSummary.totalBuyVolume} Bought / {tradeSummary.totalSellVolume} Sold
               </div>
             </Card>
 
@@ -639,9 +695,12 @@ export default function PortfolioPage() {
                           </td>
                         </tr>
                       ) : (
-                        filteredTrades.map((trade) => {
+                        filteredTrades.map((trade: TradeItem) => {
                           const isBuy = trade.type === 'BUY';
-                          const isGain = trade.deltaPercentSinceTrade >= 0;
+                          const executedPrice = trade.executedPrice ?? trade.price;
+                          const currentPrice = trade.currentPrice ?? trade.price;
+                          const deltaPercent = trade.deltaPercentSinceTrade ?? 0;
+                          const isGain = deltaPercent >= 0;
                           return (
                             <tr
                               key={trade.id}
@@ -663,7 +722,7 @@ export default function PortfolioPage() {
                               </td>
                               <td className="px-4 py-3 font-bold text-foreground">
                                 <div className="font-mono text-sm">{trade.ticker.replace('.NS', '')}</div>
-                                <div className="text-[11px] text-muted-foreground font-normal line-clamp-1">{trade.name}</div>
+                                <div className="text-[11px] text-muted-foreground font-normal line-clamp-1">{trade.name || trade.ticker}</div>
                               </td>
                               <td className="px-4 py-3">
                                 <span
@@ -677,17 +736,17 @@ export default function PortfolioPage() {
                                 </span>
                               </td>
                               <td className="px-4 py-3 font-mono font-semibold">{trade.quantity}</td>
-                              <td className="px-4 py-3 font-mono font-bold">{formatCurrency(trade.executedPrice)}</td>
+                              <td className="px-4 py-3 font-mono font-bold">{formatCurrency(executedPrice)}</td>
                               <td className="px-4 py-3 font-mono font-extrabold text-foreground">
                                 {formatCurrency(trade.totalValue)}
                               </td>
                               <td className="px-4 py-3 font-mono">
                                 <div className={`font-bold flex items-center ${isGain ? 'text-green-500' : 'text-red-500'}`}>
                                   {isGain ? <ArrowUpRight className="h-3 w-3 mr-0.5" /> : <ArrowDownRight className="h-3 w-3 mr-0.5" />}
-                                  {isGain ? '+' : ''}{trade.deltaPercentSinceTrade.toFixed(2)}%
+                                  {isGain ? '+' : ''}{deltaPercent.toFixed(2)}%
                                 </div>
                                 <div className="text-[10px] text-muted-foreground">
-                                  LTP: ₹{trade.currentPrice.toFixed(2)}
+                                  LTP: ₹{currentPrice.toFixed(2)}
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
@@ -728,7 +787,7 @@ export default function PortfolioPage() {
                     {selectedTrade.ticker.replace('.NS', '')}
                   </span>
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">{selectedTrade.name}</div>
+                <div className="text-xs text-muted-foreground mt-0.5">{selectedTrade.name || selectedTrade.ticker}</div>
               </div>
               <button
                 onClick={() => setSelectedTrade(null)}
@@ -743,7 +802,7 @@ export default function PortfolioPage() {
               <div className="p-3 rounded-lg bg-muted/40 border border-border/30">
                 <div className="text-muted-foreground text-[10px]">Executed Price</div>
                 <div className="font-bold font-mono text-sm text-foreground mt-0.5">
-                  {formatCurrency(selectedTrade.executedPrice)}
+                  {formatCurrency(selectedTrade.executedPrice ?? selectedTrade.price)}
                 </div>
               </div>
 
@@ -764,7 +823,7 @@ export default function PortfolioPage() {
               <div className="p-3 rounded-lg bg-muted/40 border border-border/30">
                 <div className="text-muted-foreground text-[10px]">Current LTP</div>
                 <div className="font-bold font-mono text-sm text-foreground mt-0.5">
-                  ₹{selectedTrade.currentPrice.toFixed(2)}
+                  ₹{(selectedTrade.currentPrice ?? selectedTrade.price).toFixed(2)}
                 </div>
               </div>
             </div>
@@ -773,9 +832,9 @@ export default function PortfolioPage() {
             <div className="p-4 rounded-xl bg-gradient-to-br from-muted/30 to-muted/10 border border-border/40 space-y-2">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-muted-foreground font-semibold">Performance Return Since Trade</span>
-                <span className={`font-mono font-bold flex items-center ${selectedTrade.deltaPercentSinceTrade >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {selectedTrade.deltaPercentSinceTrade >= 0 ? <ArrowUpRight className="h-3.5 w-3.5 mr-0.5" /> : <ArrowDownRight className="h-3.5 w-3.5 mr-0.5" />}
-                  {selectedTrade.deltaPercentSinceTrade >= 0 ? '+' : ''}{selectedTrade.deltaPercentSinceTrade.toFixed(2)}% ({formatCurrency(selectedTrade.deltaSinceTrade * selectedTrade.quantity)})
+                <span className={`font-mono font-bold flex items-center ${(selectedTrade.deltaPercentSinceTrade ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {(selectedTrade.deltaPercentSinceTrade ?? 0) >= 0 ? <ArrowUpRight className="h-3.5 w-3.5 mr-0.5" /> : <ArrowDownRight className="h-3.5 w-3.5 mr-0.5" />}
+                  {(selectedTrade.deltaPercentSinceTrade ?? 0) >= 0 ? '+' : ''}{(selectedTrade.deltaPercentSinceTrade ?? 0).toFixed(2)}% ({formatCurrency((selectedTrade.deltaSinceTrade ?? 0) * selectedTrade.quantity)})
                 </span>
               </div>
               <div className="text-[11px] text-muted-foreground leading-relaxed">
@@ -791,7 +850,7 @@ export default function PortfolioPage() {
               </div>
               <div className="flex justify-between">
                 <span>Exchange / Sector:</span>
-                <span className="text-foreground">NSE • {selectedTrade.sector}</span>
+                <span className="text-foreground">NSE • {selectedTrade.sector || 'Equities'}</span>
               </div>
               <div className="flex justify-between">
                 <span>Audit Status:</span>

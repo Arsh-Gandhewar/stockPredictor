@@ -9,8 +9,12 @@ import { Header } from '@/components/layout/Header';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'QuantX | Premium Market Analytics',
-  description: 'AI-powered investment insights and paper trading for Indian stocks.',
+  title: {
+    default: 'QuantX — Indian Stock Market Research & Paper Trading Platform',
+    template: '%s | QuantX',
+  },
+  description: 'Real-time Indian stock market dashboard with quantitative analysis, AI-driven research picks, live NSE/BSE data, and paper trading.',
+  keywords: ['Indian stocks', 'NSE', 'BSE', 'stock market', 'paper trading', 'quantitative analysis', 'QuantX'],
 };
 
 export default function RootLayout({

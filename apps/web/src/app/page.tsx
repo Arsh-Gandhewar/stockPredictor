@@ -19,8 +19,8 @@ import {
 } from 'lucide-react';
 import { useMarketSummary, useMarketStatus, useMarketMovers, useTopPicks, useStockChart, useHighRiskStocks, MarketIndex, MoverItem, TopPickItem, HighRiskStockItem } from '@/hooks/use-stock';
 import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState } from 'react';
-import { createChart, CandlestickSeries } from 'lightweight-charts';
+import { useEffect, useState } from 'react';
+import CandlestickChart from '@/components/charts/candlestick-chart';
 
 export default function Dashboard() {
   const router = useRouter();
@@ -28,96 +28,14 @@ export default function Dashboard() {
   const [selectedRange, setSelectedRange] = useState<string>('1mo');
   const [activeMoverTab, setActiveMoverTab] = useState<'gainers' | 'losers' | 'mostActive'>('gainers');
 
-  const { data: indices, isLoading: isLoadingSummary } = useMarketSummary();
+  const { data: indices, isLoading: isLoadingSummary, isError: isErrorSummary, refetch: refetchSummary } = useMarketSummary();
   const { data: marketStatus } = useMarketStatus();
-  const { data: movers, isLoading: isLoadingMovers } = useMarketMovers();
-  const { data: topPicks, isLoading: isLoadingPicks } = useTopPicks();
-  const { data: highRiskPicks, isLoading: isLoadingHighRisk } = useHighRiskStocks();
+  const { data: movers, isLoading: isLoadingMovers, isError: isErrorMovers, refetch: refetchMovers } = useMarketMovers();
+  const { data: topPicks, isLoading: isLoadingPicks, isError: isErrorPicks, refetch: refetchPicks } = useTopPicks();
+  const { data: highRiskPicks, isLoading: isLoadingHighRisk, isError: isErrorHighRisk, refetch: refetchHighRisk } = useHighRiskStocks();
   const { data: indexChart, isLoading: isLoadingChart } = useStockChart(selectedIndex.symbol, selectedRange);
 
-  const chartContainerRef = useRef<HTMLDivElement>(null);
-
-  const chartRanges = [
-    { label: '1D', value: '1d' },
-    { label: '1W', value: '1w' },
-    { label: '1M', value: '1mo' },
-    { label: '6M', value: '6mo' },
-    { label: '1Y', value: '1y' },
-  ];
-
-  // Interactive Dynamic Index Candlestick Chart
-  useEffect(() => {
-    if (!chartContainerRef.current) return;
-    if (!indexChart || indexChart.length === 0) return;
-
-    chartContainerRef.current.innerHTML = '';
-
-    const containerWidth = chartContainerRef.current.clientWidth || 600;
-
-    const chart = createChart(chartContainerRef.current, {
-      layout: {
-        background: { color: 'transparent' },
-        textColor: '#9ca3af',
-      },
-      grid: {
-        vertLines: { color: 'rgba(255, 255, 255, 0.04)' },
-        horzLines: { color: 'rgba(255, 255, 255, 0.04)' },
-      },
-      width: containerWidth,
-      height: 280,
-      timeScale: {
-        borderColor: '#374151',
-        timeVisible: true,
-      },
-    });
-
-    const series = chart.addSeries(CandlestickSeries, {
-      upColor: '#22c55e',
-      downColor: '#ef4444',
-      borderVisible: false,
-      wickUpColor: '#22c55e',
-      wickDownColor: '#ef4444',
-    });
-
-    // Sanitize, sort, and strictly deduplicate candle data by timestamp
-    const seenTimes = new Set<string | number>();
-    const sanitizedData = [...indexChart]
-      .filter((c) => c && c.time && c.open != null && c.close != null && c.high != null && c.low != null)
-      .sort((a, b) => {
-        const timeA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
-        const timeB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
-        return timeA - timeB;
-      })
-      .filter((c) => {
-        if (seenTimes.has(c.time)) return false;
-        seenTimes.add(c.time);
-        return true;
-      });
-
-    if (sanitizedData.length > 0) {
-      series.setData(sanitizedData as any);
-      chart.timeScale().fitContent();
-    }
-
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth });
-      }
-    };
-
-    window.addEventListener('resize', handleResize);
-
-    const resizeObserver = new ResizeObserver(() => {
-      handleResize();
-    });
-    resizeObserver.observe(chartContainerRef.current);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      resizeObserver.disconnect();
-      chart.remove();
-    };
-  }, [indexChart, selectedIndex, selectedRange]);
+  // Chart ranges
 
   const isMarketOpen = marketStatus?.status === 'OPEN';
 
@@ -171,7 +89,12 @@ export default function Dashboard() {
         </div>
 
         <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          {isLoadingSummary ? (
+          {isErrorSummary ? (
+            <div className="col-span-2 lg:col-span-4 flex flex-col items-center justify-center py-6 text-center">
+              <p className="text-sm text-muted-foreground">Unable to load data</p>
+              <button onClick={() => refetchSummary()} className="mt-2 text-xs text-primary hover:underline font-semibold">Retry</button>
+            </div>
+          ) : isLoadingSummary ? (
             Array.from({ length: 4 }).map((_, i) => (
               <Card key={i} className="animate-pulse bg-muted/20 border-border/40 h-24" />
             ))
@@ -183,7 +106,10 @@ export default function Dashboard() {
               return (
                 <Card
                   key={index.symbol}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => setSelectedIndex({ name: index.name, symbol: index.symbol })}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedIndex({ name: index.name, symbol: index.symbol }); } }}
                   className={`overflow-hidden relative transition-all shadow-sm cursor-pointer group hover:-translate-y-0.5 ${
                     isSelected
                       ? 'bg-gradient-to-br from-primary/15 via-card to-card border-primary/60 ring-2 ring-primary/40 shadow-md'
@@ -235,10 +161,11 @@ export default function Dashboard() {
 
               {/* Timeframe selector */}
               <div className="flex items-center p-1 rounded-lg bg-muted/60 border border-border/40 text-xs font-semibold self-start sm:self-auto">
-                {chartRanges.map((r) => (
+                {[{ label: '1D', value: '1d' }, { label: '1W', value: '1w' }, { label: '1M', value: '1mo' }, { label: '6M', value: '6mo' }, { label: '1Y', value: '1y' }].map((r) => (
                   <button
                     key={r.value}
                     onClick={() => setSelectedRange(r.value)}
+                    aria-pressed={selectedRange === r.value}
                     className={`px-2.5 py-0.5 rounded-md transition-all ${
                       selectedRange === r.value
                         ? 'bg-background text-foreground shadow-sm font-bold'
@@ -258,7 +185,7 @@ export default function Dashboard() {
                 <span className="text-xs text-muted-foreground font-semibold">Streaming candles for {selectedIndex.name}...</span>
               </div>
             )}
-            <div ref={chartContainerRef} className="w-full h-[280px]" />
+            <CandlestickChart data={indexChart || []} height={280} />
           </CardContent>
         </Card>
 
@@ -281,7 +208,12 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="p-0 divide-y divide-border/30 overflow-hidden">
-            {isLoadingPicks ? (
+            {isErrorPicks ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <p className="text-sm text-muted-foreground">Unable to load data</p>
+                <button onClick={() => refetchPicks()} className="mt-2 text-xs text-primary hover:underline font-semibold">Retry</button>
+              </div>
+            ) : isLoadingPicks ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               </div>
@@ -291,7 +223,10 @@ export default function Dashboard() {
                 return (
                   <div
                     key={pick.ticker}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => router.push(`/stock/${pick.ticker}`)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(`/stock/${pick.ticker}`); } }}
                     className="flex items-center justify-between p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group"
                   >
                     <div className="flex flex-col">
@@ -320,7 +255,7 @@ export default function Dashboard() {
 
                       <div className="hidden sm:flex flex-col items-end">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-                          {pick.recommendation} ({pick.confidence}%)
+                          {pick.recommendation?.replace('_', ' ') || 'BUY'} ({pick.confidenceScore || 85}%)
                         </span>
                       </div>
 
@@ -355,7 +290,12 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="p-0 divide-y divide-border/30 overflow-hidden">
-            {isLoadingHighRisk ? (
+            {isErrorHighRisk ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <p className="text-sm text-muted-foreground">Unable to load data</p>
+                <button onClick={() => refetchHighRisk()} className="mt-2 text-xs text-primary hover:underline font-semibold">Retry</button>
+              </div>
+            ) : isLoadingHighRisk ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
               </div>
@@ -365,7 +305,10 @@ export default function Dashboard() {
                 return (
                   <div
                     key={stock.ticker}
+                    role="button"
+                    tabIndex={0}
                     onClick={() => router.push(`/stock/${stock.ticker}`)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(`/stock/${stock.ticker}`); } }}
                     className="flex items-center justify-between p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group"
                   >
                     <div className="flex flex-col">
@@ -392,7 +335,7 @@ export default function Dashboard() {
 
                       <div className="hidden sm:flex flex-col items-end">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-green-500/10 text-green-400 border border-green-500/20 flex items-center gap-0.5">
-                          <Target className="h-3 w-3" /> +{stock.targetUpsidePercent}%
+                          <Target className="h-3 w-3" /> 1:{stock.rewardRiskRatio} R:R
                         </span>
                       </div>
 
@@ -422,6 +365,8 @@ export default function Dashboard() {
               <div className="flex items-center p-1 rounded-lg bg-muted/60 border border-border/40 text-xs font-semibold">
                 <button
                   onClick={() => setActiveMoverTab('gainers')}
+                  role="tab"
+                  aria-selected={activeMoverTab === 'gainers'}
                   className={`px-3 py-1 rounded-md transition-all ${
                     activeMoverTab === 'gainers' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
@@ -430,6 +375,8 @@ export default function Dashboard() {
                 </button>
                 <button
                   onClick={() => setActiveMoverTab('losers')}
+                  role="tab"
+                  aria-selected={activeMoverTab === 'losers'}
                   className={`px-3 py-1 rounded-md transition-all ${
                     activeMoverTab === 'losers' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
@@ -438,6 +385,8 @@ export default function Dashboard() {
                 </button>
                 <button
                   onClick={() => setActiveMoverTab('mostActive')}
+                  role="tab"
+                  aria-selected={activeMoverTab === 'mostActive'}
                   className={`px-3 py-1 rounded-md transition-all ${
                     activeMoverTab === 'mostActive' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'
                   }`}
@@ -448,7 +397,12 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            {isLoadingMovers ? (
+            {isErrorMovers ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <p className="text-sm text-muted-foreground">Unable to load data</p>
+                <button onClick={() => refetchMovers()} className="mt-2 text-xs text-primary hover:underline font-semibold">Retry</button>
+              </div>
+            ) : isLoadingMovers ? (
               <div className="flex items-center justify-center py-12">
                 <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" />
                 <span className="text-xs text-muted-foreground">Scanning stock universe...</span>
@@ -472,7 +426,10 @@ export default function Dashboard() {
                         <tr
                           key={item.ticker}
                           className="hover:bg-muted/30 transition-colors cursor-pointer"
+                          role="button"
+                          tabIndex={0}
                           onClick={() => router.push(`/stock/${item.ticker}`)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(`/stock/${item.ticker}`); } }}
                         >
                           <td className="py-2.5 px-4 font-bold text-foreground flex flex-col">
                             <span className="font-mono">{item.ticker.replace('.NS', '')}</span>
