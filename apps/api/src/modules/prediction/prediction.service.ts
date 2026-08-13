@@ -191,7 +191,13 @@ export class QuantPredictionService implements OnModuleInit {
   }
 
   async getUniversePredictions(): Promise<StockPrediction[]> {
-    const universe = this.marketProvider.getUniverse().slice(0, 50); // limit for performance
+    const cached = this.cache.get('__universe_predictions__');
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data as unknown as StockPrediction[];
+    }
+
+    // Evaluate top 25 market universe candidates for real-time predictions
+    const universe = this.marketProvider.getUniverse().slice(0, 25);
     const results = await Promise.allSettled(universe.map(u => this.getPrediction(u.ticker)));
     
     const predictions: StockPrediction[] = results
@@ -207,6 +213,12 @@ export class QuantPredictionService implements OnModuleInit {
       };
     });
     
+    // Cache universe predictions for 45 seconds to keep responses instant
+    this.cache.set('__universe_predictions__', { 
+      data: predictions as unknown as StockPrediction, 
+      expiresAt: Date.now() + 45_000 
+    });
+
     return predictions;
   }
 

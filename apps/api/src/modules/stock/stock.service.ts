@@ -187,7 +187,8 @@ export class StockService {
     if (cached) return cached;
 
     const candles = await this.marketProvider.getHistoricalCandles(ticker, range);
-    this.setCache(cacheKey, candles, range === '1d' ? 5_000 : 60_000);
+    const ttl = range === '1d' ? 10_000 : range === '1w' ? 60_000 : 300_000;
+    this.setCache(cacheKey, candles, ttl);
     return candles;
   }
 

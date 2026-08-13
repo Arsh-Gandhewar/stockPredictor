@@ -317,8 +317,8 @@ export function useTopPicks() {
       }
       return fetcher<TopPickItem[]>('/stock/top-picks');
     },
-    refetchInterval: 4000,
-    staleTime: 2000,
+    refetchInterval: 15000,
+    staleTime: 10000,
   });
 }
 
@@ -355,8 +355,8 @@ export function useHighRiskStocks() {
       }
       return fetcher<HighRiskStockItem[]>('/stock/high-risk-high-reward');
     },
-    refetchInterval: 4000,
-    staleTime: 2000,
+    refetchInterval: 15000,
+    staleTime: 10000,
   });
 }
 
@@ -366,8 +366,8 @@ export function useMarketSummary() {
   return useQuery({
     queryKey: ['market-summary'],
     queryFn: () => fetcher<MarketIndex[]>('/stock/market-summary'),
-    refetchInterval: 3000,
-    staleTime: 1000,
+    refetchInterval: 10000,
+    staleTime: 5000,
   });
 }
 
@@ -375,8 +375,8 @@ export function useMarketStatus() {
   return useQuery({
     queryKey: ['market-status'],
     queryFn: () => fetcher<MarketStatusInfo>('/stock/market-status'),
-    refetchInterval: 5000,
-    staleTime: 2000,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 }
 
@@ -384,8 +384,8 @@ export function useMarketMovers() {
   return useQuery({
     queryKey: ['market-movers'],
     queryFn: () => fetcher<MarketMovers>('/stock/movers'),
-    refetchInterval: 3000,
-    staleTime: 1000,
+    refetchInterval: 10000,
+    staleTime: 5000,
   });
 }
 
@@ -394,8 +394,8 @@ export function useStockQuote(ticker: string) {
     queryKey: ['stock-quote', ticker],
     queryFn: () => fetcher<StockQuote>(`/stock/${encodeURIComponent(ticker)}/quote`),
     enabled: !!ticker,
-    refetchInterval: 3000,
-    staleTime: 1000,
+    refetchInterval: 5000,
+    staleTime: 3000,
   });
 }
 
@@ -404,8 +404,8 @@ export function useStockChart(ticker: string, range: string = '6mo') {
     queryKey: ['stock-chart', ticker, range],
     queryFn: () => fetcher<Candle[]>(`/stock/${encodeURIComponent(ticker)}/chart?range=${range}`),
     enabled: !!ticker,
-    refetchInterval: range === '1d' || range === '1w' ? 3000 : 10000,
-    staleTime: range === '1d' || range === '1w' ? 1000 : 5000,
+    refetchInterval: range === '1d' || range === '1w' ? 10000 : 60000,
+    staleTime: range === '1d' || range === '1w' ? 5000 : 30000,
   });
 }
 
@@ -414,8 +414,8 @@ export function useStockProfile(ticker: string) {
     queryKey: ['stock-profile', ticker],
     queryFn: () => fetcher<StockProfile>(`/stock/${encodeURIComponent(ticker)}/profile`),
     enabled: !!ticker,
-    refetchInterval: 3000,
-    staleTime: 1000,
+    refetchInterval: 10000,
+    staleTime: 5000,
   });
 }
 
@@ -424,8 +424,8 @@ export function useMovementCatalyst(ticker: string) {
     queryKey: ['movement-catalyst', ticker],
     queryFn: () => fetcher<MovementCatalyst>(`/stock/${encodeURIComponent(ticker)}/catalyst`),
     enabled: !!ticker,
-    refetchInterval: 5000,
-    staleTime: 3000,
+    refetchInterval: 15000,
+    staleTime: 10000,
   });
 }
 
