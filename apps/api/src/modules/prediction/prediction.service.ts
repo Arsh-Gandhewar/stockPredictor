@@ -224,16 +224,48 @@ export class QuantPredictionService implements OnModuleInit {
 
   async getTopRankedStocks(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
-    const buySignals = all.filter(p => p.decision === 'STRONG_BUY' || p.decision === 'BUY' || p.decision === 'ACCUMULATE');
-    return (buySignals.length > 0 ? buySignals : all).slice(0, 10);
+    
+    // Sort all opportunities strictly by highest composite probability and conviction descending
+    const sorted = [...all].sort((a, b) => {
+      const scoreA = (a.prediction['5d'].calibratedProbability * 100) + 
+                     (a.prediction['20d'].calibratedProbability * 50) + 
+                     (a.decision === 'STRONG_BUY' ? 40 : a.decision === 'BUY' ? 25 : a.decision === 'ACCUMULATE' ? 10 : 0);
+      const scoreB = (b.prediction['5d'].calibratedProbability * 100) + 
+                     (b.prediction['20d'].calibratedProbability * 50) + 
+                     (b.decision === 'STRONG_BUY' ? 40 : b.decision === 'BUY' ? 25 : b.decision === 'ACCUMULATE' ? 10 : 0);
+      return scoreB - scoreA;
+    });
+
+    // Re-index ranks strictly #1, #2, #3...
+    sorted.forEach((p, idx) => {
+      p.ranking = {
+        rank: idx + 1,
+        percentile: parseFloat((100 - ((idx / sorted.length) * 100)).toFixed(1)),
+        universeSize: sorted.length
+      };
+    });
+
+    const buySignals = sorted.filter(p => p.decision === 'STRONG_BUY' || p.decision === 'BUY' || p.decision === 'ACCUMULATE');
+    return (buySignals.length > 0 ? buySignals : sorted).slice(0, 10);
   }
 
   async getHighRiskOpportunities(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
+    
+    // Filter non-negative decisions and sort strictly by highest risk-adjusted alpha probability descending
     const highRisk = all
-      .filter(p => (p.risk.volatility > 0.02 || p.prediction['20d'].calibratedProbability > 0.60) && p.decision !== 'SELL' && p.decision !== 'STRONG_SELL')
-      .sort((a, b) => (b.risk.volatility * b.prediction['20d'].calibratedProbability) - (a.risk.volatility * a.prediction['20d'].calibratedProbability));
-    return (highRisk.length > 0 ? highRisk : all.slice(0, 5)).slice(0, 5);
+      .filter(p => p.decision !== 'SELL' && p.decision !== 'STRONG_SELL')
+      .sort((a, b) => {
+        const alphaA = (a.prediction['5d'].calibratedProbability * 100) + 
+                       (a.prediction['5d'].expectedReturn * 500) + 
+                       (a.risk.rewardRiskRatio * 15);
+        const alphaB = (b.prediction['5d'].calibratedProbability * 100) + 
+                       (b.prediction['5d'].expectedReturn * 500) + 
+                       (b.risk.rewardRiskRatio * 15);
+        return alphaB - alphaA;
+      });
+
+    return (highRisk.length > 0 ? highRisk : all).slice(0, 5);
   }
 
   async getMarketRegime(): Promise<MarketRegime> {

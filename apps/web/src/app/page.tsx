@@ -317,7 +317,7 @@ export default function Dashboard() {
                 <Loader2 className="h-6 w-6 animate-spin text-primary" />
               </div>
             ) : (
-              topPicks?.slice(0, 5).map((pick: TopPickItem) => {
+              topPicks?.slice(0, 5).map((pick: TopPickItem, idx: number) => {
                 const isGain = pick.changePercent >= 0;
                 const prob5d = pick.calibrated5dProb ?? pick.confidenceScore ?? 71;
                 const expRet = pick.expectedReturn ?? (pick.changePercent !== 0 ? pick.changePercent : 3.8);
@@ -331,10 +331,30 @@ export default function Dashboard() {
                     tabIndex={0}
                     onClick={() => router.push(`/stock/${pick.ticker}`)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(`/stock/${pick.ticker}`); } }}
-                    className="flex flex-col p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group space-y-2"
+                    className={`flex flex-col p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group space-y-2 ${
+                      idx === 0 ? 'bg-emerald-500/5 ring-1 ring-emerald-500/30' : ''
+                    }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
+                        {idx === 0 ? (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs flex items-center gap-1">
+                            🥇 #1 TOP BUY
+                          </span>
+                        ) : idx === 1 ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">
+                            🥈 #2
+                          </span>
+                        ) : idx === 2 ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-700/20 text-amber-300 border border-amber-700/30">
+                            🥉 #3
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground">
+                            #{idx + 1}
+                          </span>
+                        )}
+
                         <span className="font-bold text-sm text-foreground group-hover:text-primary transition-colors font-mono">
                           {pick.ticker.replace('.NS', '')}
                         </span>
@@ -393,7 +413,7 @@ export default function Dashboard() {
                   High Beta Alpha Setups
                 </CardTitle>
                 <CardDescription className="text-xs">
-                  Volatility-scaled targets with asymmetric alpha probability
+                  Ranked by highest alpha probability & risk-adjusted upside
                 </CardDescription>
               </div>
               <span className="text-[10px] font-extrabold text-amber-400 px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
@@ -412,7 +432,7 @@ export default function Dashboard() {
                 <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
               </div>
             ) : (
-              highRiskPicks?.slice(0, 5).map((stock: HighRiskStockItem) => {
+              highRiskPicks?.slice(0, 5).map((stock: HighRiskStockItem, idx: number) => {
                 const alphaProb = stock.calibratedAlphaProb ?? 68;
                 const rrRatio = stock.rewardRiskRatio ?? 3.2;
 
@@ -423,10 +443,30 @@ export default function Dashboard() {
                     tabIndex={0}
                     onClick={() => router.push(`/stock/${stock.ticker}`)}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(`/stock/${stock.ticker}`); } }}
-                    className="flex flex-col p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group space-y-2"
+                    className={`flex flex-col p-3.5 hover:bg-muted/40 transition-colors cursor-pointer group space-y-2 ${
+                      idx === 0 ? 'bg-amber-500/5 ring-1 ring-amber-500/30' : ''
+                    }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
+                        {idx === 0 ? (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-xs flex items-center gap-1">
+                            🔥 #1 TOP ALPHA
+                          </span>
+                        ) : idx === 1 ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300 border border-slate-500/30">
+                            🥈 #2
+                          </span>
+                        ) : idx === 2 ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-700/20 text-amber-300 border border-amber-700/30">
+                            🥉 #3
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-muted/60 text-muted-foreground">
+                            #{idx + 1}
+                          </span>
+                        )}
+
                         <span className="font-bold text-sm text-foreground group-hover:text-amber-400 transition-colors font-mono">
                           {stock.ticker.replace('.NS', '')}
                         </span>
