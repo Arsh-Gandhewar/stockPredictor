@@ -225,24 +225,26 @@ export class QuantPredictionService implements OnModuleInit {
   async getTopRankedStocks(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
     
-    // Sort all opportunities strictly by highest composite probability and conviction descending
+    // Top Monitored: Low Risk, High Probability, Above-Average Profit
+    // Prioritizes low downside probability, high safety margin, and strong risk-adjusted returns
     const sorted = [...all].sort((a, b) => {
-      const scoreA = (a.prediction['5d'].calibratedProbability * 100) + 
-                     (a.prediction['20d'].calibratedProbability * 50) + 
-                     (a.decision === 'STRONG_BUY' ? 40 : a.decision === 'BUY' ? 25 : a.decision === 'ACCUMULATE' ? 10 : 0);
-      const scoreB = (b.prediction['5d'].calibratedProbability * 100) + 
-                     (b.prediction['20d'].calibratedProbability * 50) + 
-                     (b.decision === 'STRONG_BUY' ? 40 : b.decision === 'BUY' ? 25 : b.decision === 'ACCUMULATE' ? 10 : 0);
-      return scoreB - scoreA;
-    });
-
-    // Re-index ranks strictly #1, #2, #3...
-    sorted.forEach((p, idx) => {
-      p.ranking = {
-        rank: idx + 1,
-        percentile: parseFloat((100 - ((idx / sorted.length) * 100)).toFixed(1)),
-        universeSize: sorted.length
-      };
+      const downsideA = a.risk.downsideProbability || 0.25;
+      const downsideB = b.risk.downsideProbability || 0.25;
+      const volA = Math.max(0.015, a.risk.volatility || 0.02);
+      const volB = Math.max(0.015, b.risk.volatility || 0.02);
+      
+      // Low risk safety score: high expected return divided by volatility, penalized by downside risk
+      const safetyProfitA = ((a.prediction['5d'].expectedReturn * 100) / volA) * 
+                            (a.prediction['5d'].calibratedProbability) * 
+                            (1 - downsideA) +
+                            (a.decision === 'STRONG_BUY' ? 20 : a.decision === 'BUY' ? 12 : 0);
+                            
+      const safetyProfitB = ((b.prediction['5d'].expectedReturn * 100) / volB) * 
+                            (b.prediction['5d'].calibratedProbability) * 
+                            (1 - downsideB) +
+                            (b.decision === 'STRONG_BUY' ? 20 : b.decision === 'BUY' ? 12 : 0);
+                            
+      return safetyProfitB - safetyProfitA;
     });
 
     const buySignals = sorted.filter(p => p.decision === 'STRONG_BUY' || p.decision === 'BUY' || p.decision === 'ACCUMULATE');
@@ -252,17 +254,16 @@ export class QuantPredictionService implements OnModuleInit {
   async getHighRiskOpportunities(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
     
-    // Filter non-negative decisions and sort strictly by highest risk-adjusted alpha probability descending
+    // High Beta Alpha: High Risk, High Profit Potential
+    // Prioritizes higher volatility, explosive target upside, and high asymmetric expansion potential
     const highRisk = all
       .filter(p => p.decision !== 'SELL' && p.decision !== 'STRONG_SELL')
       .sort((a, b) => {
-        const alphaA = (a.prediction['5d'].calibratedProbability * 100) + 
-                       (a.prediction['5d'].expectedReturn * 500) + 
-                       (a.risk.rewardRiskRatio * 15);
-        const alphaB = (b.prediction['5d'].calibratedProbability * 100) + 
-                       (b.prediction['5d'].expectedReturn * 500) + 
-                       (b.risk.rewardRiskRatio * 15);
-        return alphaB - alphaA;
+        const volA = a.risk.volatility || 0.035;
+        const volB = b.risk.volatility || 0.035;
+        const targetExpA = Math.abs(a.prediction['5d'].expectedReturn * 1000) * (volA * 50) * (a.risk.rewardRiskRatio || 2.5);
+        const targetExpB = Math.abs(b.prediction['5d'].expectedReturn * 1000) * (volB * 50) * (b.risk.rewardRiskRatio || 2.5);
+        return targetExpB - targetExpA;
       });
 
     return (highRisk.length > 0 ? highRisk : all).slice(0, 5);

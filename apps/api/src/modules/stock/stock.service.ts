@@ -229,14 +229,8 @@ export class StockService {
     const cached = this.getCached<TopPick[]>('top-picks');
     if (cached) return cached;
 
-    const rankedPredictions = await this.predictionService.getUniversePredictions();
-    const candidates = rankedPredictions
-      .filter((p) => p.decision === 'STRONG_BUY' || p.decision === 'BUY' || p.decision === 'ACCUMULATE')
-      .slice(0, 10);
-
-    const activeList = candidates.length > 0 ? candidates : rankedPredictions.slice(0, 10);
-
-    const picks: TopPick[] = activeList.map((p, idx) => {
+    const rankedPredictions = await this.predictionService.getTopRankedStocks();
+    const picks: TopPick[] = rankedPredictions.slice(0, 10).map((p, idx) => {
       const newsEvidence = p.evidence.find((e) => e.type === 'NEWS');
       const newsSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = newsEvidence?.description.includes('BEARISH')
         ? 'BEARISH'
@@ -252,9 +246,9 @@ export class StockService {
         p.risk.rewardRiskRatio * 10
       );
 
-      let reasoning = `Quant Model ${p.modelVersion} forecast: ${(p.prediction['20d'].calibratedProbability * 100).toFixed(0)}% 20-day directional probability with 1:${p.risk.rewardRiskRatio} R:R.`;
+      let reasoning = `Low-risk setup with ${(p.prediction['5d'].calibratedProbability * 100).toFixed(0)}% 5-day probability and 1:${p.risk.rewardRiskRatio} R:R.`;
       if (topHeadline) {
-        reasoning = `Live catalyst (${newsSentiment}): "${topHeadline}". Conviction: ${p.decision}.`;
+        reasoning = `Catalyst (${newsSentiment}): "${topHeadline}". Safe growth conviction: ${p.decision}.`;
       }
 
       const quotePrice = p.stock.price || 0;
@@ -278,13 +272,12 @@ export class StockService {
         target: p.risk.targetPrice,
         stopLoss: p.risk.stopLossPrice,
         rewardRiskRatio: p.risk.rewardRiskRatio,
-        rank: p.ranking?.rank || idx + 1,
+        rank: idx + 1,
       };
     });
 
-    const sortedPicks = picks.sort((a, b) => b.convictionScore - a.convictionScore);
-    this.setCache('top-picks', sortedPicks, this.getCacheTtl());
-    return sortedPicks;
+    this.setCache('top-picks', picks, this.getCacheTtl());
+    return picks;
   }
 
   async getHighRiskHighRewardOpportunities(): Promise<HighRiskPick[]> {
@@ -333,7 +326,7 @@ export class StockService {
         topHeadline,
         catalyst: catalystText,
         rank: idx + 1,
-        volatilityRank: idx === 0 ? 'Top Alpha Buy (#1)' : idx === 1 ? 'High Alpha (#2)' : `Momentum Setup (#${idx + 1})`,
+        volatilityRank: 'High Risk / High Profit',
       };
     });
 
