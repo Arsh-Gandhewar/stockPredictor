@@ -132,7 +132,7 @@ export class StockService {
 
   private getCacheTtl(): number {
     const status = this.marketProvider.getMarketStatus();
-    return status.status === 'OPEN' ? 2_000 : 10_000; // 2s during market, 10s otherwise
+    return status.status === 'OPEN' ? 5_000 : 30_000; // 5s during market, 30s otherwise
   }
 
   async getMarketSummary(): Promise<MarketIndexBenchmark[]> {
@@ -184,7 +184,7 @@ export class StockService {
     if (cached) return cached;
 
     const candles = await this.marketProvider.getHistoricalCandles(ticker, range);
-    this.setCache(cacheKey, candles, range === '1d' ? 2_000 : 30_000);
+    this.setCache(cacheKey, candles, range === '1d' ? 5_000 : 60_000);
     return candles;
   }
 
@@ -205,8 +205,8 @@ export class StockService {
     if (cached) return cached;
 
     // Scan top universe leaders for real-time movers
-    const scanUniverse = this.marketProvider.getUniverse().slice(0, 50);
-    const quotes = await this.marketProvider.getQuotes(scanUniverse.map((s) => s.ticker));
+    const scanUniverse = this.marketProvider.getUniverse().slice(0, 35);
+    const quotes = await this.getQuotes(scanUniverse.map((s) => s.ticker));
 
     const sortedByChange = [...quotes].sort((a, b) => b.changePercent - a.changePercent);
     const sortedByVolume = [...quotes].sort((a, b) => (b.volume || 0) - (a.volume || 0));
@@ -225,9 +225,9 @@ export class StockService {
     const cached = this.getCached<TopPick[]>('top-picks');
     if (cached) return cached;
 
-    // Scan top 25 universe equities
-    const monitored = this.marketProvider.getUniverse().slice(0, 25);
-    const quotes = await this.marketProvider.getQuotes(monitored.map((s) => s.ticker));
+    // Scan top 20 universe equities
+    const monitored = this.marketProvider.getUniverse().slice(0, 20);
+    const quotes = await this.getQuotes(monitored.map((s) => s.ticker));
 
     const picks = await Promise.all(
       quotes.map(async (q) => {
@@ -319,7 +319,7 @@ export class StockService {
       'BSE.NS', 'HAL.NS', 'CDSL.NS', 'BEL.NS', 'POLICYBZR.NS'
     ];
 
-    const quotes = await this.marketProvider.getQuotes(candidates);
+    const quotes = await this.getQuotes(candidates);
     
     // Map with rich risk-reward metrics & news sentiment adjusted alpha score
     const computedPicks = await Promise.all(

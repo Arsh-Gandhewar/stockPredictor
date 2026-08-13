@@ -68,58 +68,64 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     };
   }
 
+  private formatQuote(q: any, ticker: string): MarketQuote | null {
+    if (!q || typeof q.regularMarketPrice !== 'number' || q.regularMarketPrice <= 0) {
+      return null;
+    }
+    const marketStatus = this.getMarketStatus();
+    const meta = this.universe.find((s) => s.ticker === ticker);
+
+    const price = q.regularMarketPrice;
+    const prevClose = q.regularMarketPreviousClose || price;
+    const change = q.regularMarketChange ?? (price - prevClose);
+    const changePercent = q.regularMarketChangePercent ?? (prevClose > 0 ? (change / prevClose) * 100 : 0);
+
+    const rawHigh = q.regularMarketDayHigh || price;
+    const rawLow = q.regularMarketDayLow || price;
+    const dayHigh = Math.max(rawHigh, price, prevClose);
+    const dayLow = Math.min(rawLow, price, prevClose);
+
+    const freshness =
+      marketStatus.status === 'OPEN'
+        ? 'LIVE'
+        : marketStatus.status === 'PRE_OPEN'
+        ? 'DELAYED'
+        : 'CLOSED';
+
+    return {
+      ticker,
+      name: meta?.name || q.shortName || q.longName || ticker.replace('.NS', ''),
+      price: parseFloat(price.toFixed(2)),
+      change: parseFloat(change.toFixed(2)),
+      changePercent: parseFloat(changePercent.toFixed(2)),
+      dayHigh: parseFloat(dayHigh.toFixed(2)),
+      dayLow: parseFloat(dayLow.toFixed(2)),
+      prevClose: parseFloat(prevClose.toFixed(2)),
+      open: parseFloat((q.regularMarketOpen || prevClose).toFixed(2)),
+      volume: q.regularMarketVolume || 100000,
+      marketCap: q.marketCap,
+      pe: q.trailingPE,
+      weekHigh52: q.fiftyTwoWeekHigh,
+      weekLow52: q.fiftyTwoWeekLow,
+      marketState: q.marketState || marketStatus.status,
+      exchange: q.exchange || 'NSE',
+      timestamp: new Date().toISOString(),
+      source: 'NSE / Yahoo Live Feed',
+      freshness,
+    };
+  }
+
   /**
    * Fetches real, live stock quotes directly from the National Stock Exchange (NSE)
    */
   async getQuote(ticker: string): Promise<MarketQuote> {
-    const marketStatus = this.getMarketStatus();
-    const meta = this.universe.find((s) => s.ticker === ticker);
-
     try {
       const q = (await this.yf.quote(ticker)) as any;
-      if (!q || typeof q.regularMarketPrice !== 'number' || q.regularMarketPrice <= 0) {
+      const formatted = this.formatQuote(q, ticker);
+      if (!formatted) {
         throw new Error(`Invalid market price received for ${ticker}`);
       }
-
-      const price = q.regularMarketPrice;
-      const prevClose = q.regularMarketPreviousClose || price;
-      const change = q.regularMarketChange ?? (price - prevClose);
-      const changePercent = q.regularMarketChangePercent ?? (prevClose > 0 ? (change / prevClose) * 100 : 0);
-
-      // Validate OHLC bounds
-      const rawHigh = q.regularMarketDayHigh || price;
-      const rawLow = q.regularMarketDayLow || price;
-      const dayHigh = Math.max(rawHigh, price, prevClose);
-      const dayLow = Math.min(rawLow, price, prevClose);
-
-      const freshness =
-        marketStatus.status === 'OPEN'
-          ? 'LIVE'
-          : marketStatus.status === 'PRE_OPEN'
-          ? 'DELAYED'
-          : 'CLOSED';
-
-      return {
-        ticker,
-        name: meta?.name || q.shortName || q.longName || ticker.replace('.NS', ''),
-        price: parseFloat(price.toFixed(2)),
-        change: parseFloat(change.toFixed(2)),
-        changePercent: parseFloat(changePercent.toFixed(2)),
-        dayHigh: parseFloat(dayHigh.toFixed(2)),
-        dayLow: parseFloat(dayLow.toFixed(2)),
-        prevClose: parseFloat(prevClose.toFixed(2)),
-        open: parseFloat((q.regularMarketOpen || prevClose).toFixed(2)),
-        volume: q.regularMarketVolume || 100000,
-        marketCap: q.marketCap,
-        pe: q.trailingPE,
-        weekHigh52: q.fiftyTwoWeekHigh,
-        weekLow52: q.fiftyTwoWeekLow,
-        marketState: q.marketState || marketStatus.status,
-        exchange: q.exchange || 'NSE',
-        timestamp: new Date().toISOString(),
-        source: 'NSE / Yahoo Live Feed',
-        freshness,
-      };
+      return formatted;
     } catch (err: any) {
       this.logger.warn(`Quote retrieval issue for ${ticker}: ${err.message}`);
       throw err;
@@ -127,19 +133,31 @@ export class YahooMarketDataProvider implements MarketDataProvider {
   }
 
   /**
-   * Batch fetches multiple quotes concurrently
+   * Fast batch-fetches multiple quotes using Yahoo Finance array querying
    */
   async getQuotes(tickers: string[]): Promise<MarketQuote[]> {
+    if (!tickers || tickers.length === 0) return [];
     const results: MarketQuote[] = [];
-    const batchSize = 5;
+    const batchSize = 15;
+
     for (let i = 0; i < tickers.length; i += batchSize) {
       const batch = tickers.slice(i, i + batchSize);
-      const settled = await Promise.allSettled(batch.map((t) => this.getQuote(t)));
-      results.push(
-        ...settled
-          .filter((r): r is PromiseFulfilledResult<MarketQuote> => r.status === 'fulfilled')
-          .map((r) => r.value)
-      );
+      try {
+        const rawQuotes = await this.yf.quote(batch);
+        const quotesArray = Array.isArray(rawQuotes) ? rawQuotes : [rawQuotes];
+        for (const q of quotesArray) {
+          if (q && q.symbol) {
+            const formatted = this.formatQuote(q, q.symbol);
+            if (formatted) results.push(formatted);
+          }
+        }
+      } catch (err: any) {
+        this.logger.warn(`Batch quote failed for ${batch.join(', ')}, falling back: ${err.message}`);
+        const settled = await Promise.allSettled(batch.map((t) => this.getQuote(t)));
+        for (const r of settled) {
+          if (r.status === 'fulfilled' && r.value) results.push(r.value);
+        }
+      }
     }
     return results;
   }

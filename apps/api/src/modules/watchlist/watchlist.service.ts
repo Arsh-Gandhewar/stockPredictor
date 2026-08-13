@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
+import { StockService } from '../stock/stock.service';
 import { YahooMarketDataProvider } from '../stock/providers/yahoo-market-data.provider';
 
 @Injectable()
@@ -9,6 +10,7 @@ export class WatchlistService {
 
   constructor(
     private readonly db: DatabaseService,
+    private readonly stockService: StockService,
     private readonly marketProvider: YahooMarketDataProvider
   ) {}
 
@@ -76,12 +78,12 @@ export class WatchlistService {
           });
         }
         this.fallbackStore.set(userId, defaultTickers);
-        return this.marketProvider.getQuotes(defaultTickers);
+        return this.stockService.getQuotes(defaultTickers);
       }
 
       const tickers = watchlist.stocks.map((ws) => ws.stock.ticker);
       this.fallbackStore.set(userId, tickers);
-      return this.marketProvider.getQuotes(tickers);
+      return this.stockService.getQuotes(tickers);
     } catch (err: any) {
       this.logger.warn(`Watchlist query fallback for ${userId}: ${err.message}`);
       const tickers = this.fallbackStore.get(userId) || [
@@ -90,7 +92,7 @@ export class WatchlistService {
         'HDFCBANK.NS',
         'INFY.NS',
       ];
-      return this.marketProvider.getQuotes(tickers);
+      return this.stockService.getQuotes(tickers);
     }
   }
 
@@ -143,6 +145,11 @@ export class WatchlistService {
           stockId: stock.id,
         },
       });
+
+      const current = this.fallbackStore.get(userId) || [];
+      if (!current.includes(ticker)) {
+        this.fallbackStore.set(userId, [ticker, ...current]);
+      }
     } catch (err: any) {
       this.logger.error(`Failed to add ticker to watchlist: ${err.message}`);
     }
@@ -151,21 +158,15 @@ export class WatchlistService {
 
   async removeTicker(userId: string, ticker: string): Promise<any> {
     try {
-      const user = await this.db.client.user.findUnique({ where: { clerkId: userId } });
-      if (!user) return this.getUserWatchlist(userId);
-
-      const stock = await this.db.client.stock.findUnique({ where: { ticker } });
-      if (!stock) return this.getUserWatchlist(userId);
-
-      const watchlist = await this.db.client.watchlist.findFirst({ where: { userId: user.id } });
-      if (!watchlist) return this.getUserWatchlist(userId);
-
       await this.db.client.watchlistStock.deleteMany({
         where: {
-          watchlistId: watchlist.id,
-          stockId: stock.id,
+          watchlist: { user: { clerkId: userId } },
+          stock: { ticker },
         },
       });
+
+      const current = this.fallbackStore.get(userId) || [];
+      this.fallbackStore.set(userId, current.filter((t) => t !== ticker));
     } catch (err: any) {
       this.logger.error(`Failed to remove ticker from watchlist: ${err.message}`);
     }
