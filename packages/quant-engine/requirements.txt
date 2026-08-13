@@ -1,0 +1,10 @@
+lightgbm
+scikit-learn
+pandas
+numpy
+shap
+yfinance
+ta
+joblib
+pyyaml
+pyarrow

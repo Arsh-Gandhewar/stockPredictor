@@ -12,13 +12,15 @@ import {
   BellRing,
   Compass,
   Star,
-  Activity
+  Activity,
+  Cpu
 } from 'lucide-react';
 
 export const routes = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
   { label: 'Discover', icon: Compass, href: '/discover' },
   { label: 'Markets', icon: LineChart, href: '/markets' },
+  { label: 'Model Performance', icon: Cpu, href: '/model-performance' },
   { label: 'Watchlist', icon: Star, href: '/watchlist' },
   { label: 'Portfolio', icon: Wallet, href: '/portfolio' },
   { label: 'News', icon: Newspaper, href: '/news' },

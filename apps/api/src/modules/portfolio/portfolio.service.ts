@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException, Logger } from '@nes
 import { DatabaseService } from '../../database/database.service';
 import { StockService } from '../stock/stock.service';
 import { AiService } from '../ai/ai.service';
+import { QuantPredictionService } from '../prediction/prediction.service';
 import { TransactionType, OrderType } from 'db';
 import { Money } from '../../common/utils/money.util';
 
@@ -50,6 +51,7 @@ export class PortfolioService {
     private readonly db: DatabaseService,
     private readonly stockService: StockService,
     private readonly aiService: AiService,
+    private readonly predictionService: QuantPredictionService,
   ) {}
 
   private async getOrCreateUser(userId: string) {
@@ -395,7 +397,7 @@ export class PortfolioService {
   }
 
   /**
-   * AI Risk Guardian: scans user portfolio positions for exit signals
+   * AI Risk Guardian: scans user portfolio positions for quantitative exit signals and evidence-constrained narrative
    */
   async getPortfolioSellSignals(userId: string): Promise<any[]> {
     const portfolio = await this.getPortfolio(userId);
@@ -403,21 +405,87 @@ export class PortfolioService {
       return [];
     }
 
-    const signals = await Promise.allSettled(
+    const signalResults = await Promise.allSettled(
       portfolio.positions.map(async (pos) => {
-        return this.aiService.evaluatePortfolioSellOpportunity({
-          ticker: pos.stock.ticker,
-          name: pos.stock.name,
-          avgPrice: pos.averagePrice,
-          currentPrice: pos.currentPrice,
-          unrealizedPnLPercent: pos.overallPnLPercent,
-        });
+        const prediction = await this.predictionService.getPrediction(pos.stock.ticker);
+        const currentPrice = pos.currentPrice;
+        const isSellDecision = prediction.decision === 'SELL' || prediction.decision === 'STRONG_SELL';
+        const isHighDownside = prediction.risk.downsideProbability > 0.65;
+        const isStopLossTriggered = currentPrice <= prediction.risk.stopLossPrice;
+        const isReduceDecision = prediction.decision === 'REDUCE';
+
+        if (isSellDecision || isHighDownside || isStopLossTriggered || isReduceDecision) {
+          const recommendation: 'STRONG_SELL' | 'SELL' | 'REDUCE' =
+            isStopLossTriggered || prediction.decision === 'STRONG_SELL' || prediction.risk.downsideProbability > 0.80
+              ? 'STRONG_SELL'
+              : isReduceDecision
+              ? 'REDUCE'
+              : 'SELL';
+
+          const urgency: 'HIGH' | 'MEDIUM' | 'LOW' =
+            isStopLossTriggered || prediction.risk.downsideProbability > 0.80
+              ? 'HIGH'
+              : prediction.risk.downsideProbability > 0.65
+              ? 'MEDIUM'
+              : 'LOW';
+
+          const targetExitPrice = isStopLossTriggered
+            ? currentPrice
+            : prediction.risk.targetPrice || Money.round(currentPrice * 0.98);
+
+          // Get qualitative explanation strictly constrained to quantitative facts
+          const aiNarrative = await this.aiService.evaluatePortfolioSellOpportunity({
+            ticker: pos.stock.ticker,
+            name: pos.stock.name,
+            avgPrice: pos.averagePrice,
+            currentPrice: pos.currentPrice,
+            unrealizedPnLPercent: pos.overallPnLPercent,
+            decision: recommendation,
+            urgency,
+            targetExitPrice,
+            downsideProbability: prediction.risk.downsideProbability,
+            stopLossPrice: prediction.risk.stopLossPrice,
+            evidence: prediction.evidence.map((e) => e.description).join('; '),
+            invalidationConditions: prediction.invalidationConditions,
+          });
+
+          return {
+            ticker: pos.stock.ticker,
+            name: pos.stock.name,
+            recommendation,
+            urgency,
+            currentPrice,
+            averagePrice: pos.averagePrice,
+            unrealizedPnLPercent: pos.overallPnLPercent,
+            downsideProbability: prediction.risk.downsideProbability,
+            stopLossPrice: prediction.risk.stopLossPrice,
+            targetExitPrice,
+            rewardRiskRatio: prediction.risk.rewardRiskRatio,
+            confidenceScore: Math.round(prediction.prediction['20d'].calibratedProbability * 100),
+            financialReasoning:
+              aiNarrative?.financialReasoning ||
+              `Quantitative exit rule triggered: ${
+                isStopLossTriggered
+                  ? `Stop loss breached (₹${prediction.risk.stopLossPrice.toFixed(2)})`
+                  : isHighDownside
+                  ? `High downside probability (${Math.round(prediction.risk.downsideProbability * 100)}%)`
+                  : `Model ${prediction.decision} signal emitted`
+              }.`,
+            newsImpact:
+              aiNarrative?.newsImpact ||
+              (prediction.evidence.find((e) => e.type === 'NEWS')?.description || 'No adverse news detected.'),
+            gmpAnalysis:
+              aiNarrative?.gmpAnalysis ||
+              `Market regime: ${prediction.marketRegime}. Momentum alignment in ${pos.stock.sector || 'Equities'}.`,
+            invalidationConditions: prediction.invalidationConditions,
+          };
+        }
+        return null;
       })
     );
 
-    return signals
-      .filter((s): s is PromiseFulfilledResult<any> => s.status === 'fulfilled')
-      .map((s) => s.value)
-      .filter((val) => val && val.recommendation !== 'HOLD');
+    return signalResults
+      .filter((s): s is PromiseFulfilledResult<any> => s.status === 'fulfilled' && s.value !== null)
+      .map((s) => s.value);
   }
 }

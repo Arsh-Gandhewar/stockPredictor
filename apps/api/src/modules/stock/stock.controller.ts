@@ -1,9 +1,14 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, Inject, forwardRef } from '@nestjs/common';
 import { StockService } from './stock.service';
+import { QuantPredictionService } from '../prediction/prediction.service';
 
 @Controller('stock')
 export class StockController {
-  constructor(private readonly stockService: StockService) {}
+  constructor(
+    private readonly stockService: StockService,
+    @Inject(forwardRef(() => QuantPredictionService))
+    private readonly predictionService: QuantPredictionService
+  ) {}
 
   @Get('market-summary')
   async getMarketSummary() {
@@ -28,6 +33,31 @@ export class StockController {
   @Get('high-risk-high-reward')
   async getHighRiskHighReward() {
     return this.stockService.getHighRiskHighRewardOpportunities();
+  }
+
+  @Get('prediction/top-ranked')
+  async getPredictionTopRanked() {
+    return this.predictionService.getTopRankedStocks();
+  }
+
+  @Get('prediction/high-risk')
+  async getPredictionHighRisk() {
+    return this.predictionService.getHighRiskOpportunities();
+  }
+
+  @Get('prediction/regime')
+  async getPredictionRegime() {
+    return { regime: await this.predictionService.getMarketRegime() };
+  }
+
+  @Get('prediction/model-status')
+  getModelStatus() {
+    return this.predictionService.getModelStatus();
+  }
+
+  @Get('prediction/model-performance')
+  getModelPerformance() {
+    return this.predictionService.getModelPerformance();
   }
 
   @Get('search')
@@ -62,4 +92,10 @@ export class StockController {
   async getMovementCatalyst(@Param('ticker') ticker: string) {
     return this.stockService.getMovementCatalyst(ticker);
   }
+
+  @Get(':ticker/prediction')
+  async getPrediction(@Param('ticker') ticker: string) {
+    return this.predictionService.getPrediction(ticker);
+  }
 }
+

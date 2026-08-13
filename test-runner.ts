@@ -340,6 +340,59 @@ async function main() {
     assert(res.ok, `Frontend /portfolio returned HTTP ${res.status}`);
   });
 
+  await runTest('Frontend', 'GET /model-performance renders Research & Model Telemetry', async () => {
+    const res = await fetch(`${WEB_BASE}/model-performance`);
+    assert(res.ok, `Frontend /model-performance returned HTTP ${res.status}`);
+  });
+
+  // ── 8. Unified Quantitative Prediction Engine ─────────────────
+  console.log('\n--- Suite 8: Unified Quantitative Prediction Engine ---');
+
+  await runTest('Quant Engine', 'GET /stock/prediction/model-status returns active model and calibration version', async () => {
+    const res = await fetch(`${API_BASE}/stock/prediction/model-status`);
+    assert(res.ok, `HTTP ${res.status}`);
+    const data = await res.json();
+    assert(data.status === 'HEALTHY', `Model status not healthy: ${data.status}`);
+    assert(!!data.version, 'Model version missing');
+    assert(!!data.calibration, 'Calibration version missing');
+  });
+
+  await runTest('Quant Engine', 'GET /stock/prediction/regime returns detected macroeconomic regime', async () => {
+    const res = await fetch(`${API_BASE}/stock/prediction/regime`);
+    assert(res.ok, `HTTP ${res.status}`);
+    const data = await res.json();
+    assert(['BULL', 'BEAR', 'SIDEWAYS', 'HIGH_VOLATILITY', 'LOW_VOLATILITY', 'PANIC', 'RECOVERY'].includes(data.regime), `Invalid regime: ${data.regime}`);
+  });
+
+  await runTest('Quant Engine', 'GET /stock/RELIANCE.NS/prediction returns calibrated multi-horizon forecast', async () => {
+    const res = await fetch(`${API_BASE}/stock/RELIANCE.NS/prediction`);
+    assert(res.ok, `HTTP ${res.status}`);
+    const data = await res.json();
+    assert(!!data.prediction?.['1d'] && !!data.prediction?.['5d'] && !!data.prediction?.['20d'], 'Missing horizon predictions');
+    assert(data.prediction['5d'].calibratedProbability >= 0 && data.prediction['5d'].calibratedProbability <= 1, '5D probability out of bounds');
+    assert(!!data.risk?.stopLossPrice && !!data.risk?.targetPrice, 'Risk target/stop loss missing');
+    assert(!!data.scenarios?.bull && !!data.scenarios?.base && !!data.scenarios?.bear, 'Scenario matrix missing');
+    assert(['STRONG_BUY', 'BUY', 'ACCUMULATE', 'HOLD', 'REDUCE', 'SELL', 'STRONG_SELL', 'NO_TRADE'].includes(data.decision), `Invalid decision: ${data.decision}`);
+  });
+
+  await runTest('Quant Engine', 'GET /stock/prediction/top-ranked returns cross-sectionally ranked equities', async () => {
+    const res = await fetch(`${API_BASE}/stock/prediction/top-ranked`);
+    assert(res.ok, `HTTP ${res.status}`);
+    const data = await res.json();
+    assert(Array.isArray(data) && data.length > 0, 'Top ranked stocks empty');
+    assert(!!data[0].prediction?.['20d'], 'Rank #1 missing 20D forecast');
+  });
+
+  await runTest('Quant Engine', 'GET /stock/prediction/model-performance returns backtest telemetry & regime metrics', async () => {
+    const res = await fetch(`${API_BASE}/stock/prediction/model-performance`);
+    assert(res.ok, `HTTP ${res.status}`);
+    const data = await res.json();
+    assert(data.status === 'HEALTHY', `Model performance status: ${data.status}`);
+    assert(!!data.horizons?.['5d'] && data.horizons['5d'].accuracy > 0.5, '5D accuracy missing or sub-50%');
+    assert(Array.isArray(data.regimePerformance) && data.regimePerformance.length >= 4, 'Regime breakdown missing');
+    assert(Array.isArray(data.baselineComparisons) && data.baselineComparisons.length >= 3, 'Baseline comparisons missing');
+  });
+
   // ── Summary & Scorecard ──────────────────────────────────────
   console.log('\n====================================================');
   console.log('📊 TEST EXECUTION SUMMARY');

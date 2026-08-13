@@ -20,8 +20,11 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         return;
       } catch (err: any) {
         this.logger.warn(`Prisma connection attempt ${attempt}/${maxRetries} failed: ${err.message}`);
-        if (attempt === maxRetries) throw err;
-        await new Promise((res) => setTimeout(res, 2000));
+        if (attempt === maxRetries) {
+          this.logger.error('Prisma failed initial connection; will retry lazily on first query.');
+          return;
+        }
+        await new Promise((res) => setTimeout(res, 1500));
       }
     }
   }

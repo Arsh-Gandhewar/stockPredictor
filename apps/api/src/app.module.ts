@@ -12,6 +12,7 @@ import { NewsModule } from './modules/news/news.module';
 import { WatchlistModule } from './modules/watchlist/watchlist.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { HealthModule } from './modules/health/health.module';
+import { PredictionModule } from './modules/prediction/prediction.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { HealthModule } from './modules/health/health.module';
     WatchlistModule,
     AlertsModule,
     HealthModule,
+    PredictionModule,
   ],
   controllers: [AppController],
   providers: [

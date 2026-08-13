@@ -1,0 +1,4 @@
+{
+  "version": "v1.0",
+  "features": ["rsi_14", "macd_hist", "sma_50_dist", "atr_14", "bb_width", "stoch_k", "news_sentiment"]
+}

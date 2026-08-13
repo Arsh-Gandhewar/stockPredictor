@@ -40,6 +40,8 @@ model Stock {
   news                NewsArticleOnStock[]
   positions           Position[]
   priceHistory        PriceHistory[]
+  predictions         Prediction[]
+  predictionHistory   PredictionHistory[]
   technicalIndicators TechnicalIndicator[]
   transactions        Transaction[]
   watchlistStocks     WatchlistStock[]
@@ -302,4 +304,137 @@ enum Condition {
   LESS_THAN
   EQUALS
   CHANGES_TO
+}
+
+// ============================================================
+// QUANTITATIVE PREDICTION ENGINE TABLES
+// ============================================================
+
+model Prediction {
+  id                 String   @id @default(cuid())
+  stockId            String
+  stock              Stock    @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  modelVersion       String
+  calibrationVersion String
+  featureVersion     String
+
+  // 1D horizon
+  prob1dPositive     Float
+  expectedReturn1d   Float
+  expectedVol1d      Float
+  downside1d         Float
+
+  // 5D horizon
+  prob5dPositive     Float
+  expectedReturn5d   Float
+  expectedVol5d      Float
+  downside5d         Float
+
+  // 20D horizon
+  prob20dPositive    Float
+  expectedReturn20d  Float
+  expectedVol20d     Float
+  downside20d        Float
+
+  // Decision
+  decision           PredictionDecision
+  signalQuality      QualityLevel
+  dataQuality        QualityLevel
+  marketRegime       String
+
+  // Risk
+  targetPrice        Float?
+  stopLossPrice      Float?
+  rewardRiskRatio    Float?
+
+  // Metadata
+  predictionTime     DateTime @default(now())
+  dataTime           DateTime
+  isStale            Boolean  @default(false)
+
+  // Feature snapshot (JSON)
+  featureSnapshot       Json?
+  featureContributions  Json?
+  evidence              Json?
+  invalidationConditions Json?
+
+  @@index([stockId])
+  @@index([predictionTime])
+  @@index([stockId, predictionTime])
+}
+
+model PredictionHistory {
+  id              String    @id @default(cuid())
+  stockId         String
+  stock           Stock     @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  predictionTime  DateTime
+  horizon         String
+  predictedProb   Float
+  predictedReturn Float
+  actualReturn    Float?
+  wasCorrect      Boolean?
+  modelVersion    String
+  resolvedAt      DateTime?
+
+  @@index([stockId])
+  @@index([predictionTime])
+  @@index([modelVersion])
+}
+
+model ModelVersion {
+  id                 String    @id @default(cuid())
+  version            String    @unique
+  trainingPeriod     String
+  validationPeriod   String
+  testPeriod         String
+  featureSet         Json
+  targetDefinition   Json
+  metrics            Json
+  calibrationMetrics Json
+  status             ModelStatus @default(CANDIDATE)
+  createdAt          DateTime   @default(now())
+  approvedAt         DateTime?
+  deactivatedAt      DateTime?
+}
+
+model BacktestResult {
+  id              String   @id @default(cuid())
+  modelVersion    String
+  period          String
+  universe        String
+  horizon         String
+  metrics         Json
+  costAssumptions Json
+  regime          String?
+  sector          String?
+  calibration     Json?
+  benchmark       Json?
+  createdAt       DateTime @default(now())
+
+  @@index([modelVersion])
+}
+
+enum PredictionDecision {
+  STRONG_BUY
+  BUY
+  ACCUMULATE
+  HOLD
+  REDUCE
+  SELL
+  STRONG_SELL
+  NO_TRADE
+}
+
+enum QualityLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ModelStatus {
+  CANDIDATE
+  APPROVED
+  PRODUCTION
+  DEPRECATED
+  DEGRADED
 }
