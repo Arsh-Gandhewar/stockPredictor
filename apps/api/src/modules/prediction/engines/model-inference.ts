@@ -60,13 +60,15 @@ export class ModelInferenceEngine {
   }
 
   calculateExpectedReturn(prob: number, horizon: '1d' | '5d' | '20d', volatility: number = 0.02): number {
-    const baseReturn = horizon === '1d' ? 0.008 : horizon === '5d' ? 0.025 : 0.075;
     const directionalMultiplier = (prob - 0.5) * 2; // -1 to +1
-    return parseFloat((baseReturn * directionalMultiplier).toFixed(4));
+    // Dynamically scale expected return by actual asset volatility (low volatility gives realistic 1.5%-3.5% steady gains, high volatility gives 6%-15%+)
+    const horizonScale = horizon === '1d' ? 0.75 : horizon === '5d' ? 1.85 : 3.8;
+    const baseReturn = directionalMultiplier * Math.max(0.012, volatility) * horizonScale;
+    return parseFloat(baseReturn.toFixed(4));
   }
 
   calculateConfidenceInterval(expectedReturn: number, horizon: '1d' | '5d' | '20d', volatility: number = 0.02): [number, number] {
-    const horizonVol = volatility * (horizon === '1d' ? 1.0 : horizon === '5d' ? 2.2 : 4.4);
+    const horizonVol = Math.max(0.012, volatility) * (horizon === '1d' ? 1.0 : horizon === '5d' ? 1.9 : 3.6);
     const low = parseFloat((expectedReturn - 1.645 * horizonVol).toFixed(4));
     const high = parseFloat((expectedReturn + 1.645 * horizonVol).toFixed(4));
     return [low, high];

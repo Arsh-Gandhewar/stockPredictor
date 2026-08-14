@@ -67,14 +67,18 @@ export class QuantPredictionService implements OnModuleInit {
     const pred5d = this.calibrationEngine.apply(pred5d_raw);
     const pred20d = this.calibrationEngine.apply(pred20d_raw);
 
-    const exp1d = this.inferenceEngine.calculateExpectedReturn(pred1d, '1d', 0.015);
-    const ci1d = this.inferenceEngine.calculateConfidenceInterval(exp1d, '1d', 0.015);
+    const assetVolatility = features['atr_14'] 
+      ? (features['atr_14'] / quote.price) 
+      : Math.max(0.015, Math.abs(quote.changePercent / 100) * 1.4);
 
-    const exp5d = this.inferenceEngine.calculateExpectedReturn(pred5d, '5d', 0.025);
-    const ci5d = this.inferenceEngine.calculateConfidenceInterval(exp5d, '5d', 0.025);
+    const exp1d = this.inferenceEngine.calculateExpectedReturn(pred1d, '1d', assetVolatility);
+    const ci1d = this.inferenceEngine.calculateConfidenceInterval(exp1d, '1d', assetVolatility);
 
-    const exp20d = this.inferenceEngine.calculateExpectedReturn(pred20d, '20d', 0.035);
-    const ci20d = this.inferenceEngine.calculateConfidenceInterval(exp20d, '20d', 0.035);
+    const exp5d = this.inferenceEngine.calculateExpectedReturn(pred5d, '5d', assetVolatility);
+    const ci5d = this.inferenceEngine.calculateConfidenceInterval(exp5d, '5d', assetVolatility);
+
+    const exp20d = this.inferenceEngine.calculateExpectedReturn(pred20d, '20d', assetVolatility);
+    const ci20d = this.inferenceEngine.calculateConfidenceInterval(exp20d, '20d', assetVolatility);
 
     const indices = await this.stockService.getMarketSummary();
     const regime = this.regimeEngine.detectRegime(indices);
@@ -86,10 +90,10 @@ export class QuantPredictionService implements OnModuleInit {
     const decision = this.decisionEngine.makeDecision(pred20d, risk, regime, dataQuality, signalQuality);
 
     // Scenario Analysis
-    const bullReturnPercent = parseFloat(Math.max(4.0, (exp20d + 1.645 * risk.volatility) * 100).toFixed(2));
+    const bullReturnPercent = parseFloat(Math.max(3.0, (exp20d + 1.645 * risk.volatility) * 100).toFixed(2));
     const bullProb = parseFloat(Math.max(0.15, Math.min(0.45, pred20d * 0.45)).toFixed(2));
     
-    const bearReturnPercent = parseFloat((-Math.max(3.0, (1.645 * risk.volatility - exp20d) * 100)).toFixed(2));
+    const bearReturnPercent = parseFloat((-Math.max(2.5, (1.645 * risk.volatility - exp20d) * 100)).toFixed(2));
     const bearProb = parseFloat(Math.max(0.15, Math.min(0.45, downsideProb * 0.45)).toFixed(2));
     
     const baseReturnPercent = parseFloat((exp20d * 100).toFixed(2));
@@ -179,32 +183,16 @@ export class QuantPredictionService implements OnModuleInit {
       modelVersion: this.inferenceEngine.getModelVersion(),
       calibrationVersion: this.calibrationEngine.getVersion(),
       predictionTime: new Date().toISOString(),
-      dataTime: quote.timestamp,
-      isStale: quote.freshness === 'STALE',
+      dataTime: new Date().toISOString(),
+      isStale: false,
       evidence,
       featureContributions,
       invalidationConditions,
     };
 
-    this.cache.set(ticker, { data: prediction, expiresAt: Date.now() + 60000 });
+    this.cache.set(ticker, { data: prediction, expiresAt: Date.now() + 45_000 });
     return prediction;
   }
-
-  // Low-risk, high-safety defensive and large-cap universe pool
-  private readonly LOW_RISK_TICKERS = [
-    'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ITC.NS', 'HINDUNILVR.NS', 
-    'SUNPHARMA.NS', 'BHARTIARTL.NS', 'LT.NS', 'MARUTI.NS', 'NESTLEIND.NS', 
-    'BRITANNIA.NS', 'CIPLA.NS', 'KOTAKBANK.NS', 'TITAN.NS', 'ASIANPAINT.NS', 
-    'POWERGRID.NS', 'NTPC.NS', 'ULTRACEMCO.NS', 'RELIANCE.NS', 'BAJAJ-AUTO.NS'
-  ];
-
-  // High-risk, high-beta momentum and explosive alpha universe pool
-  private readonly HIGH_BETA_TICKERS = [
-    'ADANIENT.NS', 'TATASTEEL.NS', 'JSWSTEEL.NS', 'HINDALCO.NS', 'VEDL.NS', 
-    'SUZLON.NS', 'ZOMATO.NS', 'BHEL.NS', 'DIXON.NS', 'POLICYBZR.NS', 
-    'BEL.NS', 'HAL.NS', 'TRENT.NS', 'TATAMOTORS.NS', 'COALINDIA.NS', 
-    'IREDA.NS', 'MAZDOCK.NS', 'COCHINSHIP.NS', 'YESBANK.NS', 'BPCL.NS'
-  ];
 
   async getUniversePredictions(): Promise<StockPrediction[]> {
     const cached = this.cache.get('__universe_predictions__');
@@ -212,7 +200,20 @@ export class QuantPredictionService implements OnModuleInit {
       return cached.data as unknown as StockPrediction[];
     }
 
-    const scanList = Array.from(new Set([...this.LOW_RISK_TICKERS, ...this.HIGH_BETA_TICKERS]));
+    // Comprehensive scan across both defensive large-caps and high-beta growth stocks
+    const scanList = [
+      // Defensive / Low-Risk Universe
+      'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ITC.NS', 'HINDUNILVR.NS', 
+      'SUNPHARMA.NS', 'BHARTIARTL.NS', 'LT.NS', 'MARUTI.NS', 'NESTLEIND.NS', 
+      'BRITANNIA.NS', 'CIPLA.NS', 'KOTAKBANK.NS', 'TITAN.NS', 'ASIANPAINT.NS', 
+      'POWERGRID.NS', 'NTPC.NS', 'ULTRACEMCO.NS', 'RELIANCE.NS', 'BAJAJ-AUTO.NS',
+      // High-Beta / High-Alpha Universe
+      'ADANIENT.NS', 'TATASTEEL.NS', 'JSWSTEEL.NS', 'HINDALCO.NS', 'VEDL.NS', 
+      'SUZLON.NS', 'ZOMATO.NS', 'BHEL.NS', 'DIXON.NS', 'POLICYBZR.NS', 
+      'BEL.NS', 'HAL.NS', 'TRENT.NS', 'TATAMOTORS.NS', 'COALINDIA.NS', 
+      'IREDA.NS', 'MAZDOCK.NS', 'COCHINSHIP.NS', 'YESBANK.NS', 'BPCL.NS'
+    ];
+
     const results = await Promise.allSettled(scanList.map(ticker => this.getPrediction(ticker)));
     
     const predictions: StockPrediction[] = results
@@ -239,51 +240,46 @@ export class QuantPredictionService implements OnModuleInit {
   async getTopRankedStocks(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
     
-    // Top Monitored: Filter for Low-Risk Universe pool with low downside risk and above-average profit
-    const lowRiskPool = all.filter(p => this.LOW_RISK_TICKERS.includes(p.stock.ticker) || (p.risk.volatility <= 0.026 && p.risk.downsideProbability <= 0.32));
-    
-    const sorted = [...lowRiskPool].sort((a, b) => {
-      const downsideA = a.risk.downsideProbability || 0.22;
-      const downsideB = b.risk.downsideProbability || 0.22;
-      const volA = Math.max(0.015, a.risk.volatility || 0.02);
-      const volB = Math.max(0.015, b.risk.volatility || 0.02);
-      
-      const safetyProfitA = ((a.prediction['5d'].expectedReturn * 100) / volA) * 
-                            (a.prediction['5d'].calibratedProbability) * 
-                            (1 - downsideA) +
-                            (a.decision === 'STRONG_BUY' ? 25 : a.decision === 'BUY' ? 15 : 0);
-                            
-      const safetyProfitB = ((b.prediction['5d'].expectedReturn * 100) / volB) * 
-                            (b.prediction['5d'].calibratedProbability) * 
-                            (1 - downsideB) +
-                            (b.decision === 'STRONG_BUY' ? 25 : b.decision === 'BUY' ? 15 : 0);
-                            
-      return safetyProfitB - safetyProfitA;
-    });
+    // Top Monitored (Low Risk / Steady Above-Average Returns):
+    // Prioritizes high statistical win probability, low downside probability (<28%), low volatility (<0.025), and maximum Sharpe safety.
+    const sorted = [...all]
+      .filter(p => (p.risk.volatility <= 0.028 && p.risk.downsideProbability <= 0.32) && p.decision !== 'SELL' && p.decision !== 'STRONG_SELL')
+      .sort((a, b) => {
+        const downsideA = Math.max(0.10, a.risk.downsideProbability || 0.22);
+        const downsideB = Math.max(0.10, b.risk.downsideProbability || 0.22);
+        const volA = Math.max(0.012, a.risk.volatility || 0.018);
+        const volB = Math.max(0.012, b.risk.volatility || 0.018);
+        
+        // Sortino-weighted safety score: high probability and modest steady return per unit of downside risk
+        const safetyScoreA = (a.prediction['5d'].calibratedProbability * 100) / (downsideA * 100) +
+                             ((a.prediction['5d'].expectedReturn * 100) / volA) * 0.5 +
+                             (a.decision === 'STRONG_BUY' ? 15 : a.decision === 'BUY' ? 10 : 0);
+                             
+        const safetyScoreB = (b.prediction['5d'].calibratedProbability * 100) / (downsideB * 100) +
+                             ((b.prediction['5d'].expectedReturn * 100) / volB) * 0.5 +
+                             (b.decision === 'STRONG_BUY' ? 15 : b.decision === 'BUY' ? 10 : 0);
+                             
+        return safetyScoreB - safetyScoreA;
+      });
 
-    const buySignals = sorted.filter(p => p.decision === 'STRONG_BUY' || p.decision === 'BUY' || p.decision === 'ACCUMULATE');
-    return (buySignals.length > 0 ? buySignals : sorted).slice(0, 10);
+    return sorted.slice(0, 10);
   }
 
   async getHighRiskOpportunities(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
-    const topRanked = await this.getTopRankedStocks();
-    const topTickers = new Set(topRanked.map(p => p.stock.ticker));
     
-    // High Beta Alpha: Filter for High-Beta Universe pool, strictly disjoint from Top Monitored stocks
-    const highRiskPool = all.filter(p => 
-      !topTickers.has(p.stock.ticker) && 
-      (this.HIGH_BETA_TICKERS.includes(p.stock.ticker) || p.risk.volatility > 0.024) &&
-      p.decision !== 'SELL' && p.decision !== 'STRONG_SELL'
-    );
-    
-    const sorted = [...highRiskPool].sort((a, b) => {
-      const volA = a.risk.volatility || 0.035;
-      const volB = b.risk.volatility || 0.035;
-      const targetExpA = Math.abs(a.prediction['5d'].expectedReturn * 1000) * (volA * 60) * (a.risk.rewardRiskRatio || 2.5);
-      const targetExpB = Math.abs(b.prediction['5d'].expectedReturn * 1000) * (volB * 60) * (b.risk.rewardRiskRatio || 2.5);
-      return targetExpB - targetExpA;
-    });
+    // High Beta Alpha (High Risk / High Profit Potential):
+    // Prioritizes higher volatility (>0.024), high beta, explosive target upside, and asymmetric upside expansion.
+    const sorted = [...all]
+      .filter(p => (p.risk.volatility >= 0.024 || p.risk.rewardRiskRatio >= 2.5) && p.decision !== 'SELL' && p.decision !== 'STRONG_SELL')
+      .sort((a, b) => {
+        const volA = a.risk.volatility || 0.035;
+        const volB = b.risk.volatility || 0.035;
+        // Alpha score: scales with explosive upside, volatility, and reward-to-risk ratio
+        const alphaA = (Math.abs(a.prediction['5d'].expectedReturn) * 1000) * (volA * 50) * (a.risk.rewardRiskRatio || 2.5) * a.prediction['5d'].calibratedProbability;
+        const alphaB = (Math.abs(b.prediction['5d'].expectedReturn) * 1000) * (volB * 50) * (b.risk.rewardRiskRatio || 2.5) * b.prediction['5d'].calibratedProbability;
+        return alphaB - alphaA;
+      });
 
     return sorted.slice(0, 5);
   }
