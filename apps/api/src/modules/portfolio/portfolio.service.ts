@@ -95,7 +95,60 @@ export class PortfolioService {
     const quotes = tickers.length > 0 ? await this.stockService.getQuotes(tickers).catch(() => []) : [];
     const quoteMap = new Map(quotes.map((q) => [q.ticker, q]));
 
-    const hydratedPositions: PortfolioPositionWithLiveMetrics[] = portfolio.positions.map((pos) => {
+    // ── AUTOMATED STOP-LOSS & TARGET AUTO-EXECUTION ENGINE ──
+    const activePositions: typeof portfolio.positions = [];
+    let cashAddedFromAutoSells = 0;
+
+    for (const pos of portfolio.positions) {
+      const quote = quoteMap.get(pos.stock.ticker);
+      const currentPrice = quote?.price || Number(pos.averagePrice);
+      const stopLoss = pos.stopLossPrice ? Number(pos.stopLossPrice) : null;
+      const target = pos.targetPrice ? Number(pos.targetPrice) : null;
+
+      const isStopLossHit = stopLoss !== null && currentPrice > 0 && currentPrice <= stopLoss;
+      const isTargetHit = target !== null && currentPrice > 0 && currentPrice >= target;
+
+      if (isStopLossHit || isTargetHit) {
+        const reason = isStopLossHit ? 'AUTO_STOP_LOSS' : 'AUTO_TARGET_PROFIT';
+        const totalProceeds = Money.multiply(pos.quantity, currentPrice);
+        cashAddedFromAutoSells = Money.add(cashAddedFromAutoSells, totalProceeds);
+
+        try {
+          await this.db.client.$transaction([
+            this.db.client.position.delete({
+              where: { id: pos.id },
+            }),
+            this.db.client.portfolio.update({
+              where: { id: portfolio.id },
+              data: {
+                availableCash: Money.add(Number(portfolio.availableCash), totalProceeds),
+              },
+            }),
+            this.db.client.transaction.create({
+              data: {
+                portfolioId: portfolio.id,
+                stockId: pos.stock.id,
+                type: TransactionType.SELL,
+                orderType: OrderType.LIMIT,
+                quantity: pos.quantity,
+                price: currentPrice,
+              },
+            }),
+          ]);
+
+          this.logger.log(`🛡️ Auto-Executed ${reason} for ${pos.stock.ticker}: Sold ${pos.quantity} shares @ ₹${currentPrice}`);
+        } catch (err) {
+          this.logger.error(`Failed to auto-execute ${reason} for ${pos.stock.ticker}:`, err);
+          activePositions.push(pos);
+        }
+      } else {
+        activePositions.push(pos);
+      }
+    }
+
+    const currentCash = Money.add(Number(portfolio.availableCash), cashAddedFromAutoSells);
+
+    const hydratedPositions: PortfolioPositionWithLiveMetrics[] = activePositions.map((pos) => {
         let currentPrice = Number(pos.averagePrice);
         let dayChange = 0;
         let dayChangePercent = 0;
@@ -147,13 +200,13 @@ export class PortfolioService {
 
     const totalOverallPnL = Money.subtract(totalCurrentValue, totalInvested);
     const totalOverallPnLPercent = Money.calculateReturnPercent(totalCurrentValue, totalInvested);
-    const totalPortfolioValue = Money.add(Number(portfolio.availableCash), totalCurrentValue);
+    const totalPortfolioValue = Money.add(currentCash, totalCurrentValue);
     const totalTodayPnLPercent = totalPortfolioValue > 0 ? Money.round((totalTodayPnL / totalPortfolioValue) * 100) : 0;
 
     return {
       id: portfolio.id,
       userId: portfolio.userId,
-      availableCash: Money.round(Number(portfolio.availableCash)),
+      availableCash: Money.round(currentCash),
       positions: hydratedPositions,
       totalInvested: Money.round(totalInvested),
       totalCurrentValue: Money.round(totalCurrentValue),
