@@ -70,8 +70,22 @@ function PositionRow({
       onClick={() => router.push(`/stock/${ticker}`)}
     >
       <td className="px-4 py-3.5 font-bold text-foreground">
-        <div className="font-mono text-sm">{ticker.replace('.NS', '')}</div>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm">{ticker.replace('.NS', '')}</span>
+          <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold">
+            AUTO PROTECTED
+          </span>
+        </div>
         <div className="text-[11px] text-muted-foreground font-normal line-clamp-1">{name}</div>
+        <div className="text-[10px] text-muted-foreground font-mono mt-1 flex items-center gap-2">
+          <span className="text-red-400">
+            Stop: <strong>₹{position.stopLossPrice ? position.stopLossPrice.toFixed(1) : (avgPrice * 0.95).toFixed(1)}</strong>
+          </span>
+          <span>•</span>
+          <span className="text-emerald-400">
+            Target: <strong>₹{position.targetPrice ? position.targetPrice.toFixed(1) : (avgPrice * 1.08).toFixed(1)}</strong>
+          </span>
+        </div>
       </td>
       <td className="px-4 py-3.5 font-mono font-semibold">{quantity}</td>
       <td className="px-4 py-3.5 font-mono text-muted-foreground">{formatCurrency(avgPrice)}</td>

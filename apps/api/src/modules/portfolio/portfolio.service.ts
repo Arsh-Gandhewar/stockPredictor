@@ -20,6 +20,8 @@ export interface PortfolioPositionWithLiveMetrics {
   todayPnL: number;
   overallPnL: number;
   overallPnLPercent: number;
+  stopLossPrice: number | null;
+  targetPrice: number | null;
   stock: {
     id: string;
     ticker: string;
@@ -131,6 +133,8 @@ export class PortfolioService {
           todayPnL,
           overallPnL,
           overallPnLPercent,
+          stopLossPrice: pos.stopLossPrice ? Number(pos.stopLossPrice) : null,
+          targetPrice: pos.targetPrice ? Number(pos.targetPrice) : null,
           stock: {
             id: pos.stock.id,
             ticker: pos.stock.ticker,
@@ -196,7 +200,25 @@ export class PortfolioService {
       });
     }
 
-    // 3. Ensure portfolio exists
+    // 3. Auto Calculate Quantitative Stop-Loss & Target if BUY order
+    let autoStopLossPrice = Money.round(executionPrice * 0.95);
+    let autoTargetPrice = Money.round(executionPrice * 1.08);
+
+    if (type === TransactionType.BUY) {
+      try {
+        const prediction = await this.predictionService.getPrediction(ticker);
+        if (prediction?.risk?.stopLossPrice && prediction.risk.stopLossPrice < executionPrice) {
+          autoStopLossPrice = prediction.risk.stopLossPrice;
+        }
+        if (prediction?.risk?.targetPrice && prediction.risk.targetPrice > executionPrice) {
+          autoTargetPrice = prediction.risk.targetPrice;
+        }
+      } catch (err) {
+        this.logger.warn(`Could not compute live prediction for ${ticker}, using fallback 5% ATR stop.`);
+      }
+    }
+
+    // 4. Ensure portfolio exists
     const portfolioSummary = await this.getPortfolio(userId);
     const user = await this.db.client.user.findUnique({ where: { clerkId: userId } });
 
@@ -204,7 +226,7 @@ export class PortfolioService {
       throw new NotFoundException('User could not be found or initialized');
     }
 
-    // 4. Atomic Execution inside Prisma Transaction (reads INSIDE to prevent stale data race conditions)
+    // 5. Atomic Execution inside Prisma Transaction (reads INSIDE to prevent stale data race conditions)
     return await this.db.client.$transaction(async (tx) => {
       const portfolio = await tx.portfolio.findUnique({
         where: { userId: user.id },
@@ -231,7 +253,7 @@ export class PortfolioService {
           data: { availableCash: updatedCash },
         });
 
-        // Update or create position with weighted average buy price
+        // Update or create position with weighted average buy price and auto stop-loss
         if (existingPosition) {
           const newAvgPrice = Money.calculateNewAveragePrice(
             existingPosition.quantity,
@@ -246,6 +268,8 @@ export class PortfolioService {
             data: {
               quantity: newQty,
               averagePrice: newAvgPrice,
+              stopLossPrice: autoStopLossPrice,
+              targetPrice: autoTargetPrice,
             },
           });
         } else {
@@ -255,9 +279,23 @@ export class PortfolioService {
               stockId: stock!.id,
               quantity,
               averagePrice: executionPrice,
+              stopLossPrice: autoStopLossPrice,
+              targetPrice: autoTargetPrice,
             },
           });
         }
+
+        // Automatically configure an active safety price alert for the user
+        await tx.alert.create({
+          data: {
+            userId: user.id,
+            stockId: stock!.id,
+            type: 'STOP_LOSS_HIT',
+            condition: 'LESS_THAN',
+            targetValue: autoStopLossPrice,
+            isActive: true,
+          },
+        }).catch(() => null);
       } else if (type === TransactionType.SELL) {
         if (!existingPosition || existingPosition.quantity < quantity) {
           const held = existingPosition ? existingPosition.quantity : 0;

@@ -171,14 +171,16 @@ model Portfolio {
 }
 
 model Position {
-  id           String    @id @default(cuid())
-  portfolioId  String
-  stockId      String
-  quantity     Int
-  averagePrice Decimal   @db.Decimal(14, 2)
-  updatedAt    DateTime  @updatedAt
-  portfolio    Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  stock        Stock     @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  id            String    @id @default(cuid())
+  portfolioId   String
+  stockId       String
+  quantity      Int
+  averagePrice  Decimal   @db.Decimal(14, 2)
+  stopLossPrice Decimal?  @db.Decimal(14, 2)
+  targetPrice   Decimal?  @db.Decimal(14, 2)
+  updatedAt     DateTime  @updatedAt
+  portfolio     Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  stock         Stock     @relation(fields: [stockId], references: [id], onDelete: Cascade)
 
   @@unique([portfolioId, stockId])
   @@index([stockId])

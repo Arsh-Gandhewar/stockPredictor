@@ -565,6 +565,8 @@ export interface PortfolioPosition {
   todayPnL: number;
   overallPnL: number;
   overallPnLPercent: number;
+  stopLossPrice?: number | null;
+  targetPrice?: number | null;
   stock: {
     id: string;
     ticker: string;
