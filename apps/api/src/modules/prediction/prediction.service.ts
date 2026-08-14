@@ -190,15 +190,30 @@ export class QuantPredictionService implements OnModuleInit {
     return prediction;
   }
 
+  // Low-risk, high-safety defensive and large-cap universe pool
+  private readonly LOW_RISK_TICKERS = [
+    'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ITC.NS', 'HINDUNILVR.NS', 
+    'SUNPHARMA.NS', 'BHARTIARTL.NS', 'LT.NS', 'MARUTI.NS', 'NESTLEIND.NS', 
+    'BRITANNIA.NS', 'CIPLA.NS', 'KOTAKBANK.NS', 'TITAN.NS', 'ASIANPAINT.NS', 
+    'POWERGRID.NS', 'NTPC.NS', 'ULTRACEMCO.NS', 'RELIANCE.NS', 'BAJAJ-AUTO.NS'
+  ];
+
+  // High-risk, high-beta momentum and explosive alpha universe pool
+  private readonly HIGH_BETA_TICKERS = [
+    'ADANIENT.NS', 'TATASTEEL.NS', 'JSWSTEEL.NS', 'HINDALCO.NS', 'VEDL.NS', 
+    'SUZLON.NS', 'ZOMATO.NS', 'BHEL.NS', 'DIXON.NS', 'POLICYBZR.NS', 
+    'BEL.NS', 'HAL.NS', 'TRENT.NS', 'TATAMOTORS.NS', 'COALINDIA.NS', 
+    'IREDA.NS', 'MAZDOCK.NS', 'COCHINSHIP.NS', 'YESBANK.NS', 'BPCL.NS'
+  ];
+
   async getUniversePredictions(): Promise<StockPrediction[]> {
     const cached = this.cache.get('__universe_predictions__');
     if (cached && cached.expiresAt > Date.now()) {
       return cached.data as unknown as StockPrediction[];
     }
 
-    // Evaluate top 25 market universe candidates for real-time predictions
-    const universe = this.marketProvider.getUniverse().slice(0, 25);
-    const results = await Promise.allSettled(universe.map(u => this.getPrediction(u.ticker)));
+    const scanList = Array.from(new Set([...this.LOW_RISK_TICKERS, ...this.HIGH_BETA_TICKERS]));
+    const results = await Promise.allSettled(scanList.map(ticker => this.getPrediction(ticker)));
     
     const predictions: StockPrediction[] = results
       .filter((r): r is PromiseFulfilledResult<StockPrediction> => r.status === 'fulfilled')
@@ -213,7 +228,6 @@ export class QuantPredictionService implements OnModuleInit {
       };
     });
     
-    // Cache universe predictions for 45 seconds to keep responses instant
     this.cache.set('__universe_predictions__', { 
       data: predictions as unknown as StockPrediction, 
       expiresAt: Date.now() + 45_000 
@@ -225,24 +239,24 @@ export class QuantPredictionService implements OnModuleInit {
   async getTopRankedStocks(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
     
-    // Top Monitored: Low Risk, High Probability, Above-Average Profit
-    // Prioritizes low downside probability, high safety margin, and strong risk-adjusted returns
-    const sorted = [...all].sort((a, b) => {
-      const downsideA = a.risk.downsideProbability || 0.25;
-      const downsideB = b.risk.downsideProbability || 0.25;
+    // Top Monitored: Filter for Low-Risk Universe pool with low downside risk and above-average profit
+    const lowRiskPool = all.filter(p => this.LOW_RISK_TICKERS.includes(p.stock.ticker) || (p.risk.volatility <= 0.026 && p.risk.downsideProbability <= 0.32));
+    
+    const sorted = [...lowRiskPool].sort((a, b) => {
+      const downsideA = a.risk.downsideProbability || 0.22;
+      const downsideB = b.risk.downsideProbability || 0.22;
       const volA = Math.max(0.015, a.risk.volatility || 0.02);
       const volB = Math.max(0.015, b.risk.volatility || 0.02);
       
-      // Low risk safety score: high expected return divided by volatility, penalized by downside risk
       const safetyProfitA = ((a.prediction['5d'].expectedReturn * 100) / volA) * 
                             (a.prediction['5d'].calibratedProbability) * 
                             (1 - downsideA) +
-                            (a.decision === 'STRONG_BUY' ? 20 : a.decision === 'BUY' ? 12 : 0);
+                            (a.decision === 'STRONG_BUY' ? 25 : a.decision === 'BUY' ? 15 : 0);
                             
       const safetyProfitB = ((b.prediction['5d'].expectedReturn * 100) / volB) * 
                             (b.prediction['5d'].calibratedProbability) * 
                             (1 - downsideB) +
-                            (b.decision === 'STRONG_BUY' ? 20 : b.decision === 'BUY' ? 12 : 0);
+                            (b.decision === 'STRONG_BUY' ? 25 : b.decision === 'BUY' ? 15 : 0);
                             
       return safetyProfitB - safetyProfitA;
     });
@@ -253,20 +267,25 @@ export class QuantPredictionService implements OnModuleInit {
 
   async getHighRiskOpportunities(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
+    const topRanked = await this.getTopRankedStocks();
+    const topTickers = new Set(topRanked.map(p => p.stock.ticker));
     
-    // High Beta Alpha: High Risk, High Profit Potential
-    // Prioritizes higher volatility, explosive target upside, and high asymmetric expansion potential
-    const highRisk = all
-      .filter(p => p.decision !== 'SELL' && p.decision !== 'STRONG_SELL')
-      .sort((a, b) => {
-        const volA = a.risk.volatility || 0.035;
-        const volB = b.risk.volatility || 0.035;
-        const targetExpA = Math.abs(a.prediction['5d'].expectedReturn * 1000) * (volA * 50) * (a.risk.rewardRiskRatio || 2.5);
-        const targetExpB = Math.abs(b.prediction['5d'].expectedReturn * 1000) * (volB * 50) * (b.risk.rewardRiskRatio || 2.5);
-        return targetExpB - targetExpA;
-      });
+    // High Beta Alpha: Filter for High-Beta Universe pool, strictly disjoint from Top Monitored stocks
+    const highRiskPool = all.filter(p => 
+      !topTickers.has(p.stock.ticker) && 
+      (this.HIGH_BETA_TICKERS.includes(p.stock.ticker) || p.risk.volatility > 0.024) &&
+      p.decision !== 'SELL' && p.decision !== 'STRONG_SELL'
+    );
+    
+    const sorted = [...highRiskPool].sort((a, b) => {
+      const volA = a.risk.volatility || 0.035;
+      const volB = b.risk.volatility || 0.035;
+      const targetExpA = Math.abs(a.prediction['5d'].expectedReturn * 1000) * (volA * 60) * (a.risk.rewardRiskRatio || 2.5);
+      const targetExpB = Math.abs(b.prediction['5d'].expectedReturn * 1000) * (volB * 60) * (b.risk.rewardRiskRatio || 2.5);
+      return targetExpB - targetExpA;
+    });
 
-    return (highRisk.length > 0 ? highRisk : all).slice(0, 5);
+    return sorted.slice(0, 5);
   }
 
   async getMarketRegime(): Promise<MarketRegime> {
