@@ -18,6 +18,7 @@ import { CalibrationEngine } from './engines/calibration-engine';
 import { RegimeEngine } from './engines/regime-engine';
 import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
+import { BacktestEngine } from './engines/backtest-engine';
 
 @Injectable()
 export class QuantPredictionService implements OnModuleInit {
@@ -35,7 +36,8 @@ export class QuantPredictionService implements OnModuleInit {
     private readonly calibrationEngine: CalibrationEngine,
     private readonly regimeEngine: RegimeEngine,
     private readonly riskEngine: RiskEngine,
-    private readonly decisionEngine: DecisionEngine
+    private readonly decisionEngine: DecisionEngine,
+    private readonly backtestEngine: BacktestEngine
   ) {}
 
   onModuleInit() {
@@ -310,72 +312,83 @@ export class QuantPredictionService implements OnModuleInit {
     };
   }
 
-  getModelPerformance() {
-    return {
-      modelVersion: this.inferenceEngine.getModelVersion() || 'v1.0.0-lgb',
+  async getModelPerformance() {
+    const cached = this.cache.get('__backtest_result__');
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached.data;
+    }
+
+    const result = await this.backtestEngine.runFullBacktest();
+    
+    // Transform BacktestResult into the shape the frontend expects (ModelPerformanceInfo)
+    const response = {
+      modelVersion: result.modelVersion,
       calibrationVersion: this.calibrationEngine.getVersion() || 'v1.0.0-isotonic',
       status: 'HEALTHY' as const,
-      calibrationMethod: 'Isotonic Regression (Platt + Isotonic Calibrated)',
-      lastTrained: new Date().toISOString(),
+      calibrationMethod: 'Walk-Forward Backtested (No Look-Ahead Bias)',
+      lastTrained: result.lastBacktestDate,
       horizons: {
         '1d': {
-          accuracy: 0.584,
-          winRate: 0.592,
-          brierScore: 0.218,
-          expectedReturn: 0.0042,
-          realizedReturn: 0.0039,
-          sharpeRatio: 1.62,
-          sortinoRatio: 2.15,
-          maxDrawdown: -0.038,
-          tradesCount: 1420
+          accuracy: result.horizons['1d'].winRate / 100,
+          winRate: result.horizons['1d'].winRate / 100,
+          brierScore: 0,
+          expectedReturn: result.horizons['1d'].avgReturn / 100,
+          realizedReturn: result.horizons['1d'].avgReturn / 100,
+          sharpeRatio: 0,
+          sortinoRatio: 0,
+          maxDrawdown: result.horizons['1d'].maxDrawdown / 100,
+          tradesCount: result.horizons['1d'].totalTrades,
         },
         '5d': {
-          accuracy: 0.642,
-          winRate: 0.658,
-          brierScore: 0.184,
-          expectedReturn: 0.0215,
-          realizedReturn: 0.0198,
-          sharpeRatio: 2.14,
-          sortinoRatio: 2.86,
-          maxDrawdown: -0.064,
-          tradesCount: 1180
+          accuracy: result.horizons['5d'].winRate / 100,
+          winRate: result.horizons['5d'].winRate / 100,
+          brierScore: 0,
+          expectedReturn: result.horizons['5d'].avgReturn / 100,
+          realizedReturn: result.horizons['5d'].avgReturn / 100,
+          sharpeRatio: 0,
+          sortinoRatio: 0,
+          maxDrawdown: result.horizons['5d'].maxDrawdown / 100,
+          tradesCount: result.horizons['5d'].totalTrades,
         },
         '20d': {
-          accuracy: 0.718,
-          winRate: 0.732,
-          brierScore: 0.142,
-          expectedReturn: 0.068,
-          realizedReturn: 0.0645,
-          sharpeRatio: 2.48,
-          sortinoRatio: 3.25,
-          maxDrawdown: -0.082,
-          tradesCount: 890
+          accuracy: result.horizons['20d'].winRate / 100,
+          winRate: result.horizons['20d'].winRate / 100,
+          brierScore: 0,
+          expectedReturn: result.horizons['20d'].avgReturn / 100,
+          realizedReturn: result.horizons['20d'].avgReturn / 100,
+          sharpeRatio: 0,
+          sortinoRatio: 0,
+          maxDrawdown: result.horizons['20d'].maxDrawdown / 100,
+          tradesCount: result.horizons['20d'].totalTrades,
         }
       },
-      ece: 0.031,
-      overallBrierScore: 0.181,
-      overallSharpe: 2.14,
-      overallSortino: 2.86,
-      overallMaxDrawdown: -0.064,
-      regimePerformance: [
-        { regime: 'BULL', accuracy: 0.742, winRate: 0.721, sharpeRatio: 2.45, maxDrawdown: -0.042, sampleCount: 480 },
-        { regime: 'SIDEWAYS', accuracy: 0.658, winRate: 0.634, sharpeRatio: 1.82, maxDrawdown: -0.055, sampleCount: 360 },
-        { regime: 'BEAR', accuracy: 0.612, winRate: 0.589, sharpeRatio: 1.41, maxDrawdown: -0.089, sampleCount: 220 },
-        { regime: 'HIGH_VOLATILITY', accuracy: 0.685, winRate: 0.66, sharpeRatio: 1.95, maxDrawdown: -0.095, sampleCount: 190 },
-        { regime: 'RECOVERY', accuracy: 0.76, winRate: 0.735, sharpeRatio: 2.6, maxDrawdown: -0.038, sampleCount: 140 },
-        { regime: 'PANIC', accuracy: 0.54, winRate: 0.512, sharpeRatio: 0.85, maxDrawdown: -0.124, sampleCount: 80 }
-      ],
+      ece: 0,
+      overallBrierScore: 0,
+      overallSharpe: 0,
+      overallSortino: 0,
+      overallMaxDrawdown: result.horizons['5d'].maxDrawdown / 100,
+      overallWinRate: result.overallWinRate,
+      overallAvgReturn: result.overallAvgReturn,
+      overallRiskRewardRatio: result.overallRiskRewardRatio,
+      annualizedReturn: result.annualizedReturn,
+      nifty50AnnualReturn: result.nifty50AnnualReturn,
+      totalTrades: result.totalTrades,
+      stocksEvaluated: result.stocksEvaluated,
+      datasetPeriod: result.datasetPeriod,
+      regimePerformance: [],
       baselineComparisons: [
-        { name: 'QuantX LightGBM Multi-Factor Ensemble', annualReturn: 0.384, sharpeRatio: 2.14, maxDrawdown: -0.064, winRate: 0.658, isPrimary: true },
-        { name: 'Momentum-Only Baseline (RSI + MACD)', annualReturn: 0.221, sharpeRatio: 1.42, maxDrawdown: -0.142, winRate: 0.534 },
-        { name: 'NIFTY 50 Benchmark Buy & Hold', annualReturn: 0.148, sharpeRatio: 1.05, maxDrawdown: -0.185, winRate: 0.512 },
-        { name: 'Heuristic Scoring Baseline', annualReturn: 0.182, sharpeRatio: 1.2, maxDrawdown: -0.161, winRate: 0.528 }
+        { name: 'QuantX AI Walk-Forward Backtest', annualReturn: result.annualizedReturn / 100, sharpeRatio: 0, maxDrawdown: result.horizons['5d'].maxDrawdown / 100, winRate: result.overallWinRate / 100, isPrimary: true },
+        { name: 'NIFTY 50 Index Buy & Hold', annualReturn: result.nifty50AnnualReturn / 100, sharpeRatio: 0, maxDrawdown: 0, winRate: 0 },
       ],
       disclosures: {
-        slippageBps: 15,
-        transactionCostModeling: '0.15% round-trip including STT, SEBI turnover fees, brokerage, GST and exchange transaction charges',
-        dataLimitations: 'Market quotes are sourced via Yahoo Finance real-time and delayed streams. Backtests incorporate survivorship bias controls and purged walk-forward cross validation.'
+        slippageBps: 0,
+        transactionCostModeling: 'No slippage or transaction costs modeled. Results are gross of fees.',
+        dataLimitations: 'Walk-forward backtest over 1 year of daily OHLCV data from Yahoo Finance. News sentiment set to neutral (0) during backtest. No survivorship bias — only currently listed stocks evaluated.'
       }
     };
+
+    // Cache for 6 hours
+    this.cache.set('__backtest_result__', { data: response as any, expiresAt: Date.now() + 6 * 60 * 60 * 1000 });
+    return response;
   }
 }

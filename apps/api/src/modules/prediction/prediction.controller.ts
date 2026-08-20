@@ -26,7 +26,7 @@ export class PredictionController {
   }
 
   @Get('model-performance')
-  getModelPerformance() {
+  async getModelPerformance() {
     return this.predictionService.getModelPerformance();
   }
 

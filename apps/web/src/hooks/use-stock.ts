@@ -271,8 +271,10 @@ export function useModelPerformance() {
   return useQuery({
     queryKey: ['quant-model-performance'],
     queryFn: () => fetchModelPerformance(),
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 600000, // 10 minutes — backtest results are cached server-side for 6 hours
+    staleTime: 300000,       // 5 minutes
+    retry: 2,
+    retryDelay: 5000,
   });
 }
 

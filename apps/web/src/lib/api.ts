@@ -178,6 +178,14 @@ export interface ModelPerformanceInfo {
   overallSharpe: number;
   overallSortino: number;
   overallMaxDrawdown: number;
+  overallWinRate?: number;
+  overallAvgReturn?: number;
+  overallRiskRewardRatio?: number;
+  annualizedReturn?: number;
+  nifty50AnnualReturn?: number;
+  totalTrades?: number;
+  stocksEvaluated?: number;
+  datasetPeriod?: string;
   regimePerformance: RegimePerformanceItem[];
   baselineComparisons: BaselineComparisonItem[];
   disclosures: {

@@ -11,6 +11,7 @@ import { RegimeEngine } from './engines/regime-engine';
 import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
 import { NewsFeatureEngine } from './engines/news-feature-engine';
+import { BacktestEngine } from './engines/backtest-engine';
 
 @Module({
   imports: [forwardRef(() => StockModule), NewsModule, DatabaseModule],
@@ -23,7 +24,8 @@ import { NewsFeatureEngine } from './engines/news-feature-engine';
     RegimeEngine,
     RiskEngine,
     DecisionEngine,
-    NewsFeatureEngine
+    NewsFeatureEngine,
+    BacktestEngine
   ],
   exports: [QuantPredictionService]
 })
