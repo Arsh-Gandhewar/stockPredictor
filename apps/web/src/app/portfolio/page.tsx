@@ -454,9 +454,10 @@ export default function PortfolioPage() {
                 <div className="space-y-4">
                   {sellSignals.map((signal: any) => {
                     const exitProb = signal.exitProbability || signal.downsideProbability || 75;
-                    const action = signal.recommendedAction || signal.recommendation || 'REDUCE';
+                    const action = signal.recommendedAction || signal.recommendation || signal.decision || 'SELL';
                     const isProfitTake = action === 'TAKE_PROFIT';
-                    const isStopLoss = action === 'STOP_LOSS';
+                    const isStopLoss = action === 'STOP_LOSS' || action === 'STRONG_SELL';
+                    const isSell = action === 'SELL';
 
                     return (
                       <div key={signal.ticker} className="p-4 rounded-xl border border-amber-500/30 bg-card/80 hover:border-amber-500/50 transition-all space-y-3">
@@ -481,7 +482,7 @@ export default function PortfolioPage() {
                             <div className={`px-3 py-1 rounded-full text-xs font-extrabold flex items-center border ${
                               isProfitTake 
                                 ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
-                                : isStopLoss 
+                                : isStopLoss || isSell
                                 ? 'bg-red-500/20 text-red-400 border-red-500/30' 
                                 : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
                             }`}>
@@ -490,7 +491,7 @@ export default function PortfolioPage() {
                             </div>
                             <button
                               onClick={() => handleSell(signal.ticker, signal.quantityHeld)}
-                              disabled={executeTrade.isPending}
+                              disabled={executeTrade.isPending || !signal.quantityHeld}
                               className="px-4 py-1.5 rounded-lg bg-destructive hover:bg-destructive/90 text-white font-bold text-xs transition-colors shadow-sm disabled:opacity-50"
                             >
                               SELL ALL ({signal.quantityHeld})

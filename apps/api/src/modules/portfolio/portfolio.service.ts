@@ -221,9 +221,12 @@ export class PortfolioService {
   /**
    * Executes atomic paper trade (BUY or SELL) with database transaction and balance validation
    */
+  /**
+   * Executes atomic paper trade (BUY or SELL) with database transaction and balance validation
+   */
   async executeTrade(
     userId: string,
-    ticker: string,
+    rawTicker: string,
     type: TransactionType,
     quantity: number,
     orderType: OrderType = OrderType.MARKET
@@ -232,14 +235,24 @@ export class PortfolioService {
       throw new BadRequestException('Order quantity must be a positive integer');
     }
 
+    const ticker = (!rawTicker.startsWith('^') && !rawTicker.endsWith('.NS') && !rawTicker.endsWith('.BO'))
+      ? `${rawTicker.trim().toUpperCase()}.NS`
+      : rawTicker.trim().toUpperCase();
+
     // 1. Fetch live market price
     const quote = await this.stockService.getQuote(ticker);
     const executionPrice = quote.price;
     const totalCost = Money.multiply(quantity, executionPrice);
 
-    // 2. Ensure stock record exists in DB
-    let stock = await this.db.client.stock.findUnique({
-      where: { ticker },
+    // 2. Ensure stock record exists in DB (check both with & without .NS)
+    let stock = await this.db.client.stock.findFirst({
+      where: {
+        OR: [
+          { ticker },
+          { ticker: ticker.replace('.NS', '') },
+          { ticker: rawTicker.trim().toUpperCase() },
+        ],
+      },
     });
 
     if (!stock) {
@@ -271,26 +284,30 @@ export class PortfolioService {
       }
     }
 
-    // 4. Ensure portfolio exists
-    const portfolioSummary = await this.getPortfolio(userId);
+    // 4. Ensure user exists
     const user = await this.db.client.user.findUnique({ where: { clerkId: userId } });
-
     if (!user) {
       throw new NotFoundException('User could not be found or initialized');
     }
 
-    // 5. Atomic Execution inside Prisma Transaction (reads INSIDE to prevent stale data race conditions)
+    // 5. Atomic Execution inside Prisma Transaction
     return await this.db.client.$transaction(async (tx) => {
       const portfolio = await tx.portfolio.findUnique({
         where: { userId: user.id },
-        include: { positions: true },
+        include: { positions: { include: { stock: true } } },
       });
 
       if (!portfolio) {
         throw new NotFoundException('Portfolio could not be found or initialized');
       }
 
-      const existingPosition = portfolio.positions.find((p) => p.stockId === stock!.id);
+      const existingPosition = portfolio.positions.find(
+        (p) =>
+          p.stockId === stock!.id ||
+          p.stock.ticker === ticker ||
+          p.stock.ticker === rawTicker ||
+          p.stock.ticker.replace('.NS', '') === ticker.replace('.NS', '')
+      );
 
       if (type === TransactionType.BUY) {
         if (Number(portfolio.availableCash) < totalCost) {
@@ -383,7 +400,7 @@ export class PortfolioService {
       const transaction = await tx.transaction.create({
         data: {
           portfolioId: portfolio.id,
-          stockId: stock!.id,
+          stockId: existingPosition ? existingPosition.stockId : stock!.id,
           type,
           orderType,
           quantity,
@@ -501,22 +518,22 @@ export class PortfolioService {
         const prediction = await this.predictionService.getPrediction(pos.stock.ticker);
         const currentPrice = pos.currentPrice;
         const isSellDecision = prediction.decision === 'SELL' || prediction.decision === 'STRONG_SELL';
-        const isHighDownside = prediction.risk.downsideProbability > 0.65;
+        const isHighDownside = prediction.risk.downsideProbability > 0.60;
         const isStopLossTriggered = currentPrice <= prediction.risk.stopLossPrice;
         const isReduceDecision = prediction.decision === 'REDUCE';
 
         if (isSellDecision || isHighDownside || isStopLossTriggered || isReduceDecision) {
           const recommendation: 'STRONG_SELL' | 'SELL' | 'REDUCE' =
-            isStopLossTriggered || prediction.decision === 'STRONG_SELL' || prediction.risk.downsideProbability > 0.80
+            isStopLossTriggered || prediction.decision === 'STRONG_SELL' || prediction.risk.downsideProbability > 0.75
               ? 'STRONG_SELL'
               : isReduceDecision
               ? 'REDUCE'
               : 'SELL';
 
           const urgency: 'HIGH' | 'MEDIUM' | 'LOW' =
-            isStopLossTriggered || prediction.risk.downsideProbability > 0.80
+            isStopLossTriggered || prediction.risk.downsideProbability > 0.75
               ? 'HIGH'
-              : prediction.risk.downsideProbability > 0.65
+              : prediction.risk.downsideProbability > 0.60
               ? 'MEDIUM'
               : 'LOW';
 
@@ -543,14 +560,24 @@ export class PortfolioService {
           return {
             ticker: pos.stock.ticker,
             name: pos.stock.name,
+            quantity: pos.quantity,
+            quantityHeld: pos.quantity,
+            investedValue: pos.investedValue,
+            currentValue: pos.currentValue,
+            pnl: pos.overallPnL,
+            pnlPercent: pos.overallPnLPercent,
+            decision: recommendation,
             recommendation,
+            recommendedAction: recommendation,
             urgency,
             currentPrice,
             averagePrice: pos.averagePrice,
             unrealizedPnLPercent: pos.overallPnLPercent,
-            downsideProbability: prediction.risk.downsideProbability,
+            downsideProbability: Math.round(prediction.risk.downsideProbability * 100),
+            exitProbability: Math.round(prediction.risk.downsideProbability * 100),
             stopLossPrice: prediction.risk.stopLossPrice,
             targetExitPrice,
+            targetPrice: targetExitPrice,
             rewardRiskRatio: prediction.risk.rewardRiskRatio,
             confidenceScore: Math.round(prediction.prediction['20d'].calibratedProbability * 100),
             financialReasoning:

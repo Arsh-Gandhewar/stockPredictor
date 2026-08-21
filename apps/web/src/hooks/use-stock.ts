@@ -609,8 +609,11 @@ export interface PortfolioExitSignal {
   rewardRiskRatio: number;
   signalQuality: SignalQuality;
   primaryReason: string;
+  financialReasoning?: string;
+  newsImpact?: string;
+  gmpAnalysis?: string;
   urgency: 'HIGH' | 'MEDIUM' | 'LOW';
-  recommendedAction: 'TAKE_PROFIT' | 'REDUCE' | 'STOP_LOSS' | 'HOLD';
+  recommendedAction: 'STRONG_SELL' | 'SELL' | 'TAKE_PROFIT' | 'REDUCE' | 'STOP_LOSS' | 'HOLD';
   invalidationLevel?: number;
 }
 
@@ -635,28 +638,43 @@ export function usePortfolioSellSignals(userId?: string) {
         });
         if (Array.isArray(raw)) {
           return raw.map((item) => {
-            const downsideProb = item.downsideProbability ?? (item.exitProbability ? item.exitProbability / 100 : (100 - (item.confidenceScore ?? 80)) / 100);
-            const decision: Decision = item.decision || (item.urgency === 'HIGH' ? 'SELL' : item.pnlPercent > 10 ? 'REDUCE' : 'HOLD');
-            const recommendedAction: 'TAKE_PROFIT' | 'REDUCE' | 'STOP_LOSS' | 'HOLD' = 
-              item.recommendedAction || (item.pnlPercent >= 8 ? 'TAKE_PROFIT' : item.pnlPercent <= -4 ? 'STOP_LOSS' : item.urgency === 'HIGH' ? 'REDUCE' : 'HOLD');
+            const rawDownside = typeof item.downsideProbability === 'number' 
+              ? (item.downsideProbability > 1 ? item.downsideProbability / 100 : item.downsideProbability)
+              : 0.68;
+            const exitProb = item.exitProbability ?? Math.round(rawDownside * 100);
+            
+            const rawAction = item.recommendedAction || item.recommendation || item.decision;
+            const recommendedAction: 'STRONG_SELL' | 'SELL' | 'TAKE_PROFIT' | 'REDUCE' | 'STOP_LOSS' | 'HOLD' =
+              rawAction === 'STRONG_SELL' ? 'STRONG_SELL'
+              : rawAction === 'SELL' ? 'SELL'
+              : rawAction === 'STOP_LOSS' ? 'STOP_LOSS'
+              : rawAction === 'TAKE_PROFIT' ? 'TAKE_PROFIT'
+              : rawAction === 'REDUCE' ? 'REDUCE'
+              : (rawDownside >= 0.75 ? 'STRONG_SELL' : rawDownside >= 0.60 ? 'SELL' : 'REDUCE');
+
+            const decision: Decision = recommendedAction === 'STRONG_SELL' ? 'STRONG_SELL' : recommendedAction === 'SELL' ? 'SELL' : 'REDUCE';
+
             return {
               ticker: item.ticker,
               name: item.name || item.ticker,
-              quantityHeld: item.quantityHeld || item.quantity || 0,
+              quantityHeld: item.quantityHeld ?? item.quantity ?? 0,
               currentPrice: item.currentPrice || 0,
               investedValue: item.investedValue || 0,
               currentValue: item.currentValue || 0,
-              pnl: item.pnl ?? (item.currentValue - item.investedValue),
-              pnlPercent: item.pnlPercent ?? 0,
+              pnl: item.pnl ?? (item.currentValue ? item.currentValue - item.investedValue : 0),
+              pnlPercent: item.pnlPercent ?? (item.unrealizedPnLPercent || 0),
               decision,
-              exitProbability: item.exitProbability ?? Math.round(downsideProb * 100),
-              downsideProbability: Math.round(downsideProb * 100),
-              stopLossPrice: item.stopLossPrice || item.invalidationLevel || (item.currentPrice ? item.currentPrice * 0.95 : 0),
-              targetPrice: item.targetPrice || (item.currentPrice ? item.currentPrice * 1.08 : 0),
-              rewardRiskRatio: item.rewardRiskRatio || 2.2,
+              exitProbability: exitProb,
+              downsideProbability: Math.round(rawDownside * 100),
+              stopLossPrice: item.stopLossPrice || (item.currentPrice ? item.currentPrice * 0.95 : 0),
+              targetPrice: item.targetExitPrice || item.targetPrice || (item.currentPrice ? item.currentPrice * 1.08 : 0),
+              rewardRiskRatio: item.rewardRiskRatio || 1.5,
               signalQuality: (item.signalQuality || 'HIGH') as SignalQuality,
-              primaryReason: item.primaryReason || item.reason || 'Quantitative trailing stop and momentum exhaustion condition reached.',
-              urgency: (item.urgency || (downsideProb > 0.7 ? 'HIGH' : 'MEDIUM')) as 'HIGH' | 'MEDIUM' | 'LOW',
+              primaryReason: item.financialReasoning || item.primaryReason || 'Quantitative trailing stop and momentum exhaustion condition reached.',
+              financialReasoning: item.financialReasoning,
+              newsImpact: item.newsImpact,
+              gmpAnalysis: item.gmpAnalysis,
+              urgency: (item.urgency || (rawDownside > 0.7 ? 'HIGH' : 'MEDIUM')) as 'HIGH' | 'MEDIUM' | 'LOW',
               recommendedAction,
               invalidationLevel: item.invalidationLevel,
             } as PortfolioExitSignal;

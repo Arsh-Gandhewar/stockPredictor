@@ -115,10 +115,20 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     };
   }
 
+  private normalizeTicker(rawTicker: string): string {
+    if (!rawTicker) return rawTicker;
+    const t = rawTicker.trim().toUpperCase();
+    if (t.startsWith('^') || t.endsWith('.NS') || t.endsWith('.BO')) {
+      return t;
+    }
+    return `${t}.NS`;
+  }
+
   /**
    * Fetches real, live stock quotes directly from the National Stock Exchange (NSE)
    */
-  async getQuote(ticker: string): Promise<MarketQuote> {
+  async getQuote(rawTicker: string): Promise<MarketQuote> {
+    const ticker = this.normalizeTicker(rawTicker);
     try {
       const q = (await this.yf.quote(ticker)) as any;
       const formatted = this.formatQuote(q, ticker);
@@ -135,8 +145,9 @@ export class YahooMarketDataProvider implements MarketDataProvider {
   /**
    * Fast batch-fetches multiple quotes using Yahoo Finance array querying
    */
-  async getQuotes(tickers: string[]): Promise<MarketQuote[]> {
-    if (!tickers || tickers.length === 0) return [];
+  async getQuotes(rawTickers: string[]): Promise<MarketQuote[]> {
+    if (!rawTickers || rawTickers.length === 0) return [];
+    const tickers = rawTickers.map((t) => this.normalizeTicker(t));
     const results: MarketQuote[] = [];
     const batchSize = 15;
 
