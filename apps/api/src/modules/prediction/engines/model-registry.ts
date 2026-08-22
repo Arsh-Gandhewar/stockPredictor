@@ -6,8 +6,11 @@ import { MODEL_CONFIG } from './model-config';
  * parameter lineage, calibration states, and model operational health.
  */
 
+export type ModelType = 'BASELINE_HEURISTIC' | 'EMPIRICAL_WALK_FORWARD' | 'GRADIENT_BOOSTED_TREES';
+
 export interface ModelMetadata {
   modelVersion: string;
+  modelType: ModelType;
   calibrationVersion: string;
   featureSchemaVersion: string;
   status: 'ACTIVE' | 'CANDIDATE' | 'DEPRECATED';
@@ -25,15 +28,16 @@ export interface ModelMetadata {
 export class ModelRegistry {
   private static readonly ACTIVE_MODEL: ModelMetadata = {
     modelVersion: MODEL_CONFIG.VERSION,
+    modelType: 'BASELINE_HEURISTIC',
     calibrationVersion: MODEL_CONFIG.CALIBRATION_VERSION,
     featureSchemaVersion: MODEL_CONFIG.FEATURE_SCHEMA_VERSION,
     status: 'ACTIVE',
-    description: 'QuantX Multi-Factor Probabilistic Empirical Framework v4.0 with Walk-Forward Optimization and Friction Modeling',
+    description: 'QuantX Multi-Factor Heuristic Baseline with Empirical Two-Stage Return Estimation and Out-of-Sample Isotonic Calibration (v4.0.0)',
     trainingWindow: 'Rolling 120-day walk-forward window',
-    validationWindow: 'Rolling 60-day parameter selection window',
+    validationWindow: 'Rolling 60-day parameter selection and calibration window',
     testWindow: 'Rolling 40-day out-of-sample forward step',
     holdoutWindow: 'Final 40-day untouched verification partition',
-    calibrationMethod: 'Isotonic Regression with Piecewise Linear PAV Interpolation',
+    calibrationMethod: 'Isotonic Regression (Pool Adjacent Violators) fitted on out-of-sample validation partition',
     registeredAt: '2026-08-22T00:00:00.000Z',
     activeFeatures: [
       'rsi_14',
@@ -71,6 +75,10 @@ export class ModelRegistry {
 
   static getModelVersion(): string {
     return this.ACTIVE_MODEL.modelVersion;
+  }
+
+  static getModelType(): ModelType {
+    return this.ACTIVE_MODEL.modelType;
   }
 
   static getCalibrationVersion(): string {

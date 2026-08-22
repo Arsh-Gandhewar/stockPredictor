@@ -48,6 +48,12 @@ export interface HorizonPrediction {
   calibratedProbability: number;
   expectedReturn: number;
   confidenceInterval: [number, number];
+  expectedGainConditionalUp?: number;
+  expectedLossConditionalDown?: number;
+  expectedValue?: number;
+  expectedVolatility?: number;
+  uncertainty?: number;
+  estimationMethod?: 'EMPIRICAL_TWO_STAGE' | 'ESTIMATED_DIFFUSION';
 }
 
 export type Decision = 
@@ -158,6 +164,7 @@ export interface ModelStatusInfo {
   version: string;
   calibration: string;
   status: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
+  modelType?: string;
   activeModel?: string;
   description?: string;
   featureCount?: number;
@@ -197,6 +204,32 @@ export interface BaselineComparisonItem {
   isPrimary?: boolean;
 }
 
+export interface PartitionPerformanceItem {
+  partition: 'TRAIN' | 'VALIDATION' | 'TEST' | 'HOLDOUT';
+  tradesCount: number;
+  winRate: number;
+  avgReturn: number;
+  cagr: number;
+  sharpeRatio: number;
+  maxDrawdown: number;
+  profitFactor: number;
+  brierScore: number;
+}
+
+export interface HoldoutPerformance {
+  winRate: number;
+  avgReturn: number;
+  cagr: number;
+  tradesCount: number;
+  maxDrawdown: number;
+}
+
+export interface AuditDisclosures {
+  sameCandleCollisionRule: string;
+  frictionModeling: string;
+  leakagePrevention: string;
+}
+
 export interface ModelPerformanceInfo {
   modelVersion: string;
   calibrationVersion: string;
@@ -222,7 +255,10 @@ export interface ModelPerformanceInfo {
   stocksEvaluated?: number;
   datasetPeriod?: string;
   regimePerformance: RegimePerformanceItem[];
+  partitionPerformance?: PartitionPerformanceItem[];
+  holdoutPerformance?: HoldoutPerformance;
   baselineComparisons: BaselineComparisonItem[];
+  auditDisclosures?: AuditDisclosures;
   disclosures: {
     slippageBps: number;
     transactionCostModeling: string;

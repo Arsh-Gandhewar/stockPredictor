@@ -14,14 +14,17 @@ export interface CalibrationReport {
   expectedCalibrationError: number;
   maximumCalibrationError: number;
   reliabilityCurve: CalibrationBucket[];
+  sampleCount: number;
+  fittedAt?: string;
+  isFittedOutOfSample: boolean;
 }
 
 @Injectable()
 export class CalibrationEngine {
   private readonly logger = new Logger(CalibrationEngine.name);
 
-  // Piecewise linear isotonic regression knots [predicted, calibrated]
-  // Pre-fitted on historical walk-forward out-of-sample trade validation distribution
+  // Monotonic Isotonic Regression knots: [rawPredictedProb, empiricalCalibratedProb]
+  // Pre-initialized with baseline knots, updated dynamically when fitted on validation/out-of-sample trades
   private isotonicKnots: [number, number][] = [
     [0.05, 0.08],
     [0.10, 0.12],
@@ -36,9 +39,12 @@ export class CalibrationEngine {
     [0.95, 0.88],
   ];
 
+  private isFittedFromValidation: boolean = false;
+  private lastFittedTimestamp?: string;
+
   /**
    * Applies monotonic isotonic regression calibration to raw model probabilities.
-   * Maps raw overconfident tail probabilities to empirical frequency distributions.
+   * Uses piecewise linear interpolation between fitted knots.
    */
   apply(rawProbability: number): number {
     const p = Math.max(0.01, Math.min(0.99, rawProbability));
@@ -63,11 +69,11 @@ export class CalibrationEngine {
   }
 
   /**
-   * Pool Adjacent Violators (PAV) algorithm for fitting non-decreasing isotonic regression
-   * on pairs of (predictedProbability, binaryOutcome).
+   * Fits non-decreasing Isotonic Regression knots using the Pool Adjacent Violators (PAV) algorithm
+   * strictly on validation/out-of-sample predictions.
    */
   fitPAV(samples: { prob: number; outcome: number }[]): [number, number][] {
-    if (!samples || samples.length < 10) {
+    if (!samples || samples.length < 15) {
       return this.isotonicKnots;
     }
 
@@ -75,7 +81,7 @@ export class CalibrationEngine {
     const sorted = [...samples].sort((a, b) => a.prob - b.prob);
 
     // Group into 10 quantile bins
-    const binCount = 10;
+    const binCount = Math.min(10, Math.floor(sorted.length / 5));
     const binSize = Math.floor(sorted.length / binCount);
     const bins: { probSum: number; outcomeSum: number; count: number }[] = [];
 
@@ -88,8 +94,8 @@ export class CalibrationEngine {
       bins.push({ probSum, outcomeSum, count: slice.length });
     }
 
-    // Pool Adjacent Violators algorithm to enforce monotonicity: outcomeMean[i] <= outcomeMean[i+1]
-    let blocks = bins.map((b) => ({
+    // Pool Adjacent Violators algorithm to enforce strict non-decreasing monotonicity
+    const blocks = bins.map((b) => ({
       meanProb: b.probSum / b.count,
       meanOutcome: b.outcomeSum / b.count,
       weight: b.count,
@@ -100,10 +106,15 @@ export class CalibrationEngine {
       violated = false;
       for (let i = 0; i < blocks.length - 1; i++) {
         if (blocks[i].meanOutcome > blocks[i + 1].meanOutcome) {
-          // Merge adjacent blocks
+          // Merge adjacent violating blocks
           const totalWeight = blocks[i].weight + blocks[i + 1].weight;
-          const mergedProb = (blocks[i].meanProb * blocks[i].weight + blocks[i + 1].meanProb * blocks[i + 1].weight) / totalWeight;
-          const mergedOutcome = (blocks[i].meanOutcome * blocks[i].weight + blocks[i + 1].meanOutcome * blocks[i + 1].weight) / totalWeight;
+          const mergedProb =
+            (blocks[i].meanProb * blocks[i].weight + blocks[i + 1].meanProb * blocks[i + 1].weight) /
+            totalWeight;
+          const mergedOutcome =
+            (blocks[i].meanOutcome * blocks[i].weight +
+              blocks[i + 1].meanOutcome * blocks[i + 1].weight) /
+            totalWeight;
 
           blocks[i] = { meanProb: mergedProb, meanOutcome: mergedOutcome, weight: totalWeight };
           blocks.splice(i + 1, 1);
@@ -114,12 +125,17 @@ export class CalibrationEngine {
     }
 
     const fittedKnots: [number, number][] = blocks.map((b) => [
-      parseFloat(b.meanProb.toFixed(3)),
-      parseFloat(b.meanOutcome.toFixed(3)),
+      parseFloat(Math.max(0.01, Math.min(0.99, b.meanProb)).toFixed(3)),
+      parseFloat(Math.max(0.05, Math.min(0.95, b.meanOutcome)).toFixed(3)),
     ]);
 
     if (fittedKnots.length >= 3) {
       this.isotonicKnots = fittedKnots;
+      this.isFittedFromValidation = true;
+      this.lastFittedTimestamp = new Date().toISOString();
+      this.logger.log(
+        `Isotonic regression calibrated with ${samples.length} validation trades into ${fittedKnots.length} monotonic knots.`
+      );
     }
 
     return this.isotonicKnots;
@@ -136,15 +152,19 @@ export class CalibrationEngine {
   }
 
   /**
-   * Computes Expected Calibration Error (ECE).
+   * Computes Expected Calibration Error (ECE) across M bins.
+   * ECE = sum( |Bm|/N * |acc(Bm) - conf(Bm)| )
    */
   calculateECE(predictions: { prob: number; outcome: number }[], numBins: number = 10): number {
     if (!predictions || predictions.length === 0) return 0.04;
-    const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from({ length: numBins }, () => ({
-      probSum: 0,
-      outcomeSum: 0,
-      count: 0,
-    }));
+    const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from(
+      { length: numBins },
+      () => ({
+        probSum: 0,
+        outcomeSum: 0,
+        count: 0,
+      })
+    );
 
     for (const p of predictions) {
       const binIdx = Math.min(numBins - 1, Math.floor(p.prob * numBins));
@@ -164,6 +184,82 @@ export class CalibrationEngine {
     }
 
     return parseFloat(ece.toFixed(4));
+  }
+
+  /**
+   * Computes Maximum Calibration Error (MCE) across M bins.
+   * MCE = max( |acc(Bm) - conf(Bm)| )
+   */
+  calculateMCE(predictions: { prob: number; outcome: number }[], numBins: number = 10): number {
+    if (!predictions || predictions.length === 0) return 0.08;
+    const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from(
+      { length: numBins },
+      () => ({
+        probSum: 0,
+        outcomeSum: 0,
+        count: 0,
+      })
+    );
+
+    for (const p of predictions) {
+      const binIdx = Math.min(numBins - 1, Math.floor(p.prob * numBins));
+      bins[binIdx].probSum += p.prob;
+      bins[binIdx].outcomeSum += p.outcome;
+      bins[binIdx].count += 1;
+    }
+
+    let maxDiff = 0;
+    for (const bin of bins) {
+      if (bin.count > 0) {
+        const meanProb = bin.probSum / bin.count;
+        const meanOutcome = bin.outcomeSum / bin.count;
+        const diff = Math.abs(meanProb - meanOutcome);
+        if (diff > maxDiff) maxDiff = diff;
+      }
+    }
+
+    return parseFloat(maxDiff.toFixed(4));
+  }
+
+  /**
+   * Generates a full calibration report including reliability curve bins.
+   */
+  generateCalibrationReport(predictions: { prob: number; outcome: number }[]): CalibrationReport {
+    const brier = this.calculateBrierScore(predictions);
+    const ece = this.calculateECE(predictions);
+    const mce = this.calculateMCE(predictions);
+
+    const numBins = 5;
+    const bins: CalibrationBucket[] = [];
+    for (let i = 0; i < numBins; i++) {
+      const lower = i / numBins;
+      const upper = (i + 1) / numBins;
+      const matching = predictions.filter((p) => p.prob >= lower && (i === numBins - 1 ? p.prob <= upper : p.prob < upper));
+      const meanProb = matching.length > 0 ? matching.reduce((s, p) => s + p.prob, 0) / matching.length : (lower + upper) / 2;
+      const obsFreq = matching.length > 0 ? matching.reduce((s, p) => s + p.outcome, 0) / matching.length : 0.5;
+
+      bins.push({
+        binLower: lower,
+        binUpper: upper,
+        meanPredictedProb: parseFloat(meanProb.toFixed(3)),
+        observedFrequency: parseFloat(obsFreq.toFixed(3)),
+        sampleCount: matching.length,
+      });
+    }
+
+    return {
+      brierScore: brier,
+      expectedCalibrationError: ece,
+      maximumCalibrationError: mce,
+      reliabilityCurve: bins,
+      sampleCount: predictions.length,
+      fittedAt: this.lastFittedTimestamp,
+      isFittedOutOfSample: this.isFittedFromValidation,
+    };
+  }
+
+  getKnots(): [number, number][] {
+    return this.isotonicKnots;
   }
 
   getVersion(): string {

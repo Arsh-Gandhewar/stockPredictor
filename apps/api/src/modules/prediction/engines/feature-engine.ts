@@ -46,6 +46,7 @@ export class FeatureEngine {
 
   /**
    * Computes a full suite of multi-factor statistical and technical features.
+   * Point-in-time strictly: Only historical candles through the current timestamp are used.
    */
   calculateFeatures(
     quote: MarketQuote,
@@ -61,14 +62,14 @@ export class FeatureEngine {
     };
 
     if (!candles || candles.length < MODEL_CONFIG.FEATURES.WARMUP_MIN_CANDLES) {
-      return features; // Graceful fallback
+      return features;
     }
 
-    const closes = candles.map(c => c.close);
-    const highs = candles.map(c => c.high);
-    const lows = candles.map(c => c.low);
-    const opens = candles.map(c => c.open);
-    const volumes = candles.map(c => c.volume);
+    const closes = candles.map((c) => c.close);
+    const highs = candles.map((c) => c.high);
+    const lows = candles.map((c) => c.low);
+    const opens = candles.map((c) => c.open);
+    const volumes = candles.map((c) => c.volume);
     const len = closes.length;
     const currentPrice = quote.price || closes[len - 1];
 
@@ -153,7 +154,7 @@ export class FeatureEngine {
         features['annualized_volatility'] = dailyStdDev * Math.sqrt(MODEL_CONFIG.FEATURES.LOOKBACKS.ANNUALIZATION_FACTOR);
 
         // Downside Deviation (Semi-Variance of negative returns only)
-        const negativeReturns = returns20.filter(r => r < 0);
+        const negativeReturns = returns20.filter((r) => r < 0);
         const downsideVariance = negativeReturns.length > 0
           ? negativeReturns.reduce((s, r) => s + Math.pow(r, 2), 0) / returns20.length
           : 0;
@@ -167,7 +168,7 @@ export class FeatureEngine {
       features['max_drawdown_20d'] = this.calculateMaxDrawdown(closes.slice(-20));
       features['max_drawdown_60d'] = this.calculateMaxDrawdown(closes.slice(-60));
 
-      // Overnight Gap Risk (mean absolute gap over last 20 candles)
+      // Overnight Gap Risk
       const gaps: number[] = [];
       const gapLookback = Math.min(20, len - 1);
       for (let i = len - gapLookback; i < len; i++) {
@@ -183,7 +184,7 @@ export class FeatureEngine {
         const p5Idx = Math.max(0, Math.floor(sortedReturns.length * 0.05));
         features['tail_risk_5pct'] = sortedReturns[p5Idx];
       } else {
-        features['tail_risk_5pct'] = -0.03; // -3% fallback
+        features['tail_risk_5pct'] = -0.03;
       }
 
       // ── 4. Volume & Liquidity Dynamics ──
@@ -200,18 +201,18 @@ export class FeatureEngine {
         // Volume Stability (Coefficient of Variation)
         features['volume_stability'] = meanVol > 0 ? stdVol / meanVol : 1.0;
 
-        // Liquidity Score: Log10 of daily rupee turnover (price * average daily volume)
+        // Liquidity Score: Log10 of daily rupee turnover
         const dailyTurnoverRupees = currentPrice * meanVol;
         features['liquidity_score'] = Math.log10(Math.max(1, dailyTurnoverRupees));
       } else {
         features['volume_z_score'] = 0;
         features['volume_stability'] = 1.0;
-        features['liquidity_score'] = 6.0; // fallback ₹10 lakh turnover
+        features['liquidity_score'] = 6.0;
       }
 
       // ── 5. Benchmark & Relative Dynamics (NIFTY 50) ──
       if (benchmarkCandles && benchmarkCandles.length >= 30) {
-        const benchCloses = benchmarkCandles.map(b => b.close);
+        const benchCloses = benchmarkCandles.map((b) => b.close);
         const benchReturns: number[] = [];
         for (let i = 1; i < benchCloses.length; i++) {
           if (benchCloses[i - 1] > 0) {
@@ -244,17 +245,35 @@ export class FeatureEngine {
           features['relative_strength_nifty'] = stock20Return - bench20Return;
         }
       } else {
-        // Statistical fallback for Beta based on volatility ratio vs market typical 14% vol
         const stockVol = features['annualized_volatility'] || 0.20;
         features['beta_nifty'] = parseFloat(Math.min(2.5, Math.max(0.4, stockVol / 0.15)).toFixed(2));
         features['relative_strength_nifty'] = features['momentum_20'] || 0;
       }
-
-    } catch (err) {
-      // Graceful fallback for any unexpected feature calculation edge case
+    } catch {
+      // Graceful fallback
     }
 
     return features;
+  }
+
+  /**
+   * Helper: Calculates rolling Z-Score of a value against trailing series.
+   */
+  calculateRollingZScore(series: number[], value: number): number {
+    if (!series || series.length < 5) return 0;
+    const mean = series.reduce((s, x) => s + x, 0) / series.length;
+    const variance = series.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / series.length;
+    const std = Math.sqrt(variance);
+    return std > 0 ? (value - mean) / std : 0;
+  }
+
+  /**
+   * Helper: Calculates rolling Percentile Rank (0 to 100) of a value against trailing series.
+   */
+  calculatePercentileRank(series: number[], value: number): number {
+    if (!series || series.length === 0) return 50;
+    const countBelow = series.filter((x) => x < value).length;
+    return (countBelow / series.length) * 100;
   }
 
   /**

@@ -3,6 +3,12 @@ export interface HorizonPrediction {
   calibratedProbability: number;
   expectedReturn: number;
   confidenceInterval: [number, number];
+  expectedGainConditionalUp?: number;
+  expectedLossConditionalDown?: number;
+  expectedValue?: number;
+  expectedVolatility?: number;
+  uncertainty?: number;
+  estimationMethod?: 'EMPIRICAL_TWO_STAGE' | 'ESTIMATED_DIFFUSION';
 }
 
 export type Decision =

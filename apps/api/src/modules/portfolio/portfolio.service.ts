@@ -27,6 +27,7 @@ export interface PortfolioPositionWithLiveMetrics {
   portfolioWeightPercent?: number;
   compositeRiskScore?: number;
   riskState?: PositionRiskState;
+  marginalRiskContribution?: number;
   stock: {
     id: string;
     ticker: string;
@@ -77,7 +78,8 @@ export class PortfolioService {
   }
 
   /**
-   * Retrieves or initializes the user's paper trading portfolio with real-time live P&L and concentration analytics
+   * Retrieves or initializes the user's paper trading portfolio with real-time live P&L,
+   * concentration analytics, and database-persisted auto-sell execution.
    */
   async getPortfolio(userId: string): Promise<PortfolioSummary> {
     const user = await this.getOrCreateUser(userId);
@@ -103,9 +105,10 @@ export class PortfolioService {
     const quotes = tickers.length > 0 ? await this.stockService.getQuotes(tickers).catch(() => []) : [];
     const quoteMap = new Map(quotes.map((q) => [q.ticker, q]));
 
-    // ── AUTOMATED STOP-LOSS & TARGET AUTO-EXECUTION ENGINE ──
+    // ── DATABASE-HARDENED AUTOMATED STOP-LOSS & TARGET AUTO-EXECUTION ENGINE ──
     const activePositions: typeof portfolio.positions = [];
     let cashAddedFromAutoSells = 0;
+    const cooldownCutoff = new Date(Date.now() - 60_000); // 1 minute database cooldown
 
     for (const pos of portfolio.positions) {
       const quote = quoteMap.get(pos.stock.ticker);
@@ -116,40 +119,54 @@ export class PortfolioService {
       const isStopLossHit = stopLoss !== null && currentPrice > 0 && currentPrice <= stopLoss;
       const isTargetHit = target !== null && currentPrice > 0 && currentPrice >= target;
 
-      const execKey = `${pos.id}_${isStopLossHit ? 'STOP' : 'TARGET'}_${Math.floor(Date.now() / 10000)}`;
+      const memoryKey = `${pos.id}_${isStopLossHit ? 'STOP' : 'TARGET'}_${Math.floor(Date.now() / 30000)}`;
 
-      if ((isStopLossHit || isTargetHit) && !this.autoSellExecutionTracker.has(execKey)) {
-        this.autoSellExecutionTracker.add(execKey);
-        const reason = isStopLossHit ? 'AUTO_STOP_LOSS' : 'AUTO_TARGET_PROFIT';
-        const totalProceeds = Money.multiply(pos.quantity, currentPrice);
-        cashAddedFromAutoSells = Money.add(cashAddedFromAutoSells, totalProceeds);
+      if ((isStopLossHit || isTargetHit) && !this.autoSellExecutionTracker.has(memoryKey)) {
+        // Database-level idempotency verification
+        const recentSell = await this.db.client.transaction.findFirst({
+          where: {
+            portfolioId: portfolio.id,
+            stockId: pos.stock.id,
+            type: TransactionType.SELL,
+            timestamp: { gte: cooldownCutoff },
+          },
+        }).catch(() => null);
 
-        try {
-          await this.db.client.$transaction([
-            this.db.client.position.delete({
-              where: { id: pos.id },
-            }),
-            this.db.client.portfolio.update({
-              where: { id: portfolio.id },
-              data: {
-                availableCash: Money.add(Number(portfolio.availableCash), totalProceeds),
-              },
-            }),
-            this.db.client.transaction.create({
-              data: {
-                portfolioId: portfolio.id,
-                stockId: pos.stock.id,
-                type: TransactionType.SELL,
-                orderType: OrderType.LIMIT,
-                quantity: pos.quantity,
-                price: currentPrice,
-              },
-            }),
-          ]);
+        if (!recentSell) {
+          this.autoSellExecutionTracker.add(memoryKey);
+          const reason = isStopLossHit ? 'AUTO_STOP_LOSS' : 'AUTO_TARGET_PROFIT';
+          const totalProceeds = Money.multiply(pos.quantity, currentPrice);
+          cashAddedFromAutoSells = Money.add(cashAddedFromAutoSells, totalProceeds);
 
-          this.logger.log(`🛡️ Auto-Executed ${reason} for ${pos.stock.ticker}: Sold ${pos.quantity} shares @ ₹${currentPrice}`);
-        } catch (err) {
-          this.logger.error(`Failed to auto-execute ${reason} for ${pos.stock.ticker}:`, err);
+          try {
+            await this.db.client.$transaction([
+              this.db.client.position.delete({
+                where: { id: pos.id },
+              }),
+              this.db.client.portfolio.update({
+                where: { id: portfolio.id },
+                data: {
+                  availableCash: Money.add(Number(portfolio.availableCash), totalProceeds),
+                },
+              }),
+              this.db.client.transaction.create({
+                data: {
+                  portfolioId: portfolio.id,
+                  stockId: pos.stock.id,
+                  type: TransactionType.SELL,
+                  orderType: OrderType.LIMIT,
+                  quantity: pos.quantity,
+                  price: currentPrice,
+                },
+              }),
+            ]);
+
+            this.logger.log(`🛡️ Auto-Executed ${reason} for ${pos.stock.ticker}: Sold ${pos.quantity} shares @ ₹${currentPrice}`);
+          } catch (err) {
+            this.logger.error(`Failed to auto-execute ${reason} for ${pos.stock.ticker}:`, err);
+            activePositions.push(pos);
+          }
+        } else {
           activePositions.push(pos);
         }
       } else {
@@ -214,7 +231,7 @@ export class PortfolioService {
     const totalPortfolioValue = Money.add(currentCash, totalCurrentValue);
     const totalTodayPnLPercent = totalPortfolioValue > 0 ? Money.round((totalTodayPnL / totalPortfolioValue) * 100) : 0;
 
-    // ── Position-Aware Concentration & Weight Analytics (Part 13) ──
+    // ── Position-Aware Concentration & Weight Analytics ──
     const sectorTotals: Record<string, number> = {};
     const concentrationAlerts: string[] = [];
 
@@ -224,6 +241,9 @@ export class PortfolioService {
 
       const sec = p.stock.sector || 'General';
       sectorTotals[sec] = (sectorTotals[sec] || 0) + p.currentValue;
+
+      // Marginal Risk Contribution proxy: Weight% * Estimated Asset Volatility
+      p.marginalRiskContribution = parseFloat(((weight / 100) * 0.20 * 100).toFixed(2));
 
       if (weight >= MODEL_CONFIG.RISK.POSITION_CONCENTRATION_LIMIT * 100) {
         concentrationAlerts.push(`High position concentration in ${p.stock.ticker} (${weight.toFixed(1)}% of total portfolio)`);
@@ -279,7 +299,7 @@ export class PortfolioService {
     const executionPrice = quote.price;
     const totalCost = Money.multiply(quantity, executionPrice);
 
-    // 2. Ensure stock record exists in DB (check both with & without .NS)
+    // 2. Ensure stock record exists in DB
     let stock = await this.db.client.stock.findFirst({
       where: {
         OR: [
@@ -314,7 +334,7 @@ export class PortfolioService {
         if (prediction?.risk?.targetPrice && prediction.risk.targetPrice > executionPrice) {
           autoTargetPrice = prediction.risk.targetPrice;
         }
-      } catch (err) {
+      } catch {
         this.logger.warn(`Could not compute live prediction for ${ticker}, using fallback 5% ATR stop.`);
       }
     }
@@ -358,7 +378,7 @@ export class PortfolioService {
           data: { availableCash: updatedCash },
         });
 
-        // Update or create position with weighted average buy price and auto stop-loss
+        // Update or create position
         if (existingPosition) {
           const newAvgPrice = Money.calculateNewAveragePrice(
             existingPosition.quantity,
@@ -390,7 +410,6 @@ export class PortfolioService {
           });
         }
 
-        // Automatically configure an active safety price alert for the user
         await tx.alert.create({
           data: {
             userId: user.id,
@@ -541,7 +560,7 @@ export class PortfolioService {
 
   /**
    * AI Risk Guardian: scans user portfolio positions for multi-dimensional exit signals,
-   * continuous RiskScore (0-100), dynamic states (EXIT/EMERGENCY), and position-aware concentration risks.
+   * continuous RiskScore (0-100), dynamic states, and portfolio-aware concentration risks.
    */
   async getPortfolioSellSignals(userId: string): Promise<any[]> {
     const portfolio = await this.getPortfolio(userId);
@@ -564,7 +583,6 @@ export class PortfolioService {
         const isRiskScoreElevated = riskScore >= MODEL_CONFIG.RISK.STATE_THRESHOLDS.HIGH_RISK;
         const isEmergency = prediction.risk.riskState === 'EMERGENCY';
 
-        // Trigger if exit conditions or elevated risk detected
         if (
           isSellDecision ||
           isHighDownside ||
@@ -633,6 +651,7 @@ export class PortfolioService {
             compositeRiskScore: riskScore,
             riskState: prediction.risk.riskState || (riskScore >= 85 ? 'EXIT' : riskScore >= 65 ? 'HIGH_RISK' : 'CAUTION'),
             portfolioWeightPercent: pos.portfolioWeightPercent || 0,
+            marginalRiskContribution: pos.marginalRiskContribution || 0,
             stopLossPrice: prediction.risk.stopLossPrice,
             targetExitPrice,
             targetPrice: targetExitPrice,
