@@ -20,15 +20,43 @@ import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
 import { NewsFeatureEngine } from './engines/news-feature-engine';
 import { BacktestEngine } from './engines/backtest-engine';
-import { ModelArtifactService, ModelArtifact } from './engines/model-artifact.service';
+import { ModelArtifactService, ModelArtifact, STATISTICAL_GATES } from './engines/model-artifact.service';
 import { MODEL_CONFIG } from './engines/model-config';
 import { ModelRegistry } from './engines/model-registry';
+
+export interface ProductionGovernanceStatus {
+  productionReady: boolean;
+  modelStatus: 'ACTIVE' | 'FALLBACK';
+  calibrationStatus: 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK';
+  artifactStatus: 'VALID_ACTIVE' | 'INVALID_OR_MISSING';
+  dataSufficiencyStatus: 'SUFFICIENT' | 'INSUFFICIENT';
+  walkForwardStatus: 'VERIFIED_OUT_OF_SAMPLE' | 'UNVERIFIED';
+  holdoutStatus: 'UNTOUCHED_VERIFIED' | 'UNVERIFIED';
+  statisticalValidationStatus: 'PASSED' | 'FAILED';
+  activeArtifactId?: string;
+  activeArtifactChecksum?: string;
+  lastValidatedAt: string;
+  blockingIssues: string[];
+}
 
 @Injectable()
 export class QuantPredictionService implements OnModuleInit {
   private readonly logger = new Logger(QuantPredictionService.name);
   private cache = new Map<string, { data: StockPrediction; expiresAt: number }>();
   private isTrainingRunning: boolean = false;
+  private activeArtifact: ModelArtifact | null = null;
+  private governanceStatus: ProductionGovernanceStatus = {
+    productionReady: false,
+    modelStatus: 'FALLBACK',
+    calibrationStatus: 'FALLBACK',
+    artifactStatus: 'INVALID_OR_MISSING',
+    dataSufficiencyStatus: 'INSUFFICIENT',
+    walkForwardStatus: 'UNVERIFIED',
+    holdoutStatus: 'UNVERIFIED',
+    statisticalValidationStatus: 'FAILED',
+    lastValidatedAt: new Date().toISOString(),
+    blockingIssues: ['Startup initialization pending'],
+  };
 
   constructor(
     @Inject(forwardRef(() => StockService))
@@ -48,34 +76,64 @@ export class QuantPredictionService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.logger.log('QuantPredictionService v4.0 initializing lifecycle & model artifact verification...');
-
-    // 1. Try loading existing verified model artifact from disk
-    const artifact = this.artifactService.loadArtifact();
-    if (artifact) {
-      this.applyModelArtifact(artifact);
-      this.logger.log(
-        `Loaded verified model artifact (Trained: ${artifact.trainingStart} to ${artifact.trainingEnd}, Calibration: ${artifact.calibrationStatus})`
-      );
-    } else {
-      this.logger.log('No existing model artifact found. Initiating automated walk-forward training in background...');
-      // 2. Automatically trigger background training lifecycle to fit and persist artifact
-      setTimeout(() => {
-        this.trainPipeline().catch((err) => {
-          this.logger.warn(`Initial background training encountered error: ${err}`);
-        });
-      }, 3000);
-    }
+    this.logger.log('QuantPredictionService v4.0 initializing statistical governance & artifact verification...');
+    this.refreshArtifactGovernance();
   }
 
   /**
-   * Applies a loaded model artifact into the active runtime inference engines
+   * Evaluates active artifact against statistical gates and updates runtime state
    */
+  private refreshArtifactGovernance() {
+    const { artifact, validation } = this.artifactService.loadActiveArtifact();
+
+    if (artifact && validation.isValid) {
+      this.activeArtifact = artifact;
+      this.applyModelArtifact(artifact);
+
+      this.governanceStatus = {
+        productionReady: true,
+        modelStatus: 'ACTIVE',
+        calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
+        artifactStatus: 'VALID_ACTIVE',
+        dataSufficiencyStatus: 'SUFFICIENT',
+        walkForwardStatus: 'VERIFIED_OUT_OF_SAMPLE',
+        holdoutStatus: 'UNTOUCHED_VERIFIED',
+        statisticalValidationStatus: 'PASSED',
+        activeArtifactId: artifact.id,
+        activeArtifactChecksum: artifact.checksum,
+        lastValidatedAt: new Date().toISOString(),
+        blockingIssues: [],
+      };
+
+      this.logger.log(`Verified active artifact loaded: ID ${artifact.id} (Calibration: FITTED_OUT_OF_SAMPLE)`);
+    } else {
+      this.activeArtifact = null;
+      this.calibrationEngine.setKnots([], false);
+      this.inferenceEngine.setEmpiricalBuckets([]);
+
+      this.governanceStatus = {
+        productionReady: false,
+        modelStatus: 'FALLBACK',
+        calibrationStatus: 'FALLBACK',
+        artifactStatus: 'INVALID_OR_MISSING',
+        dataSufficiencyStatus: 'INSUFFICIENT',
+        walkForwardStatus: 'UNVERIFIED',
+        holdoutStatus: 'UNVERIFIED',
+        statisticalValidationStatus: 'FAILED',
+        lastValidatedAt: new Date().toISOString(),
+        blockingIssues: validation.blockingReasons.length > 0 ? validation.blockingReasons : ['No valid statistical artifact found'],
+      };
+
+      this.logger.log(`No valid artifact passing statistical gates. Running in clean FALLBACK mode (Blocking: ${this.governanceStatus.blockingIssues.join(', ')})`);
+    }
+  }
+
   private applyModelArtifact(artifact: ModelArtifact) {
-    if (artifact.calibrationKnots && artifact.calibrationKnots.length > 0) {
+    if (artifact.calibrationKnots && artifact.calibrationKnots.length >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS) {
       this.calibrationEngine.setKnots(
         artifact.calibrationKnots,
-        artifact.calibrationStatus === 'FITTED_OUT_OF_SAMPLE'
+        artifact.calibrationStatus === 'FITTED_OUT_OF_SAMPLE',
+        artifact.calibrationMetrics
       );
     }
     if (artifact.empiricalDistributions && artifact.empiricalDistributions.length > 0) {
@@ -88,26 +146,24 @@ export class QuantPredictionService implements OnModuleInit {
   }
 
   /**
-   * Complete Training Lifecycle:
-   * TRAIN -> Fit Learned Model -> VALIDATION -> Fit PAV Calibration & Empirical Distributions -> TEST/HOLDOUT Evaluation -> Persist Artifact -> Reload Runtime
+   * Complete Training Lifecycle
    */
   async trainPipeline(): Promise<{
     success: boolean;
     modelVersion: string;
     calibrationStatus: string;
+    governanceStatus: ProductionGovernanceStatus;
     totalTrades: number;
-    metrics: any;
     timestamp: string;
   }> {
     if (this.isTrainingRunning) {
       this.logger.log('Training pipeline is already running. Skipping duplicate invocation.');
-      const artifact = this.artifactService.loadArtifact();
       return {
         success: true,
         modelVersion: ModelRegistry.getModelVersion(),
         calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
+        governanceStatus: this.governanceStatus,
         totalTrades: 0,
-        metrics: artifact?.metrics || {},
         timestamp: new Date().toISOString(),
       };
     }
@@ -118,26 +174,17 @@ export class QuantPredictionService implements OnModuleInit {
     try {
       const backtestResult = await this.backtestEngine.runFullBacktest();
 
-      // Reload newly generated artifact into active memory
-      const artifact = this.artifactService.loadArtifact();
-      if (artifact) {
-        this.applyModelArtifact(artifact);
-      }
+      // Refresh governance and apply new artifact
+      this.refreshArtifactGovernance();
 
-      this.logger.log('Training & calibration lifecycle completed successfully. Model artifact active in runtime.');
+      this.logger.log(`Training lifecycle complete. Governance status: ${this.governanceStatus.productionReady ? 'PRODUCTION_READY' : 'NOT_PRODUCTION_READY'}`);
 
       return {
         success: true,
         modelVersion: backtestResult.modelVersion,
         calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
+        governanceStatus: this.governanceStatus,
         totalTrades: backtestResult.totalTrades,
-        metrics: {
-          overallWinRate: backtestResult.overallWinRate,
-          annualizedReturn: backtestResult.annualizedReturn,
-          overallSharpe: backtestResult.overallSharpe,
-          overallSortino: backtestResult.overallSortino,
-          holdoutPerformance: backtestResult.holdoutPerformance,
-        },
         timestamp: new Date().toISOString(),
       };
     } finally {
@@ -199,7 +246,7 @@ export class QuantPredictionService implements OnModuleInit {
       ? features['atr_percent']
       : Math.max(0.015, Math.abs(quote.changePercent / 100) * 1.4);
 
-    // Hierarchical Empirical Return Estimations
+    // Hierarchical Empirical Return Estimations with explicit uncertainty separation
     const est1d = this.inferenceEngine.estimateExpectedReturn(pred1d, '1d', assetVolatility);
     const est5d = this.inferenceEngine.estimateExpectedReturn(pred5d, '5d', assetVolatility);
     const est20d = this.inferenceEngine.estimateExpectedReturn(pred20d, '20d', assetVolatility);
@@ -600,23 +647,29 @@ export class QuantPredictionService implements OnModuleInit {
 
   getModelStatus() {
     const model = ModelRegistry.getActiveModel();
-    const artifact = this.artifactService.loadArtifact();
     return {
       version: model.modelVersion,
       modelType: model.modelType,
       calibration: model.calibrationVersion,
       calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
-      status: model.status,
+      isCalibrated: this.calibrationEngine.getIsCalibrated(),
+      calibrationQuality: this.calibrationEngine.getCalibrationQuality(),
+      calibrationSampleCount: this.calibrationEngine.getCalibrationSampleCount(),
+      status: this.governanceStatus.productionReady ? 'ACTIVE' : 'FALLBACK',
       activeModel: model.modelVersion,
       description: model.description,
       featureCount: model.activeFeatures.length,
       calibrationMethod: model.calibrationMethod,
-      trainingWindow: artifact ? `${artifact.trainingStart} to ${artifact.trainingEnd}` : model.trainingWindow,
-      validationWindow: artifact ? `${artifact.validationStart} to ${artifact.validationEnd}` : model.validationWindow,
-      testWindow: artifact ? `${artifact.testStart} to ${artifact.testEnd}` : model.testWindow,
-      holdoutWindow: artifact ? `${artifact.holdoutStart} to ${artifact.holdoutEnd}` : model.holdoutWindow,
-      isFittedArtifactActive: artifact !== null,
+      trainingWindow: this.activeArtifact ? `${this.activeArtifact.trainingStart} to ${this.activeArtifact.trainingEnd}` : model.trainingWindow,
+      validationWindow: this.activeArtifact ? `${this.activeArtifact.validationStart} to ${this.activeArtifact.validationEnd}` : model.validationWindow,
+      testWindow: this.activeArtifact ? `${this.activeArtifact.testStart} to ${this.activeArtifact.testEnd}` : model.testWindow,
+      holdoutWindow: this.activeArtifact ? `${this.activeArtifact.holdoutStart} to ${this.activeArtifact.holdoutEnd}` : model.holdoutWindow,
+      governance: this.governanceStatus,
     };
+  }
+
+  getProductionGovernanceStatus(): ProductionGovernanceStatus {
+    return this.governanceStatus;
   }
 
   async getModelPerformance() {
@@ -627,19 +680,19 @@ export class QuantPredictionService implements OnModuleInit {
 
     const result = await this.backtestEngine.runFullBacktest();
 
-    // Reload active engines with newly fitted artifact
-    const artifact = this.artifactService.loadArtifact();
-    if (artifact) {
-      this.applyModelArtifact(artifact);
-    }
+    // Refresh governance status from newly fitted artifact
+    this.refreshArtifactGovernance();
 
     const response = {
       modelVersion: result.modelVersion,
+      modelType: 'BASELINE_HEURISTIC' as const,
       calibrationVersion: this.calibrationEngine.getVersion() || 'v4.0.0-isotonic',
       calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
-      status: 'HEALTHY' as const,
+      isCalibrated: this.calibrationEngine.getIsCalibrated(),
+      status: this.governanceStatus.productionReady ? ('HEALTHY' as const) : ('DEGRADED' as const),
       calibrationMethod: 'Walk-Forward Out-Of-Sample Empirical Evaluation (With NSE Friction Modeling)',
       lastTrained: result.lastBacktestDate,
+      governance: this.governanceStatus,
       horizons: {
         '1d': {
           accuracy: result.horizons['1d'].winRate / 100,
@@ -716,7 +769,7 @@ export class QuantPredictionService implements OnModuleInit {
       },
       baselineComparisons: [
         {
-          name: 'QuantX AI Walk-Forward Multi-Factor (v4.0)',
+          name: 'QuantX Heuristic Multi-Factor Baseline (v4.0)',
           annualReturn: result.annualizedReturn / 100,
           sharpeRatio: result.overallSharpe || 1.12,
           maxDrawdown: result.horizons['5d'].maxDrawdown / 100,

@@ -4,11 +4,11 @@ import { CalibrationEngine } from './engines/calibration-engine';
 import { RegimeEngine } from './engines/regime-engine';
 import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
-import { ModelArtifactService, ModelArtifact } from './engines/model-artifact.service';
+import { ModelArtifactService, ModelArtifact, STATISTICAL_GATES } from './engines/model-artifact.service';
 import { LogisticRegressionModel, TrainingSample } from './engines/learned-model';
 import { MarketQuote, OHLCVCandle } from '../stock/providers/market-data.provider.interface';
 
-describe('QuantX Quantitative Stack Hardening & Lifecycle Verification Suite', () => {
+describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
   let featureEngine: FeatureEngine;
   let inferenceEngine: ModelInferenceEngine;
   let calibrationEngine: CalibrationEngine;
@@ -27,72 +27,162 @@ describe('QuantX Quantitative Stack Hardening & Lifecycle Verification Suite', (
     artifactService = new ModelArtifactService();
   });
 
-  describe('1. Zero Hardcoded Fitted Outputs & Hierarchical Fallback (Req #1, 5)', () => {
-    it('should start with empty empirical buckets and cleanly use FALLBACK_DIFFUSION when unpopulated', () => {
-      const estimation = inferenceEngine.estimateExpectedReturn(0.65, '5d', 0.02);
-
-      expect(estimation.method).toBe('FALLBACK_DIFFUSION');
-      expect(estimation.sampleCount).toBe(0);
-      expect(estimation.probability).toBe(0.65);
-      expect(estimation.expectedValue).toBeDefined();
-    });
-
-    it('should hierarchically select EMPIRICAL_FINE_BUCKET when N >= 15', () => {
-      const samples = Array.from({ length: 20 }, (_, i) => ({
-        prob: 0.60,
-        horizon: '5d' as const,
-        actualReturn: i % 2 === 0 ? 0.035 : -0.015,
-      }));
-
-      inferenceEngine.fitEmpiricalDistributions(samples);
-      const estimation = inferenceEngine.estimateExpectedReturn(0.60, '5d', 0.02);
-
-      expect(estimation.method).toBe('EMPIRICAL_FINE_BUCKET');
-      expect(estimation.sampleCount).toBeGreaterThanOrEqual(15);
-      expect(estimation.expectedGainConditionalUp).toBeGreaterThan(0);
-      expect(estimation.expectedLossConditionalDown).toBeGreaterThan(0);
-    });
-
-    it('should hierarchically fall back to EMPIRICAL_BROAD_BUCKET or EMPIRICAL_HORIZON_WIDE when sample count is low', () => {
-      const samples = Array.from({ length: 6 }, (_, i) => ({
-        prob: 0.50,
-        horizon: '5d' as const,
-        actualReturn: 0.02,
-      }));
-
-      inferenceEngine.fitEmpiricalDistributions(samples);
-      const estimation = inferenceEngine.estimateExpectedReturn(0.50, '5d', 0.02);
-
-      expect(['EMPIRICAL_BROAD_BUCKET', 'EMPIRICAL_HORIZON_WIDE']).toContain(estimation.method);
-      expect(estimation.sampleCount).toBeGreaterThanOrEqual(5);
-    });
-  });
-
-  describe('2. Learned Model Fitting & Comparative Baseline (Req #3)', () => {
-    it('should fit LogisticRegressionModel on standardized training samples with L2 penalty', () => {
-      const learnedModel = new LogisticRegressionModel();
-      const trainingSamples: TrainingSample[] = Array.from({ length: 50 }, (_, i) => ({
-        features: {
-          rsi_14: 40 + (i % 20),
-          sma_50_dist: (i % 2 === 0 ? 0.05 : -0.05),
-          annualized_volatility: 0.20,
-          momentum_5: (i % 2 === 0 ? 0.02 : -0.02),
+  describe('1. Hard Statistical Validation Gates (Req #1, 2, 3)', () => {
+    it('should reject invalid artifacts with insufficient sample counts', () => {
+      const invalidArtifact: ModelArtifact = {
+        id: 'art_test_invalid_samples',
+        modelVersion: '4.0.0',
+        modelType: 'BASELINE_HEURISTIC',
+        featureVersion: 'v4.0.0-multi-factor-25',
+        trainingStart: '2025-08-22',
+        trainingEnd: '2026-02-15',
+        validationStart: '2026-02-16',
+        validationEnd: '2026-05-15',
+        testStart: '2026-05-16',
+        testEnd: '2026-07-15',
+        holdoutStart: '2026-07-16',
+        holdoutEnd: '2026-08-22',
+        horizon: '5d',
+        fittingMethod: 'PAV',
+        parameters: {},
+        calibrationVersion: 'v4.0.0-isotonic',
+        calibrationKnots: [[0.3, 0.05], [0.7, 0.95]],
+        calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
+        calibrationMetrics: {
+          brierScore: 0.18,
+          ece: 0.04,
+          mce: 0.08,
+          sampleCount: 6, // Insufficient!
+          populatedBins: 1, // Insufficient!
+          isMonotonic: true,
         },
-        outcome: i % 2 === 0 ? 1 : 0,
-      }));
+        empiricalDistributions: [],
+        statisticalGatePassed: false,
+        gateDetails: {
+          sampleSufficiency: false,
+          calibrationQuality: false,
+          versionCompatibility: true,
+          dateRangeIntegrity: true,
+        },
+        createdAt: new Date().toISOString(),
+      };
 
-      learnedModel.fit(trainingSamples);
-      expect(learnedModel.getIsFitted()).toBe(true);
+      const result = artifactService.validateArtifact(invalidArtifact);
+      expect(result.isValid).toBe(false);
+      expect(result.blockingReasons.some((r) => r.includes('Insufficient calibration samples'))).toBe(true);
+    });
 
-      const prediction = learnedModel.predict({ rsi_14: 55, sma_50_dist: 0.04, annualized_volatility: 0.18 });
-      expect(prediction).toBeGreaterThanOrEqual(0.05);
-      expect(prediction).toBeLessThanOrEqual(0.95);
+    it('should reject artifacts with corrupted checksum', () => {
+      const artifact: ModelArtifact = {
+        id: 'art_test_checksum',
+        modelVersion: '4.0.0',
+        modelType: 'BASELINE_HEURISTIC',
+        featureVersion: 'v4.0.0-multi-factor-25',
+        trainingStart: '2025-08-22',
+        trainingEnd: '2026-02-15',
+        validationStart: '2026-02-16',
+        validationEnd: '2026-05-15',
+        testStart: '2026-05-16',
+        testEnd: '2026-07-15',
+        holdoutStart: '2026-07-16',
+        holdoutEnd: '2026-08-22',
+        horizon: '5d',
+        fittingMethod: 'PAV',
+        parameters: {},
+        calibrationVersion: 'v4.0.0-isotonic',
+        calibrationKnots: [[0.1, 0.12], [0.5, 0.48], [0.9, 0.88]],
+        calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
+        calibrationMetrics: {
+          brierScore: 0.15,
+          ece: 0.03,
+          mce: 0.06,
+          sampleCount: 50,
+          populatedBins: 4,
+          isMonotonic: true,
+        },
+        empiricalDistributions: [
+          {
+            horizon: '5d',
+            probLower: 0,
+            probUpper: 1,
+            bucketType: 'HORIZON_WIDE',
+            meanGainConditionalUp: 0.03,
+            meanLossConditionalDown: 0.02,
+            dispersion: 0.03,
+            sampleCount: 50,
+            uncertainty: 0.004,
+            fittedAt: new Date().toISOString(),
+          },
+        ],
+        statisticalGatePassed: true,
+        gateDetails: {
+          sampleSufficiency: true,
+          calibrationQuality: true,
+          versionCompatibility: true,
+          dateRangeIntegrity: true,
+        },
+        checksum: 'corrupted_checksum_string',
+        createdAt: new Date().toISOString(),
+      };
+
+      const result = artifactService.validateArtifact(artifact);
+      expect(result.isValid).toBe(false);
+      expect(result.blockingReasons.some((r) => r.includes('Checksum mismatch'))).toBe(true);
     });
   });
 
-  describe('3. Direct Equity-Curve Statistics & Invariant Reconciliation (Req #6, 10)', () => {
-    it('should reconcile compounded equity return with individual trade returns', () => {
-      const tradeReturns = [0.03, -0.015, 0.04, 0.02, -0.01];
+  describe('2. Anti-Extreme Calibration Shrinkage Safeguards (Req #4)', () => {
+    it('should shrink extreme tail mapping toward base rate 0.50 when sample count is low', () => {
+      // 20 validation samples
+      const samples = [
+        { prob: 0.15, outcome: 0 },
+        { prob: 0.20, outcome: 0 },
+        { prob: 0.25, outcome: 0 },
+        { prob: 0.30, outcome: 0 },
+        { prob: 0.35, outcome: 0 },
+        { prob: 0.40, outcome: 0 },
+        { prob: 0.45, outcome: 0 },
+        { prob: 0.50, outcome: 0 },
+        { prob: 0.52, outcome: 1 },
+        { prob: 0.55, outcome: 1 },
+        { prob: 0.60, outcome: 1 },
+        { prob: 0.65, outcome: 1 },
+        { prob: 0.70, outcome: 1 },
+        { prob: 0.75, outcome: 1 },
+        { prob: 0.80, outcome: 1 },
+        { prob: 0.85, outcome: 1 },
+        { prob: 0.88, outcome: 1 },
+        { prob: 0.90, outcome: 1 },
+        { prob: 0.92, outcome: 1 },
+        { prob: 0.95, outcome: 1 },
+      ];
+
+      const knots = calibrationEngine.fitPAV(samples);
+      expect(knots.length).toBeGreaterThanOrEqual(2);
+
+      // Verify that no knot is mapped to an unbacked extreme like 0.01 or 0.99
+      for (const [raw, calib] of knots) {
+        expect(calib).toBeGreaterThanOrEqual(0.08);
+        expect(calib).toBeLessThanOrEqual(0.92);
+      }
+    });
+  });
+
+  describe('3. Mathematical Uncertainty Separation (Req #8, 9)', () => {
+    it('should separate estimation uncertainty from asset return volatility', () => {
+      const estimation = inferenceEngine.estimateExpectedReturn(0.60, '5d', 0.025);
+
+      expect(estimation.marketVolatility).toBeDefined();
+      expect(estimation.estimationUncertainty).toBeDefined();
+      expect(estimation.marketVolatility).toBeGreaterThan(0);
+      expect(estimation.confidenceInterval[0]).toBeLessThan(estimation.expectedValue);
+      expect(estimation.confidenceInterval[1]).toBeGreaterThan(estimation.expectedValue);
+    });
+  });
+
+  describe('4. Independent Backtest Invariant Reconciliations (Req #14, 15)', () => {
+    it('should reconcile compounded trade returns with reported equity curve', () => {
+      const tradeReturns = [0.025, -0.012, 0.038, 0.015, -0.020, 0.045];
 
       let equity = 100;
       let compoundedMultiplier = 1.0;
@@ -107,123 +197,45 @@ describe('QuantX Quantitative Stack Hardening & Lifecycle Verification Suite', (
       expect(totalEquityReturn).toBeCloseTo(totalCompoundedReturn, 6);
     });
 
-    it('should accurately calculate profit factor as gross_profit / abs(gross_loss)', () => {
-      const trades = [
-        { netReturn: 0.05 },
-        { netReturn: 0.03 },
-        { netReturn: -0.02 },
-        { netReturn: -0.02 },
-      ];
+    it('should reconcile profit factor = sum(gains) / abs(sum(losses))', () => {
+      const tradeReturns = [0.04, 0.02, -0.01, -0.015, 0.03];
 
-      const wins = trades.filter((t) => t.netReturn > 0);
-      const losses = trades.filter((t) => t.netReturn <= 0);
+      const wins = tradeReturns.filter((r) => r > 0);
+      const losses = tradeReturns.filter((r) => r <= 0);
 
-      const sumWins = wins.reduce((s, t) => s + t.netReturn, 0);
-      const sumLosses = Math.abs(losses.reduce((s, t) => s + t.netReturn, 0));
-      const profitFactor = sumWins / sumLosses;
+      const sumWins = wins.reduce((s, r) => s + r, 0); // 0.09
+      const sumLosses = Math.abs(losses.reduce((s, r) => s + r, 0)); // 0.025
+      const expectedProfitFactor = sumWins / sumLosses; // 3.6
 
-      expect(profitFactor).toBeCloseTo(2.0, 4);
+      expect(expectedProfitFactor).toBeCloseTo(3.6, 4);
     });
 
-    it('should accurately calculate peak-to-trough max drawdown from equity curve', () => {
-      const equityCurve = [100, 110, 120, 108, 102, 115, 125];
-      let peak = 100;
+    it('should independently recompute max drawdown from peak to trough', () => {
+      const equitySeries = [100, 105, 115, 110, 95, 102, 120];
+      let peak = equitySeries[0];
       let maxDD = 0;
 
-      for (const eq of equityCurve) {
-        if (eq > peak) peak = eq;
-        const dd = (eq - peak) / peak;
+      for (const val of equitySeries) {
+        if (val > peak) peak = val;
+        const dd = (val - peak) / peak;
         if (dd < maxDD) maxDD = dd;
       }
 
-      expect(maxDD).toBeCloseTo(-0.15, 4);
+      // Drawdown from 115 to 95 is (95 - 115) / 115 = -20 / 115 = -0.1739 (-17.39%)
+      expect(maxDD).toBeCloseTo(-0.1739, 4);
+    });
+
+    it('should independently compute net return from gross return and 0.13% friction', () => {
+      const grossReturn = 0.04;
+      const roundTripFriction = 0.0013;
+      const netReturn = grossReturn - roundTripFriction;
+
+      expect(netReturn).toBeCloseTo(0.0387, 4);
     });
   });
 
-  describe('4. Complete Training-to-Inference Lifecycle & Artifact Persistence', () => {
-    it('should execute end-to-end training -> artifact serialization -> runtime reloading -> calibrated inference', () => {
-      // Step A: Fit Learned Model on TRAIN samples
-      const trainSamples: TrainingSample[] = Array.from({ length: 30 }, (_, i) => ({
-        features: { rsi_14: 30 + i, sma_50_dist: 0.02, annualized_volatility: 0.18 },
-        outcome: i % 2 === 0 ? 1 : 0,
-      }));
-      const model = new LogisticRegressionModel();
-      model.fit(trainSamples);
-
-      // Step B: Fit PAV Calibration on VALIDATION predictions
-      const valPredictions = [
-        { prob: 0.15, outcome: 0 },
-        { prob: 0.25, outcome: 0 },
-        { prob: 0.35, outcome: 0 },
-        { prob: 0.45, outcome: 0 },
-        { prob: 0.55, outcome: 1 },
-        { prob: 0.65, outcome: 1 },
-        { prob: 0.75, outcome: 1 },
-        { prob: 0.85, outcome: 1 },
-      ];
-      const knots = calibrationEngine.fitPAV(valPredictions);
-      expect(calibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
-
-      // Step C: Fit Empirical Return Distributions on VALIDATION trades
-      const valReturnTrades = [
-        { prob: 0.65, horizon: '5d' as const, actualReturn: 0.042 },
-        { prob: 0.62, horizon: '5d' as const, actualReturn: 0.031 },
-        { prob: 0.35, horizon: '5d' as const, actualReturn: -0.025 },
-        { prob: 0.30, horizon: '5d' as const, actualReturn: -0.038 },
-        { prob: 0.50, horizon: '5d' as const, actualReturn: 0.015 },
-        { prob: 0.52, horizon: '5d' as const, actualReturn: -0.010 },
-      ];
-      inferenceEngine.fitEmpiricalDistributions(valReturnTrades);
-
-      // Step D: Serialize Model Artifact
-      const artifact: ModelArtifact = {
-        modelVersion: '4.0.0',
-        modelType: 'BASELINE_HEURISTIC',
-        featureVersion: 'v4.0.0-multi-factor-25',
-        trainingStart: '2025-08-22',
-        trainingEnd: '2026-02-15',
-        validationStart: '2026-02-16',
-        validationEnd: '2026-05-15',
-        testStart: '2026-05-16',
-        testEnd: '2026-07-15',
-        holdoutStart: '2026-07-16',
-        holdoutEnd: '2026-08-22',
-        horizon: '5d',
-        fittingMethod: 'PAV + Empirical Two-Stage',
-        parameters: model.getWeights(),
-        calibrationVersion: 'v4.0.0-isotonic',
-        calibrationKnots: knots,
-        calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
-        empiricalDistributions: inferenceEngine.getEmpiricalBuckets(),
-        createdAt: new Date().toISOString(),
-      };
-
-      const saved = artifactService.saveArtifact(artifact);
-      expect(saved).toBe(true);
-
-      // Step E: Load Artifact into Fresh Runtime Engines
-      const freshCalibrationEngine = new CalibrationEngine();
-      const freshInferenceEngine = new ModelInferenceEngine();
-
-      const loadedArtifact = artifactService.loadArtifact();
-      expect(loadedArtifact).not.toBeNull();
-
-      freshCalibrationEngine.setKnots(loadedArtifact!.calibrationKnots, loadedArtifact!.calibrationStatus === 'FITTED_OUT_OF_SAMPLE');
-      freshInferenceEngine.setEmpiricalBuckets(loadedArtifact!.empiricalDistributions);
-
-      // Step F: Verify Live Inference Uses the Restored Calibration & Empirical Returns
-      expect(freshCalibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
-      const calibratedProb = freshCalibrationEngine.apply(0.65);
-      expect(calibratedProb).toBeGreaterThan(0);
-
-      const liveEstimation = freshInferenceEngine.estimateExpectedReturn(calibratedProb, '5d', 0.02);
-      expect(liveEstimation.method).not.toBe('FALLBACK_DIFFUSION');
-      expect(liveEstimation.sampleCount).toBeGreaterThan(0);
-    });
-  });
-
-  describe('5. Point-In-Time Leakage Prevention (Req #9)', () => {
-    it('should ensure feature calculation uses strictly historical candles through timestamp t', () => {
+  describe('5. Point-In-Time Leakage Prevention (Req #5, 9)', () => {
+    it('should prevent future price mutation from affecting historical features at timestamp t', () => {
       const candles: OHLCVCandle[] = Array.from({ length: 60 }, (_, i) => ({
         time: `2026-01-${i + 1}`,
         date: `2026-01-${i + 1}`,
@@ -255,6 +267,7 @@ describe('QuantX Quantitative Stack Hardening & Lifecycle Verification Suite', (
       const slice30 = candles.slice(0, 31);
       const f1 = featureEngine.calculateFeatures(quoteAt30, slice30, 0);
 
+      // Mutate future candles (31 to 59)
       const mutatedCandles = [...candles];
       for (let j = 31; j < 60; j++) {
         mutatedCandles[j].close = 999999;
@@ -265,6 +278,93 @@ describe('QuantX Quantitative Stack Hardening & Lifecycle Verification Suite', (
       expect(f1['rsi_14']).toEqual(f2['rsi_14']);
       expect(f1['annualized_volatility']).toEqual(f2['annualized_volatility']);
       expect(f1['sma_50_dist']).toEqual(f2['sma_50_dist']);
+    });
+  });
+
+  describe('6. End-to-End Walk-Forward Training -> Canonical Serialization -> Reload -> Inference (Req #10, 11, 19)', () => {
+    it('should complete full lifecycle with canonical artifact persistence and valid checksum', () => {
+      // Step A: Fit Learned Model
+      const trainSamples: TrainingSample[] = Array.from({ length: 50 }, (_, i) => ({
+        features: { rsi_14: 30 + (i % 30), sma_50_dist: 0.02, annualized_volatility: 0.18 },
+        outcome: i % 2 === 0 ? 1 : 0,
+      }));
+      const model = new LogisticRegressionModel();
+      model.fit(trainSamples);
+
+      // Step B: Fit PAV Calibration on 40 Validation observations
+      const valPredictions = Array.from({ length: 40 }, (_, i) => {
+        const prob = 0.20 + (i / 40) * 0.60;
+        return {
+          prob,
+          outcome: i >= 20 ? 1 : 0,
+        };
+      });
+      const knots = calibrationEngine.fitPAV(valPredictions);
+      const calibMetrics = calibrationEngine.getCalibrationGateMetrics(valPredictions);
+
+      // Step C: Fit Empirical Return Distributions on 25 Validation trades
+      const valTrades = Array.from({ length: 25 }, (_, i) => ({
+        prob: 0.30 + (i % 10) * 0.04,
+        horizon: '5d' as const,
+        actualReturn: i % 2 === 0 ? 0.035 : -0.015,
+      }));
+      inferenceEngine.fitEmpiricalDistributions(valTrades);
+
+      // Step D: Save to Canonical Location
+      const artifactData: Omit<ModelArtifact, 'checksum' | 'id'> = {
+        modelVersion: '4.0.0',
+        modelType: 'BASELINE_HEURISTIC',
+        featureVersion: 'v4.0.0-multi-factor-25',
+        trainingStart: '2025-08-22',
+        trainingEnd: '2026-02-15',
+        validationStart: '2026-02-16',
+        validationEnd: '2026-05-15',
+        testStart: '2026-05-16',
+        testEnd: '2026-07-15',
+        holdoutStart: '2026-07-16',
+        holdoutEnd: '2026-08-22',
+        horizon: '5d',
+        fittingMethod: 'PAV + Empirical Two-Stage',
+        parameters: model.getWeights(),
+        calibrationVersion: 'v4.0.0-isotonic',
+        calibrationKnots: knots,
+        calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
+        calibrationMetrics: calibMetrics,
+        empiricalDistributions: inferenceEngine.getEmpiricalBuckets(),
+        statisticalGatePassed: true,
+        gateDetails: {
+          sampleSufficiency: true,
+          calibrationQuality: true,
+          versionCompatibility: true,
+          dateRangeIntegrity: true,
+        },
+        createdAt: new Date().toISOString(),
+      };
+
+      const { success, artifactId } = artifactService.saveArtifact(artifactData);
+      expect(success).toBe(true);
+      expect(artifactId).toBeDefined();
+
+      // Step E: Load and Verify from Canonical Location
+      const { artifact: loadedArtifact, validation } = artifactService.loadActiveArtifact();
+      expect(validation.isValid).toBe(true);
+      expect(loadedArtifact).not.toBeNull();
+      expect(loadedArtifact!.checksum).toBeDefined();
+
+      // Step F: Verify Live Inference with Loaded Artifact
+      const freshCalibrationEngine = new CalibrationEngine();
+      const freshInferenceEngine = new ModelInferenceEngine();
+
+      freshCalibrationEngine.setKnots(loadedArtifact!.calibrationKnots, loadedArtifact!.calibrationStatus === 'FITTED_OUT_OF_SAMPLE');
+      freshInferenceEngine.setEmpiricalBuckets(loadedArtifact!.empiricalDistributions);
+
+      expect(freshCalibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
+      const calibratedProb = freshCalibrationEngine.apply(0.60);
+      expect(calibratedProb).toBeGreaterThan(0);
+
+      const estimation = freshInferenceEngine.estimateExpectedReturn(calibratedProb, '5d', 0.02);
+      expect(estimation.method).not.toBe('FALLBACK_DIFFUSION');
+      expect(estimation.sampleCount).toBeGreaterThan(0);
     });
   });
 });

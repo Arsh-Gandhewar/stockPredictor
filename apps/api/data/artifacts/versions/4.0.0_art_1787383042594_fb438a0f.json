@@ -1,0 +1,137 @@
+{
+  "modelVersion": "4.0.0",
+  "modelType": "BASELINE_HEURISTIC",
+  "featureVersion": "v4.0.0-multi-factor-25",
+  "trainingStart": "2025-08-22",
+  "trainingEnd": "2026-02-15",
+  "validationStart": "2026-02-16",
+  "validationEnd": "2026-05-15",
+  "testStart": "2026-05-16",
+  "testEnd": "2026-07-15",
+  "holdoutStart": "2026-07-16",
+  "holdoutEnd": "2026-08-22",
+  "horizon": "5d",
+  "fittingMethod": "PAV + Empirical Two-Stage",
+  "parameters": {
+    "rsi_14": -0.0876,
+    "macd_hist": 0,
+    "sma_20_dist": 0,
+    "sma_50_dist": 0,
+    "ema_20_dist": 0,
+    "atr_percent": 0,
+    "bb_width": 0,
+    "stoch_k": 0,
+    "volume_z_score": 0,
+    "annualized_volatility": 0,
+    "downside_deviation": 0,
+    "beta_nifty": 0,
+    "relative_strength_nifty": 0,
+    "momentum_5": 0,
+    "momentum_20": 0,
+    "bias": 0
+  },
+  "calibrationVersion": "v4.0.0-isotonic",
+  "calibrationKnots": [
+    [
+      0.23,
+      0.333
+    ],
+    [
+      0.305,
+      0.333
+    ],
+    [
+      0.38,
+      0.333
+    ],
+    [
+      0.455,
+      0.333
+    ],
+    [
+      0.53,
+      0.667
+    ],
+    [
+      0.605,
+      0.667
+    ],
+    [
+      0.68,
+      0.667
+    ],
+    [
+      0.755,
+      0.667
+    ]
+  ],
+  "calibrationStatus": "FITTED_OUT_OF_SAMPLE",
+  "calibrationMetrics": {
+    "brierScore": 0.1187,
+    "ece": 0.343,
+    "mce": 0.4332,
+    "sampleCount": 40,
+    "populatedBins": 8,
+    "isMonotonic": true
+  },
+  "empiricalDistributions": [
+    {
+      "horizon": "5d",
+      "probLower": 0,
+      "probUpper": 1,
+      "bucketType": "HORIZON_WIDE",
+      "meanGainConditionalUp": 0.035,
+      "meanLossConditionalDown": 0.015,
+      "dispersion": 0.0255,
+      "sampleCount": 25,
+      "uncertainty": 0.0051,
+      "fittedAt": "2026-08-22T07:17:22.593Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0,
+      "probUpper": 0.45,
+      "bucketType": "BROAD",
+      "meanGainConditionalUp": 0.035,
+      "meanLossConditionalDown": 0.015,
+      "dispersion": 0.0261,
+      "sampleCount": 12,
+      "uncertainty": 0.0075,
+      "fittedAt": "2026-08-22T07:17:22.593Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0.45,
+      "probUpper": 0.55,
+      "bucketType": "BROAD",
+      "meanGainConditionalUp": 0.035,
+      "meanLossConditionalDown": 0.015,
+      "dispersion": 0.0244,
+      "sampleCount": 7,
+      "uncertainty": 0.0092,
+      "fittedAt": "2026-08-22T07:17:22.593Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0.55,
+      "probUpper": 1,
+      "bucketType": "BROAD",
+      "meanGainConditionalUp": 0.035,
+      "meanLossConditionalDown": 0.015,
+      "dispersion": 0.0258,
+      "sampleCount": 6,
+      "uncertainty": 0.0105,
+      "fittedAt": "2026-08-22T07:17:22.593Z"
+    }
+  ],
+  "statisticalGatePassed": true,
+  "gateDetails": {
+    "sampleSufficiency": true,
+    "calibrationQuality": true,
+    "versionCompatibility": true,
+    "dateRangeIntegrity": true
+  },
+  "createdAt": "2026-08-22T07:17:22.594Z",
+  "id": "art_1787383042594_fb438a0f",
+  "checksum": "d83fe9397b1f51ac5a01eb5b62a3c71100a030d2a59450aa58d2099d2d2c2217"
+}

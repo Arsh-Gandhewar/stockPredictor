@@ -10,6 +10,11 @@ export class PredictionController {
     return this.predictionService.trainPipeline();
   }
 
+  @Get('governance')
+  getGovernance() {
+    return this.predictionService.getProductionGovernanceStatus();
+  }
+
   @Get('top-ranked')
   async getTopRanked() {
     return this.predictionService.getTopRankedStocks();

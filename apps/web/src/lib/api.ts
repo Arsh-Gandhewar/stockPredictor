@@ -171,12 +171,13 @@ export interface ModelStatusInfo {
   version: string;
   calibration: string;
   calibrationStatus?: 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK';
-  status: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
+  status: 'HEALTHY' | 'DEGRADED' | 'OFFLINE' | 'ACTIVE' | 'FALLBACK';
   modelType?: string;
   activeModel?: string;
   description?: string;
   featureCount?: number;
   calibrationMethod?: string;
+  governance?: ProductionGovernanceInfo;
 }
 
 export interface HorizonPerformanceMetric {
@@ -250,6 +251,21 @@ export interface AuditDisclosures {
   leakagePrevention: string;
 }
 
+export interface ProductionGovernanceInfo {
+  productionReady: boolean;
+  modelStatus: 'ACTIVE' | 'FALLBACK';
+  calibrationStatus: 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK';
+  artifactStatus: 'VALID_ACTIVE' | 'INVALID_OR_MISSING';
+  dataSufficiencyStatus: 'SUFFICIENT' | 'INSUFFICIENT';
+  walkForwardStatus: 'VERIFIED_OUT_OF_SAMPLE' | 'UNVERIFIED';
+  holdoutStatus: 'UNTOUCHED_VERIFIED' | 'UNVERIFIED';
+  statisticalValidationStatus: 'PASSED' | 'FAILED';
+  activeArtifactId?: string;
+  activeArtifactChecksum?: string;
+  lastValidatedAt: string;
+  blockingIssues: string[];
+}
+
 export interface ModelPerformanceInfo {
   modelVersion: string;
   calibrationVersion: string;
@@ -257,6 +273,7 @@ export interface ModelPerformanceInfo {
   status: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
   calibrationMethod: string;
   lastTrained: string;
+  governance?: ProductionGovernanceInfo;
   horizons: {
     '1d': HorizonPerformanceMetric;
     '5d': HorizonPerformanceMetric;

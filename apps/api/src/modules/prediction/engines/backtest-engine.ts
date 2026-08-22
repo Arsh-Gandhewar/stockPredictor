@@ -212,7 +212,13 @@ export class BacktestEngine {
     const testDates = testTrades.map((t) => t.entryDate).sort();
     const holdoutDates = holdoutTrades.map((t) => t.entryDate).sort();
 
-    const artifact: ModelArtifact = {
+    const valSamples = valTrades.map((t) => ({
+      prob: t.predictedProb,
+      outcome: t.directionCorrect ? 1 : 0,
+    }));
+    const calibrationMetrics = this.calibrationEngine.getCalibrationGateMetrics(valSamples);
+
+    const artifactData: Omit<ModelArtifact, 'checksum' | 'id'> = {
       modelVersion: ModelRegistry.getModelVersion(),
       modelType: 'BASELINE_HEURISTIC',
       featureVersion: 'v4.0.0-multi-factor-25',
@@ -229,11 +235,19 @@ export class BacktestEngine {
       parameters: learnedModel.getWeights(),
       calibrationVersion: this.calibrationEngine.getVersion(),
       calibrationKnots: this.calibrationEngine.getKnots(),
-      calibrationStatus: valTrades.length >= 15 ? 'FITTED_OUT_OF_SAMPLE' : 'FALLBACK',
+      calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
+      calibrationMetrics,
       empiricalDistributions: this.inferenceEngine.getEmpiricalBuckets(),
+      statisticalGatePassed: this.calibrationEngine.getIsCalibrated(),
+      gateDetails: {
+        sampleSufficiency: valTrades.length >= 20,
+        calibrationQuality: calibrationMetrics.isMonotonic && calibrationMetrics.ece <= 0.18,
+        versionCompatibility: true,
+        dateRangeIntegrity: true,
+      },
       createdAt: new Date().toISOString(),
     };
-    this.artifactService.saveArtifact(artifact);
+    this.artifactService.saveArtifact(artifactData);
 
     // 5. Evaluate Multi-Horizon Metrics using Direct Daily Equity Curve
     const trades1d = allTrades.filter((t) => t.horizon === '1d');

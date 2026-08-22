@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ModelRegistry } from './model-registry';
+import { CalibrationGateMetrics, STATISTICAL_GATES } from './model-artifact.service';
 
 export interface CalibrationBucket {
   binLower: number;
@@ -15,9 +16,12 @@ export interface CalibrationReport {
   maximumCalibrationError: number;
   reliabilityCurve: CalibrationBucket[];
   sampleCount: number;
+  populatedBins: number;
+  isMonotonic: boolean;
   fittedAt?: string;
   isFittedOutOfSample: boolean;
   calibrationStatus: 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK';
+  calibrationQuality: 'HIGH' | 'MEDIUM' | 'POOR' | 'UNAVAILABLE';
 }
 
 @Injectable()
@@ -25,7 +29,7 @@ export class CalibrationEngine {
   private readonly logger = new Logger(CalibrationEngine.name);
 
   // Monotonic Isotonic Regression knots: [rawPredictedProb, empiricalCalibratedProb]
-  // Pre-initialized with baseline identity knots, updated strictly when fitted on validation/out-of-sample trades
+  // Pre-initialized with identity mapping, updated strictly when fitted on validation observations
   private isotonicKnots: [number, number][] = [
     [0.05, 0.05],
     [0.10, 0.10],
@@ -42,14 +46,22 @@ export class CalibrationEngine {
 
   private isFittedFromValidation: boolean = false;
   private lastFittedTimestamp?: string;
+  private lastFittedSampleCount: number = 0;
+  private lastECE: number = 0.05;
+  private lastPopulatedBins: number = 0;
 
   /**
    * Applies monotonic isotonic regression calibration to raw model probabilities.
-   * Uses piecewise linear interpolation between fitted knots.
+   * Uses piecewise linear interpolation between fitted knots with boundary capping.
    */
   apply(rawProbability: number): number {
     const p = Math.max(0.01, Math.min(0.99, rawProbability));
     const knots = this.isotonicKnots;
+
+    // If uncalibrated, return the uncalibrated probability directly
+    if (!this.isFittedFromValidation || knots.length < 2) {
+      return parseFloat(p.toFixed(4));
+    }
 
     // Boundary conditions
     if (p <= knots[0][0]) return knots[0][1];
@@ -60,9 +72,10 @@ export class CalibrationEngine {
       const [x0, y0] = knots[i];
       const [x1, y1] = knots[i + 1];
       if (p >= x0 && p <= x1) {
+        if (x1 === x0) return y0;
         const t = (p - x0) / (x1 - x0);
         const calibrated = y0 + t * (y1 - y0);
-        return parseFloat(calibrated.toFixed(4));
+        return parseFloat(Math.max(0.05, Math.min(0.95, calibrated)).toFixed(4));
       }
     }
 
@@ -72,10 +85,12 @@ export class CalibrationEngine {
   /**
    * Fits non-decreasing Isotonic Regression knots using the Pool Adjacent Violators (PAV) algorithm
    * strictly on validation/out-of-sample predictions.
+   * Includes anti-pathological shrinkage for sparse extreme tails.
    */
   fitPAV(samples: { prob: number; outcome: number }[]): [number, number][] {
-    if (!samples || samples.length < 6) {
+    if (!samples || samples.length < STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES) {
       this.isFittedFromValidation = false;
+      this.logger.warn(`PAV calibration rejected: insufficient validation samples (${samples?.length || 0} < ${STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES})`);
       return this.isotonicKnots;
     }
 
@@ -83,7 +98,7 @@ export class CalibrationEngine {
     const sorted = [...samples].sort((a, b) => a.prob - b.prob);
 
     // Group into quantile bins
-    const binCount = Math.min(10, Math.max(2, Math.floor(sorted.length / 3)));
+    const binCount = Math.min(8, Math.max(3, Math.floor(sorted.length / 5)));
     const binSize = Math.max(1, Math.floor(sorted.length / binCount));
     const bins: { probSum: number; outcomeSum: number; count: number }[] = [];
 
@@ -127,18 +142,33 @@ export class CalibrationEngine {
       }
     }
 
-    const fittedKnots: [number, number][] = blocks.map((b) => [
-      parseFloat(Math.max(0.01, Math.min(0.99, b.meanProb)).toFixed(3)),
-      parseFloat(Math.max(0.05, Math.min(0.95, b.meanOutcome)).toFixed(3)),
-    ]);
+    // Anti-Pathological Shrinkage for sparse extreme tails (< 15 observations in tail)
+    const fittedKnots: [number, number][] = blocks.map((b) => {
+      let rawOutcome = b.meanOutcome;
+      if (b.weight < STATISTICAL_GATES.MIN_TAIL_SAMPLES_FOR_EXTREME_PROB) {
+        // Shrink towards prior base rate 0.50
+        const priorWeight = 10;
+        rawOutcome = (b.meanOutcome * b.weight + 0.50 * priorWeight) / (b.weight + priorWeight);
+      }
+      return [
+        parseFloat(Math.max(0.05, Math.min(0.95, b.meanProb)).toFixed(3)),
+        parseFloat(Math.max(0.08, Math.min(0.92, rawOutcome)).toFixed(3)),
+      ];
+    });
 
-    if (fittedKnots.length >= 1) {
+    if (fittedKnots.length >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS) {
       this.isotonicKnots = fittedKnots;
       this.isFittedFromValidation = true;
       this.lastFittedTimestamp = new Date().toISOString();
+      this.lastFittedSampleCount = samples.length;
+      this.lastPopulatedBins = blocks.length;
+      this.lastECE = this.calculateECE(samples);
+
       this.logger.log(
-        `Isotonic regression calibrated with ${samples.length} validation trades into ${fittedKnots.length} monotonic knots.`
+        `Isotonic regression calibrated with ${samples.length} validation observations into ${fittedKnots.length} monotonic knots (ECE: ${(this.lastECE * 100).toFixed(1)}%).`
       );
+    } else {
+      this.isFittedFromValidation = false;
     }
 
     return this.isotonicKnots;
@@ -150,7 +180,7 @@ export class CalibrationEngine {
     return parseFloat((sumSq / predictions.length).toFixed(4));
   }
 
-  calculateECE(predictions: { prob: number; outcome: number }[], numBins: number = 10): number {
+  calculateECE(predictions: { prob: number; outcome: number }[], numBins: number = 8): number {
     if (!predictions || predictions.length === 0) return 0.04;
     const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from(
       { length: numBins },
@@ -177,7 +207,7 @@ export class CalibrationEngine {
     return parseFloat(ece.toFixed(4));
   }
 
-  calculateMCE(predictions: { prob: number; outcome: number }[], numBins: number = 10): number {
+  calculateMCE(predictions: { prob: number; outcome: number }[], numBins: number = 8): number {
     if (!predictions || predictions.length === 0) return 0.08;
     const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from(
       { length: numBins },
@@ -204,38 +234,31 @@ export class CalibrationEngine {
     return parseFloat(maxDiff.toFixed(4));
   }
 
-  generateCalibrationReport(predictions: { prob: number; outcome: number }[]): CalibrationReport {
-    const brier = this.calculateBrierScore(predictions);
-    const ece = this.calculateECE(predictions);
-    const mce = this.calculateMCE(predictions);
+  getCalibrationGateMetrics(predictions: { prob: number; outcome: number }[]): CalibrationGateMetrics {
+    const calibrated = (predictions || []).map((p) => ({
+      prob: this.apply(p.prob),
+      outcome: p.outcome,
+    }));
 
-    const numBins = 5;
-    const bins: CalibrationBucket[] = [];
-    for (let i = 0; i < numBins; i++) {
-      const lower = i / numBins;
-      const upper = (i + 1) / numBins;
-      const matching = predictions.filter((p) => p.prob >= lower && (i === numBins - 1 ? p.prob <= upper : p.prob < upper));
-      const meanProb = matching.length > 0 ? matching.reduce((s, p) => s + p.prob, 0) / matching.length : (lower + upper) / 2;
-      const obsFreq = matching.length > 0 ? matching.reduce((s, p) => s + p.outcome, 0) / matching.length : 0.5;
+    const brier = this.calculateBrierScore(calibrated);
+    const ece = this.calculateECE(calibrated);
+    const mce = this.calculateMCE(calibrated);
 
-      bins.push({
-        binLower: lower,
-        binUpper: upper,
-        meanPredictedProb: parseFloat(meanProb.toFixed(3)),
-        observedFrequency: parseFloat(obsFreq.toFixed(3)),
-        sampleCount: matching.length,
-      });
+    let isMonotonic = true;
+    for (let i = 0; i < this.isotonicKnots.length - 1; i++) {
+      if (this.isotonicKnots[i][1] > this.isotonicKnots[i + 1][1]) {
+        isMonotonic = false;
+        break;
+      }
     }
 
     return {
       brierScore: brier,
-      expectedCalibrationError: ece,
-      maximumCalibrationError: mce,
-      reliabilityCurve: bins,
+      ece,
+      mce,
       sampleCount: predictions.length,
-      fittedAt: this.lastFittedTimestamp,
-      isFittedOutOfSample: this.isFittedFromValidation,
-      calibrationStatus: this.isFittedFromValidation ? 'FITTED_OUT_OF_SAMPLE' : 'FALLBACK',
+      populatedBins: Math.max(1, this.lastPopulatedBins),
+      isMonotonic,
     };
   }
 
@@ -243,13 +266,33 @@ export class CalibrationEngine {
     return this.isotonicKnots;
   }
 
-  setKnots(knots: [number, number][], isFitted: boolean = true) {
+  setKnots(knots: [number, number][], isFitted: boolean = true, metrics?: CalibrationGateMetrics) {
     this.isotonicKnots = knots;
     this.isFittedFromValidation = isFitted;
+    if (metrics) {
+      this.lastFittedSampleCount = metrics.sampleCount;
+      this.lastECE = metrics.ece;
+      this.lastPopulatedBins = metrics.populatedBins;
+    }
+  }
+
+  getIsCalibrated(): boolean {
+    return this.isFittedFromValidation;
   }
 
   getCalibrationStatus(): 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK' {
     return this.isFittedFromValidation ? 'FITTED_OUT_OF_SAMPLE' : 'FALLBACK';
+  }
+
+  getCalibrationQuality(): 'HIGH' | 'MEDIUM' | 'POOR' | 'UNAVAILABLE' {
+    if (!this.isFittedFromValidation) return 'UNAVAILABLE';
+    if (this.lastECE <= 0.06 && this.lastFittedSampleCount >= 50) return 'HIGH';
+    if (this.lastECE <= 0.12 && this.lastFittedSampleCount >= 20) return 'MEDIUM';
+    return 'POOR';
+  }
+
+  getCalibrationSampleCount(): number {
+    return this.lastFittedSampleCount;
   }
 
   getVersion(): string {
