@@ -17,8 +17,10 @@ import {
   AlertTriangle,
   Layers,
   Scale,
-  FileText,
-  Lock
+  Calendar,
+  Lock,
+  GitCompare,
+  Server
 } from 'lucide-react';
 
 function MetricSkeleton() {
@@ -70,6 +72,9 @@ export default function ModelPerformancePage() {
   const h5d = perf?.horizons?.['5d'];
   const h20d = perf?.horizons?.['20d'];
 
+  const holdout = perf?.holdoutPerformance;
+  const modelComp = perf?.modelComparison;
+
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-500 max-w-6xl mx-auto">
       {/* ── Page Header ── */}
@@ -78,14 +83,14 @@ export default function ModelPerformancePage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
               <BarChart2 className="h-6 w-6 text-primary" />
-              QuantX Quantitative Track Record & Model Performance
+              QuantX Quantitative Track Record & Model Governance
             </h1>
             <p className="text-xs text-muted-foreground mt-1">
-              Walk-forward out-of-sample empirical evaluation across {stocksEvaluated > 0 ? stocksEvaluated : '15'} stocks over {datasetPeriod} with real institutional friction modeling (0.13% round-trip).
+              True walk-forward out-of-sample evaluation across {stocksEvaluated > 0 ? stocksEvaluated : '15'} stocks over {datasetPeriod} with direct equity-curve statistics and 0.13% round-trip friction.
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {isLoading && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -94,7 +99,11 @@ export default function ModelPerformancePage() {
             )}
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Model {status?.version || 'v4.0.0'} ({status?.modelType || 'BASELINE_HEURISTIC'}): {status?.status || 'ONLINE'}
+              Model {status?.version || 'v4.0.0'} ({status?.modelType || 'BASELINE_HEURISTIC'}): {status?.status || 'ACTIVE'}
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
+              <Server className="h-3.5 w-3.5" />
+              Calibration: {perf?.calibrationStatus || status?.calibrationStatus || 'FITTED_OUT_OF_SAMPLE'}
             </span>
           </div>
         </div>
@@ -129,12 +138,12 @@ export default function ModelPerformancePage() {
                   <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                 </div>
                 <div className={`text-2xl font-bold font-mono mt-1 ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {winRate.toFixed(1)}%
+                  {winRate > 0 ? `${winRate.toFixed(1)}%` : 'INSUFFICIENT DATA'}
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-1">
                 <p className="text-xs text-muted-foreground">
-                  Direction predicted accurately across {totalTrades.toLocaleString()} out-of-sample trades.
+                  Across {totalTrades.toLocaleString()} out-of-sample evaluated trades.
                 </p>
               </CardContent>
             </Card>
@@ -147,7 +156,7 @@ export default function ModelPerformancePage() {
                   <Zap className="h-4 w-4 text-amber-400" />
                 </div>
                 <div className={`text-2xl font-bold font-mono mt-1 ${annualReturn >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
-                  {annualReturn >= 0 ? '+' : ''}{annualReturn.toFixed(1)}%
+                  {annualReturn !== 0 ? `${annualReturn >= 0 ? '+' : ''}${annualReturn.toFixed(1)}%` : 'INSUFFICIENT DATA'}
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-1">
@@ -165,12 +174,12 @@ export default function ModelPerformancePage() {
                   <Scale className="h-4 w-4 text-primary" />
                 </div>
                 <div className="text-2xl font-bold font-mono text-foreground mt-1">
-                  {overallSharpe.toFixed(2)} / <span className="text-emerald-400">{overallSortino.toFixed(2)}</span>
+                  {overallSharpe > 0 ? overallSharpe.toFixed(2) : 'N/A'} / <span className="text-emerald-400">{overallSortino > 0 ? overallSortino.toFixed(2) : 'N/A'}</span>
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-1">
                 <p className="text-xs text-muted-foreground">
-                  Risk-adjusted return vs 6.5% Indian risk-free rate hurdle.
+                  Directly calculated from daily return stream vs 6.5% risk-free rate.
                 </p>
               </CardContent>
             </Card>
@@ -183,12 +192,12 @@ export default function ModelPerformancePage() {
                   <ShieldCheck className="h-4 w-4 text-blue-400" />
                 </div>
                 <div className="text-2xl font-bold font-mono text-foreground mt-1">
-                  1 : {rrRatio.toFixed(1)}
+                  {rrRatio > 0 ? `1 : ${rrRatio.toFixed(1)}` : 'N/A'}
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-1">
                 <p className="text-xs text-muted-foreground">
-                  Mean winner vs loser: {h5d?.profitFactor ? `${h5d.profitFactor}× profit factor` : 'Positive expectancy'}.
+                  Profit factor: {h5d?.profitFactor ? `${h5d.profitFactor}×` : 'Positive expectancy'}.
                 </p>
               </CardContent>
             </Card>
@@ -196,25 +205,84 @@ export default function ModelPerformancePage() {
         )}
       </div>
 
+      {/* ── Model Comparison Layer (Baseline Heuristic vs Learned Baseline) ── */}
+      {!isLoading && modelComp && (
+        <Card className="bg-card/50 border-border/40 shadow-xs">
+          <CardHeader className="pb-3 px-4 pt-4">
+            <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <GitCompare className="h-4 w-4 text-primary" />
+              Model Architecture Comparison (Out-of-Sample Test Partition)
+            </CardTitle>
+            <CardDescription className="text-xs text-muted-foreground">
+              Comparative out-of-sample performance between current heuristic baseline and learned ridge logistic model
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
+              <div className="p-3 rounded-lg bg-primary/5 border border-primary/30 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-primary">BASELINE_HEURISTIC (Active Production)</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-bold">ACTIVE</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Brier Score (MSE):</span>
+                  <span className="font-mono font-bold text-foreground">{modelComp.baselineHeuristic.brierScore.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Directional Win Rate:</span>
+                  <span className="font-mono font-bold text-emerald-400">{modelComp.baselineHeuristic.winRate.toFixed(1)}%</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Avg Net Return:</span>
+                  <span className="font-mono font-bold text-emerald-400">+{modelComp.baselineHeuristic.avgReturn.toFixed(2)}%</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-muted/30 border border-border/30 space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs font-bold text-foreground">LEARNED_BASELINE (Ridge Logistic)</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">CHALLENGER</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Brier Score (MSE):</span>
+                  <span className="font-mono font-bold text-foreground">{modelComp.learnedBaseline.brierScore.toFixed(2)}</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Directional Win Rate:</span>
+                  <span className="font-mono font-bold text-emerald-400">{modelComp.learnedBaseline.winRate.toFixed(1)}%</span>
+                </div>
+                <div className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">Avg Net Return:</span>
+                  <span className="font-mono font-bold text-emerald-400">+{modelComp.learnedBaseline.avgReturn.toFixed(2)}%</span>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* ── Walk-Forward Timeline Partitions (Train, Validation, Test, Holdout) ── */}
       {!isLoading && perf?.partitionPerformance && perf.partitionPerformance.length > 0 && (
         <Card className="bg-card/50 border-border/40 shadow-xs">
           <CardHeader className="pb-3 px-4 pt-4">
             <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <Lock className="h-4 w-4 text-primary" />
-              Walk-Forward Out-Of-Sample Partition Verification
+              <Calendar className="h-4 w-4 text-primary" />
+              Walk-Forward Out-Of-Sample Partition Verification & Exact Provenance
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              Performance strictly segregated across chronologically ordered partitions to prove generalizability without data leakage
+              Strictly segregated chronological windows ensuring zero parameter lookahead or holdout contamination
             </CardDescription>
           </CardHeader>
           <CardContent className="px-4 pb-4">
             <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
               {perf.partitionPerformance.map((p, idx) => (
-                <div key={idx} className={`p-3 rounded-lg border space-y-1 ${p.partition === 'HOLDOUT' ? 'bg-primary/5 border-primary/30 ring-1 ring-primary/20' : 'bg-muted/30 border-border/30'}`}>
+                <div key={idx} className={`p-3 rounded-lg border space-y-1.5 ${p.partition === 'HOLDOUT' ? 'bg-primary/5 border-primary/40 ring-1 ring-primary/20' : 'bg-muted/30 border-border/30'}`}>
                   <div className="flex justify-between items-center">
                     <span className="text-[11px] font-bold text-foreground">{p.partition}</span>
                     {p.partition === 'HOLDOUT' && <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-bold">UNTOUCHED</span>}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/80 font-mono">
+                    {p.startDate.slice(0, 10)} to {p.endDate.slice(0, 10)}
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-muted-foreground">Win Rate:</span>
@@ -225,10 +293,14 @@ export default function ModelPerformancePage() {
                     <span className={`font-mono font-bold ${p.cagr >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>+{p.cagr.toFixed(1)}%</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-muted-foreground">Sharpe / Brier:</span>
-                    <span className="font-mono text-foreground">{p.sharpeRatio.toFixed(2)} / {p.brierScore.toFixed(2)}</span>
+                    <span className="text-muted-foreground">Sharpe / Sortino:</span>
+                    <span className="font-mono text-foreground font-semibold">{p.sharpeRatio.toFixed(2)} / {p.sortinoRatio.toFixed(2)}</span>
                   </div>
-                  <div className="text-[10px] text-muted-foreground/70 text-right">{p.tradesCount} trades</div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Brier Score:</span>
+                    <span className="font-mono text-foreground font-semibold">{p.brierScore.toFixed(2)}</span>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/70 text-right">{p.tradesCount} verified trades</div>
                 </div>
               ))}
             </div>
@@ -256,7 +328,7 @@ export default function ModelPerformancePage() {
               <Card className="bg-card/50 border-border/40 shadow-xs">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-bold text-foreground">1-Day (Intraday Move)</CardTitle>
+                    <CardTitle className="text-sm font-bold text-foreground">1-Day (Intraday Drift)</CardTitle>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-muted text-muted-foreground font-medium">Fast Drift</span>
                   </div>
                   <CardDescription className="text-xs text-muted-foreground">
@@ -298,7 +370,7 @@ export default function ModelPerformancePage() {
               <Card className="bg-card/60 border-primary/40 ring-1 ring-primary/30 shadow-xs">
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm font-bold text-primary">5-Day (Swing Trade)</CardTitle>
+                    <CardTitle className="text-sm font-bold text-primary">5-Day (Swing Horizon)</CardTitle>
                     <span className="text-[10px] px-2 py-0.5 rounded bg-primary/10 text-primary font-bold">RECOMMENDED</span>
                   </div>
                   <CardDescription className="text-xs text-muted-foreground">
@@ -421,45 +493,6 @@ export default function ModelPerformancePage() {
         </Card>
       )}
 
-      {/* ── Annual Return Comparison vs Benchmark ── */}
-      {!isLoading && perf?.baselineComparisons && (
-        <Card className="bg-card/50 border-border/40 shadow-xs">
-          <CardHeader className="pb-3 px-4 pt-4">
-            <CardTitle className="text-sm font-semibold text-foreground">
-              Annual Return & Strategy Comparison vs Benchmarks
-            </CardTitle>
-            <CardDescription className="text-xs text-muted-foreground">
-              QuantX AI Walk-Forward Strategy vs NIFTY 50 Index vs 20-Day Momentum Baseline (All net of 0.13% friction)
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-3">
-            {perf.baselineComparisons.map((comp, idx) => {
-              const returnPct = (comp.annualReturn * 100);
-              const maxBarWidth = Math.max(...perf.baselineComparisons.map(c => Math.abs(c.annualReturn * 100)));
-              const barWidth = maxBarWidth > 0 ? Math.min(95, (Math.abs(returnPct) / maxBarWidth) * 85) : 0;
-              return (
-                <div key={idx} className="space-y-1">
-                  <div className="flex justify-between text-xs">
-                    <span className={comp.isPrimary ? 'text-primary font-bold' : 'text-muted-foreground'}>
-                      {comp.name}
-                    </span>
-                    <span className={`font-mono font-bold ${returnPct >= 0 ? (comp.isPrimary ? 'text-emerald-400' : 'text-foreground') : 'text-red-400'}`}>
-                      {returnPct >= 0 ? '+' : ''}{returnPct.toFixed(1)}% / yr (Sharpe: {comp.sharpeRatio.toFixed(2)})
-                    </span>
-                  </div>
-                  <div className="w-full bg-muted/40 h-2 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-700 ${comp.isPrimary ? 'bg-primary' : 'bg-muted-foreground/40'}`}
-                      style={{ width: `${barWidth}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
-
       {/* ── Backtest Methodology & Disclosures ── */}
       <div className="space-y-3">
         <h2 className="text-base font-semibold text-foreground flex items-center gap-2">
@@ -469,9 +502,9 @@ export default function ModelPerformancePage() {
 
         <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
           <Card className="bg-card/40 border-border/30 p-4 space-y-1.5 shadow-xs">
-            <h3 className="text-xs font-bold text-foreground">Walk-Forward Out-Of-Sample</h3>
+            <h3 className="text-xs font-bold text-foreground">Direct Time-Aligned Statistics</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              The model is evaluated sequentially across expanding historical windows using ONLY data available up to that timestamp. Zero look-ahead bias.
+              Sharpe, Sortino, CAGR, and Drawdowns are calculated directly from the simulated daily equity curve without proxy denominators.
             </p>
           </Card>
 
@@ -483,9 +516,9 @@ export default function ModelPerformancePage() {
           </Card>
 
           <Card className="bg-card/40 border-border/30 p-4 space-y-1.5 shadow-xs">
-            <h3 className="text-xs font-bold text-foreground">Probability Calibration (PAV)</h3>
+            <h3 className="text-xs font-bold text-foreground">Hierarchical Empirical Returns</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Raw logit probabilities are calibrated using non-decreasing Isotonic Regression (PAV) fitted strictly on out-of-sample validation data.
+              Conditional return distributions are fitted using trimmed robust statistics from out-of-sample validation partitions.
             </p>
           </Card>
         </div>

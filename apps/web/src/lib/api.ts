@@ -53,7 +53,14 @@ export interface HorizonPrediction {
   expectedValue?: number;
   expectedVolatility?: number;
   uncertainty?: number;
-  estimationMethod?: 'EMPIRICAL_TWO_STAGE' | 'ESTIMATED_DIFFUSION';
+  sampleCount?: number;
+  estimationMethod?:
+    | 'EMPIRICAL_FINE_BUCKET'
+    | 'EMPIRICAL_BROAD_BUCKET'
+    | 'EMPIRICAL_HORIZON_WIDE'
+    | 'FALLBACK_DIFFUSION'
+    | 'EMPIRICAL_TWO_STAGE'
+    | 'ESTIMATED_DIFFUSION';
 }
 
 export type Decision = 
@@ -163,6 +170,7 @@ export interface StockPrediction {
 export interface ModelStatusInfo {
   version: string;
   calibration: string;
+  calibrationStatus?: 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK';
   status: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
   modelType?: string;
   activeModel?: string;
@@ -206,22 +214,34 @@ export interface BaselineComparisonItem {
 
 export interface PartitionPerformanceItem {
   partition: 'TRAIN' | 'VALIDATION' | 'TEST' | 'HOLDOUT';
+  startDate: string;
+  endDate: string;
   tradesCount: number;
   winRate: number;
   avgReturn: number;
   cagr: number;
   sharpeRatio: number;
+  sortinoRatio: number;
   maxDrawdown: number;
   profitFactor: number;
   brierScore: number;
 }
 
 export interface HoldoutPerformance {
+  startDate: string;
+  endDate: string;
   winRate: number;
   avgReturn: number;
   cagr: number;
   tradesCount: number;
   maxDrawdown: number;
+  sharpeRatio: number;
+  sortinoRatio: number;
+}
+
+export interface ModelComparisonStats {
+  baselineHeuristic: { brierScore: number; winRate: number; avgReturn: number };
+  learnedBaseline: { brierScore: number; winRate: number; avgReturn: number };
 }
 
 export interface AuditDisclosures {
@@ -233,6 +253,7 @@ export interface AuditDisclosures {
 export interface ModelPerformanceInfo {
   modelVersion: string;
   calibrationVersion: string;
+  calibrationStatus?: 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK';
   status: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
   calibrationMethod: string;
   lastTrained: string;
@@ -257,6 +278,7 @@ export interface ModelPerformanceInfo {
   regimePerformance: RegimePerformanceItem[];
   partitionPerformance?: PartitionPerformanceItem[];
   holdoutPerformance?: HoldoutPerformance;
+  modelComparison?: ModelComparisonStats;
   baselineComparisons: BaselineComparisonItem[];
   auditDisclosures?: AuditDisclosures;
   disclosures: {

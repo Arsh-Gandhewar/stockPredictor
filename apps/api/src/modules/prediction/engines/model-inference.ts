@@ -2,14 +2,24 @@ import { Injectable, Logger } from '@nestjs/common';
 import { FeatureContribution } from '../prediction.types';
 import { MODEL_CONFIG } from './model-config';
 import { ModelRegistry } from './model-registry';
+import { LogisticRegressionModel } from './learned-model';
+
+export type EstimationMethod =
+  | 'EMPIRICAL_FINE_BUCKET'
+  | 'EMPIRICAL_BROAD_BUCKET'
+  | 'EMPIRICAL_HORIZON_WIDE'
+  | 'FALLBACK_DIFFUSION';
 
 export interface EmpiricalDistributionBucket {
   horizon: '1d' | '5d' | '20d';
   probLower: number;
   probUpper: number;
+  bucketType: 'FINE' | 'BROAD' | 'HORIZON_WIDE';
   meanGainConditionalUp: number;
   meanLossConditionalDown: number;
   sampleCount: number;
+  uncertainty: number;
+  fittedAt: string;
 }
 
 export interface ExpectedReturnEstimation {
@@ -19,33 +29,18 @@ export interface ExpectedReturnEstimation {
   expectedValue: number;
   expectedVolatility: number;
   uncertainty: number;
+  sampleCount: number;
   confidenceInterval: [number, number];
-  method: 'EMPIRICAL_TWO_STAGE' | 'ESTIMATED_DIFFUSION';
+  method: EstimationMethod;
 }
 
 @Injectable()
 export class ModelInferenceEngine {
   private readonly logger = new Logger(ModelInferenceEngine.name);
 
-  // Empirical conditional return distributions fitted from out-of-sample walk-forward validation observations
-  private empiricalBuckets: EmpiricalDistributionBucket[] = [
-    // 1D Horizon
-    { horizon: '1d', probLower: 0.0, probUpper: 0.40, meanGainConditionalUp: 0.009, meanLossConditionalDown: 0.014, sampleCount: 120 },
-    { horizon: '1d', probLower: 0.40, probUpper: 0.60, meanGainConditionalUp: 0.008, meanLossConditionalDown: 0.008, sampleCount: 250 },
-    { horizon: '1d', probLower: 0.60, probUpper: 1.0, meanGainConditionalUp: 0.013, meanLossConditionalDown: 0.007, sampleCount: 140 },
-
-    // 5D Horizon (Primary Swing Horizon)
-    { horizon: '5d', probLower: 0.0, probUpper: 0.35, meanGainConditionalUp: 0.016, meanLossConditionalDown: 0.038, sampleCount: 95 },
-    { horizon: '5d', probLower: 0.35, probUpper: 0.48, meanGainConditionalUp: 0.018, meanLossConditionalDown: 0.026, sampleCount: 180 },
-    { horizon: '5d', probLower: 0.48, probUpper: 0.58, meanGainConditionalUp: 0.021, meanLossConditionalDown: 0.021, sampleCount: 310 },
-    { horizon: '5d', probLower: 0.58, probUpper: 0.70, meanGainConditionalUp: 0.032, meanLossConditionalDown: 0.017, sampleCount: 220 },
-    { horizon: '5d', probLower: 0.70, probUpper: 1.0, meanGainConditionalUp: 0.046, meanLossConditionalDown: 0.015, sampleCount: 110 },
-
-    // 20D Horizon (Monthly Trend Horizon)
-    { horizon: '20d', probLower: 0.0, probUpper: 0.40, meanGainConditionalUp: 0.028, meanLossConditionalDown: 0.075, sampleCount: 80 },
-    { horizon: '20d', probLower: 0.40, probUpper: 0.60, meanGainConditionalUp: 0.042, meanLossConditionalDown: 0.042, sampleCount: 260 },
-    { horizon: '20d', probLower: 0.60, probUpper: 1.0, meanGainConditionalUp: 0.078, meanLossConditionalDown: 0.031, sampleCount: 130 },
-  ];
+  // Dynamic empirical conditional return distributions (Initialized empty - populated strictly via fitting)
+  private empiricalBuckets: EmpiricalDistributionBucket[] = [];
+  private learnedModel: LogisticRegressionModel = new LogisticRegressionModel();
 
   /**
    * Evaluates statistical probability of price appreciation using baseline multi-factor model.
@@ -121,63 +116,128 @@ export class ModelInferenceEngine {
   }
 
   /**
-   * Fits empirical conditional gain and loss distributions from out-of-sample validation observations.
+   * Predicts probability using the learned logistic regression model.
+   */
+  evaluateLearned(features: Record<string, number | null>): number {
+    return this.learnedModel.predict(features);
+  }
+
+  getLearnedModel(): LogisticRegressionModel {
+    return this.learnedModel;
+  }
+
+  /**
+   * Fits robust empirical conditional gain and loss distributions from out-of-sample observations.
+   * Computes trimmed mean (discarding top/bottom 10% outliers) for stability.
    */
   fitEmpiricalDistributions(
     samples: { prob: number; horizon: '1d' | '5d' | '20d'; actualReturn: number }[]
   ) {
-    if (!samples || samples.length < 30) return;
+    if (!samples || samples.length < 5) return;
 
     const horizons: ('1d' | '5d' | '20d')[] = ['1d', '5d', '20d'];
     const updatedBuckets: EmpiricalDistributionBucket[] = [];
+    const timestamp = new Date().toISOString();
 
     for (const h of horizons) {
       const hSamples = samples.filter((s) => s.horizon === h);
-      if (hSamples.length < 10) continue;
+      if (hSamples.length === 0) continue;
 
-      const bucketsDef = [
-        { probLower: 0.0, probUpper: 0.45 },
-        { probLower: 0.45, probUpper: 0.55 },
-        { probLower: 0.55, probUpper: 1.0 },
+      // 1. Horizon-Wide Estimate
+      const hGains = hSamples.filter((s) => s.actualReturn > 0).map((s) => s.actualReturn);
+      const hLosses = hSamples.filter((s) => s.actualReturn <= 0).map((s) => Math.abs(s.actualReturn));
+
+      const meanHGain = this.computeTrimmedMean(hGains, 0.015);
+      const meanHLoss = this.computeTrimmedMean(hLosses, 0.015);
+      const hUncertainty = this.computeStandardError(hSamples.map((s) => s.actualReturn));
+
+      updatedBuckets.push({
+        horizon: h,
+        probLower: 0.0,
+        probUpper: 1.0,
+        bucketType: 'HORIZON_WIDE',
+        meanGainConditionalUp: parseFloat(meanHGain.toFixed(4)),
+        meanLossConditionalDown: parseFloat(meanHLoss.toFixed(4)),
+        sampleCount: hSamples.length,
+        uncertainty: parseFloat(hUncertainty.toFixed(4)),
+        fittedAt: timestamp,
+      });
+
+      // 2. Broad Probability Buckets ([0, 0.45), [0.45, 0.55), [0.55, 1.0])
+      const broadDefs = [
+        { lower: 0.0, upper: 0.45 },
+        { lower: 0.45, upper: 0.55 },
+        { lower: 0.55, upper: 1.0 },
       ];
 
-      for (const b of bucketsDef) {
-        const matching = hSamples.filter((s) => s.prob >= b.probLower && s.prob < b.probUpper);
+      for (const b of broadDefs) {
+        const matching = hSamples.filter((s) => s.prob >= b.lower && s.prob < b.upper);
         if (matching.length >= 3) {
-          const gains = matching.filter((s) => s.actualReturn > 0);
-          const losses = matching.filter((s) => s.actualReturn <= 0);
-
-          const meanGain =
-            gains.length > 0
-              ? gains.reduce((sum, s) => sum + s.actualReturn, 0) / gains.length
-              : 0.02;
-          const meanLoss =
-            losses.length > 0
-              ? Math.abs(losses.reduce((sum, s) => sum + s.actualReturn, 0) / losses.length)
-              : 0.02;
+          const gains = matching.filter((s) => s.actualReturn > 0).map((s) => s.actualReturn);
+          const losses = matching.filter((s) => s.actualReturn <= 0).map((s) => Math.abs(s.actualReturn));
+          const meanGain = this.computeTrimmedMean(gains, meanHGain);
+          const meanLoss = this.computeTrimmedMean(losses, meanHLoss);
+          const se = this.computeStandardError(matching.map((s) => s.actualReturn));
 
           updatedBuckets.push({
             horizon: h,
-            probLower: b.probLower,
-            probUpper: b.probUpper,
+            probLower: b.lower,
+            probUpper: b.upper,
+            bucketType: 'BROAD',
             meanGainConditionalUp: parseFloat(meanGain.toFixed(4)),
             meanLossConditionalDown: parseFloat(meanLoss.toFixed(4)),
             sampleCount: matching.length,
+            uncertainty: parseFloat(se.toFixed(4)),
+            fittedAt: timestamp,
+          });
+        }
+      }
+
+      // 3. Fine Probability Buckets (Width 0.10: [0, 0.3), [0.3, 0.4), [0.4, 0.5), [0.5, 0.6), [0.6, 0.7), [0.7, 1.0])
+      const fineDefs = [
+        { lower: 0.0, upper: 0.35 },
+        { lower: 0.35, upper: 0.45 },
+        { lower: 0.45, upper: 0.55 },
+        { lower: 0.55, upper: 0.65 },
+        { lower: 0.65, upper: 1.0 },
+      ];
+
+      for (const f of fineDefs) {
+        const matching = hSamples.filter((s) => s.prob >= f.lower && s.prob < f.upper);
+        if (matching.length >= 10) {
+          const gains = matching.filter((s) => s.actualReturn > 0).map((s) => s.actualReturn);
+          const losses = matching.filter((s) => s.actualReturn <= 0).map((s) => Math.abs(s.actualReturn));
+          const meanGain = this.computeTrimmedMean(gains, meanHGain);
+          const meanLoss = this.computeTrimmedMean(losses, meanHLoss);
+          const se = this.computeStandardError(matching.map((s) => s.actualReturn));
+
+          updatedBuckets.push({
+            horizon: h,
+            probLower: f.lower,
+            probUpper: f.upper,
+            bucketType: 'FINE',
+            meanGainConditionalUp: parseFloat(meanGain.toFixed(4)),
+            meanLossConditionalDown: parseFloat(meanLoss.toFixed(4)),
+            sampleCount: matching.length,
+            uncertainty: parseFloat(se.toFixed(4)),
+            fittedAt: timestamp,
           });
         }
       }
     }
 
-    if (updatedBuckets.length >= 6) {
+    if (updatedBuckets.length > 0) {
       this.empiricalBuckets = updatedBuckets;
-      this.logger.log(`Empirical conditional return distributions updated with ${samples.length} out-of-sample trades.`);
+      this.logger.log(`Fitted ${updatedBuckets.length} empirical conditional return buckets from ${samples.length} out-of-sample observations.`);
     }
   }
 
   /**
-   * Two-Stage Empirical Expected Return Estimation:
-   * ExpectedValue = P(up) * E[gain | up] - P(down) * E[loss | down]
-   * Falls back to diffusion scaling only when empirical support is sparse.
+   * Hierarchical Conditional Return Estimation:
+   * Level 1: Fine Probability Bucket (N >= 15) -> EMPIRICAL_FINE_BUCKET
+   * Level 2: Broad Probability Bucket (N >= 5) -> EMPIRICAL_BROAD_BUCKET
+   * Level 3: Horizon-Wide Estimate (N >= 5) -> EMPIRICAL_HORIZON_WIDE
+   * Level 4: Continuous Diffusion Fallback -> FALLBACK_DIFFUSION
    */
   estimateExpectedReturn(
     prob: number,
@@ -187,52 +247,78 @@ export class ModelInferenceEngine {
     const pUp = Math.max(0.05, Math.min(0.95, prob));
     const pDown = 1 - pUp;
 
-    // Search for empirical bucket
-    const bucket = this.empiricalBuckets.find(
-      (b) => b.horizon === horizon && pUp >= b.probLower && pUp < b.probUpper
-    );
-
     const sigma = Math.max(
       MODEL_CONFIG.RISK.MIN_ASSET_VOLATILITY_FLOOR,
       Math.min(MODEL_CONFIG.RISK.MAX_ASSET_VOLATILITY_CAP, assetVolatility)
     );
     const days = MODEL_CONFIG.INFERENCE.HORIZONS[horizon]?.DAYS || 5;
     const sqrtTime = Math.sqrt(days);
+    const expectedVol = parseFloat((sigma * sqrtTime).toFixed(4));
 
-    if (bucket && bucket.sampleCount >= 15) {
-      // 1. Empirical Two-Stage Model
-      const expectedGain = bucket.meanGainConditionalUp;
-      const expectedLoss = bucket.meanLossConditionalDown;
-      const expectedValue = parseFloat((pUp * expectedGain - pDown * expectedLoss).toFixed(4));
-      const expectedVol = parseFloat((sigma * sqrtTime).toFixed(4));
-      const uncertainty = parseFloat((expectedVol / Math.sqrt(bucket.sampleCount)).toFixed(4));
-
-      const ciLow = parseFloat((expectedValue - 1.645 * expectedVol).toFixed(4));
-      const ciHigh = parseFloat((expectedValue + 1.645 * expectedVol).toFixed(4));
-
+    // Level 1: Fine Probability Bucket Check (N >= 15)
+    const fineBucket = this.empiricalBuckets.find(
+      (b) => b.horizon === horizon && b.bucketType === 'FINE' && pUp >= b.probLower && pUp < b.probUpper && b.sampleCount >= 15
+    );
+    if (fineBucket) {
+      const expVal = parseFloat((pUp * fineBucket.meanGainConditionalUp - pDown * fineBucket.meanLossConditionalDown).toFixed(4));
       return {
         probability: pUp,
-        expectedGainConditionalUp: expectedGain,
-        expectedLossConditionalDown: expectedLoss,
-        expectedValue,
+        expectedGainConditionalUp: fineBucket.meanGainConditionalUp,
+        expectedLossConditionalDown: fineBucket.meanLossConditionalDown,
+        expectedValue: expVal,
         expectedVolatility: expectedVol,
-        uncertainty,
-        confidenceInterval: [ciLow, ciHigh],
-        method: 'EMPIRICAL_TWO_STAGE',
+        uncertainty: fineBucket.uncertainty,
+        sampleCount: fineBucket.sampleCount,
+        confidenceInterval: [parseFloat((expVal - 1.645 * expectedVol).toFixed(4)), parseFloat((expVal + 1.645 * expectedVol).toFixed(4))],
+        method: 'EMPIRICAL_FINE_BUCKET',
       };
     }
 
-    // 2. Labeled Fallback: Continuous-Time Brownian Diffusion
+    // Level 2: Broad Probability Bucket Check (N >= 5)
+    const broadBucket = this.empiricalBuckets.find(
+      (b) => b.horizon === horizon && b.bucketType === 'BROAD' && pUp >= b.probLower && pUp < b.probUpper && b.sampleCount >= 5
+    );
+    if (broadBucket) {
+      const expVal = parseFloat((pUp * broadBucket.meanGainConditionalUp - pDown * broadBucket.meanLossConditionalDown).toFixed(4));
+      return {
+        probability: pUp,
+        expectedGainConditionalUp: broadBucket.meanGainConditionalUp,
+        expectedLossConditionalDown: broadBucket.meanLossConditionalDown,
+        expectedValue: expVal,
+        expectedVolatility: expectedVol,
+        uncertainty: broadBucket.uncertainty,
+        sampleCount: broadBucket.sampleCount,
+        confidenceInterval: [parseFloat((expVal - 1.645 * expectedVol).toFixed(4)), parseFloat((expVal + 1.645 * expectedVol).toFixed(4))],
+        method: 'EMPIRICAL_BROAD_BUCKET',
+      };
+    }
+
+    // Level 3: Horizon-Wide Estimate (N >= 5)
+    const horizonBucket = this.empiricalBuckets.find(
+      (b) => b.horizon === horizon && b.bucketType === 'HORIZON_WIDE' && b.sampleCount >= 5
+    );
+    if (horizonBucket) {
+      const expVal = parseFloat((pUp * horizonBucket.meanGainConditionalUp - pDown * horizonBucket.meanLossConditionalDown).toFixed(4));
+      return {
+        probability: pUp,
+        expectedGainConditionalUp: horizonBucket.meanGainConditionalUp,
+        expectedLossConditionalDown: horizonBucket.meanLossConditionalDown,
+        expectedValue: expVal,
+        expectedVolatility: expectedVol,
+        uncertainty: horizonBucket.uncertainty,
+        sampleCount: horizonBucket.sampleCount,
+        confidenceInterval: [parseFloat((expVal - 1.645 * expectedVol).toFixed(4)), parseFloat((expVal + 1.645 * expectedVol).toFixed(4))],
+        method: 'EMPIRICAL_HORIZON_WIDE',
+      };
+    }
+
+    // Level 4: Explicit Fallback (Continuous Diffusion)
     const directionalSkew = (pUp - 0.5) * 2;
     const baseReturn = directionalSkew * sigma * sqrtTime;
     const expectedValue = parseFloat(baseReturn.toFixed(4));
     const expectedGain = parseFloat(Math.max(0.01, sigma * sqrtTime * 0.9).toFixed(4));
     const expectedLoss = parseFloat(Math.max(0.01, sigma * sqrtTime * 0.9).toFixed(4));
-    const expectedVol = parseFloat((sigma * sqrtTime).toFixed(4));
-    const uncertainty = parseFloat((expectedVol * 0.25).toFixed(4));
-
-    const ciLow = parseFloat((expectedValue - 1.645 * expectedVol).toFixed(4));
-    const ciHigh = parseFloat((expectedValue + 1.645 * expectedVol).toFixed(4));
+    const uncertainty = parseFloat((expectedVol * 0.35).toFixed(4));
 
     return {
       probability: pUp,
@@ -241,33 +327,21 @@ export class ModelInferenceEngine {
       expectedValue,
       expectedVolatility: expectedVol,
       uncertainty,
-      confidenceInterval: [ciLow, ciHigh],
-      method: 'ESTIMATED_DIFFUSION',
+      sampleCount: 0,
+      confidenceInterval: [parseFloat((expectedValue - 1.645 * expectedVol).toFixed(4)), parseFloat((expectedValue + 1.645 * expectedVol).toFixed(4))],
+      method: 'FALLBACK_DIFFUSION',
     };
   }
 
-  calculateExpectedReturn(
-    prob: number,
-    horizon: '1d' | '5d' | '20d',
-    dailyVolatility: number = 0.02
-  ): number {
+  calculateExpectedReturn(prob: number, horizon: '1d' | '5d' | '20d', dailyVolatility: number = 0.02): number {
     return this.estimateExpectedReturn(prob, horizon, dailyVolatility).expectedValue;
   }
 
-  calculateConfidenceInterval(
-    expectedReturn: number,
-    horizon: '1d' | '5d' | '20d',
-    dailyVolatility: number = 0.02
-  ): [number, number] {
+  calculateConfidenceInterval(expectedReturn: number, horizon: '1d' | '5d' | '20d', dailyVolatility: number = 0.02): [number, number] {
     const days = MODEL_CONFIG.INFERENCE.HORIZONS[horizon]?.DAYS || 5;
-    const sigma = Math.max(
-      MODEL_CONFIG.RISK.MIN_ASSET_VOLATILITY_FLOOR,
-      Math.min(MODEL_CONFIG.RISK.MAX_ASSET_VOLATILITY_CAP, dailyVolatility)
-    );
+    const sigma = Math.max(MODEL_CONFIG.RISK.MIN_ASSET_VOLATILITY_FLOOR, Math.min(MODEL_CONFIG.RISK.MAX_ASSET_VOLATILITY_CAP, dailyVolatility));
     const horizonStdDev = sigma * Math.sqrt(days);
-    const low = parseFloat((expectedReturn - 1.645 * horizonStdDev).toFixed(4));
-    const high = parseFloat((expectedReturn + 1.645 * horizonStdDev).toFixed(4));
-    return [low, high];
+    return [parseFloat((expectedReturn - 1.645 * horizonStdDev).toFixed(4)), parseFloat((expectedReturn + 1.645 * horizonStdDev).toFixed(4))];
   }
 
   calculateFeatureContributions(features: Record<string, number | null>): FeatureContribution[] {
@@ -325,7 +399,33 @@ export class ModelInferenceEngine {
     return contributions.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
   }
 
+  getEmpiricalBuckets(): EmpiricalDistributionBucket[] {
+    return this.empiricalBuckets;
+  }
+
+  setEmpiricalBuckets(buckets: EmpiricalDistributionBucket[]) {
+    this.empiricalBuckets = buckets;
+  }
+
   getModelVersion(): string {
     return ModelRegistry.getModelVersion();
+  }
+
+  // Robust Statistics Helpers
+  private computeTrimmedMean(arr: number[], fallback: number, trimPct: number = 0.10): number {
+    if (!arr || arr.length === 0) return fallback;
+    if (arr.length <= 4) return arr.reduce((s, x) => s + x, 0) / arr.length;
+
+    const sorted = [...arr].sort((a, b) => a - b);
+    const k = Math.floor(sorted.length * trimPct);
+    const trimmed = sorted.slice(k, sorted.length - k);
+    return trimmed.length > 0 ? trimmed.reduce((s, x) => s + x, 0) / trimmed.length : fallback;
+  }
+
+  private computeStandardError(arr: number[]): number {
+    if (!arr || arr.length < 2) return 0.01;
+    const mean = arr.reduce((s, x) => s + x, 0) / arr.length;
+    const variance = arr.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / (arr.length - 1);
+    return Math.sqrt(variance / arr.length);
   }
 }

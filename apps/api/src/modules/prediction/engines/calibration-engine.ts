@@ -17,6 +17,7 @@ export interface CalibrationReport {
   sampleCount: number;
   fittedAt?: string;
   isFittedOutOfSample: boolean;
+  calibrationStatus: 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK';
 }
 
 @Injectable()
@@ -24,19 +25,19 @@ export class CalibrationEngine {
   private readonly logger = new Logger(CalibrationEngine.name);
 
   // Monotonic Isotonic Regression knots: [rawPredictedProb, empiricalCalibratedProb]
-  // Pre-initialized with baseline knots, updated dynamically when fitted on validation/out-of-sample trades
+  // Pre-initialized with baseline identity knots, updated strictly when fitted on validation/out-of-sample trades
   private isotonicKnots: [number, number][] = [
-    [0.05, 0.08],
-    [0.10, 0.12],
-    [0.20, 0.21],
-    [0.30, 0.29],
-    [0.40, 0.38],
+    [0.05, 0.05],
+    [0.10, 0.10],
+    [0.20, 0.20],
+    [0.30, 0.30],
+    [0.40, 0.40],
     [0.50, 0.50],
-    [0.60, 0.61],
-    [0.70, 0.69],
-    [0.80, 0.77],
-    [0.90, 0.84],
-    [0.95, 0.88],
+    [0.60, 0.60],
+    [0.70, 0.70],
+    [0.80, 0.80],
+    [0.90, 0.90],
+    [0.95, 0.95],
   ];
 
   private isFittedFromValidation: boolean = false;
@@ -73,25 +74,28 @@ export class CalibrationEngine {
    * strictly on validation/out-of-sample predictions.
    */
   fitPAV(samples: { prob: number; outcome: number }[]): [number, number][] {
-    if (!samples || samples.length < 15) {
+    if (!samples || samples.length < 6) {
+      this.isFittedFromValidation = false;
       return this.isotonicKnots;
     }
 
     // Sort by predicted probability ascending
     const sorted = [...samples].sort((a, b) => a.prob - b.prob);
 
-    // Group into 10 quantile bins
-    const binCount = Math.min(10, Math.floor(sorted.length / 5));
-    const binSize = Math.floor(sorted.length / binCount);
+    // Group into quantile bins
+    const binCount = Math.min(10, Math.max(2, Math.floor(sorted.length / 3)));
+    const binSize = Math.max(1, Math.floor(sorted.length / binCount));
     const bins: { probSum: number; outcomeSum: number; count: number }[] = [];
 
     for (let i = 0; i < binCount; i++) {
       const start = i * binSize;
       const end = i === binCount - 1 ? sorted.length : (i + 1) * binSize;
       const slice = sorted.slice(start, end);
-      const probSum = slice.reduce((s, x) => s + x.prob, 0);
-      const outcomeSum = slice.reduce((s, x) => s + x.outcome, 0);
-      bins.push({ probSum, outcomeSum, count: slice.length });
+      if (slice.length > 0) {
+        const probSum = slice.reduce((s, x) => s + x.prob, 0);
+        const outcomeSum = slice.reduce((s, x) => s + x.outcome, 0);
+        bins.push({ probSum, outcomeSum, count: slice.length });
+      }
     }
 
     // Pool Adjacent Violators algorithm to enforce strict non-decreasing monotonicity
@@ -106,7 +110,6 @@ export class CalibrationEngine {
       violated = false;
       for (let i = 0; i < blocks.length - 1; i++) {
         if (blocks[i].meanOutcome > blocks[i + 1].meanOutcome) {
-          // Merge adjacent violating blocks
           const totalWeight = blocks[i].weight + blocks[i + 1].weight;
           const mergedProb =
             (blocks[i].meanProb * blocks[i].weight + blocks[i + 1].meanProb * blocks[i + 1].weight) /
@@ -129,7 +132,7 @@ export class CalibrationEngine {
       parseFloat(Math.max(0.05, Math.min(0.95, b.meanOutcome)).toFixed(3)),
     ]);
 
-    if (fittedKnots.length >= 3) {
+    if (fittedKnots.length >= 1) {
       this.isotonicKnots = fittedKnots;
       this.isFittedFromValidation = true;
       this.lastFittedTimestamp = new Date().toISOString();
@@ -141,29 +144,17 @@ export class CalibrationEngine {
     return this.isotonicKnots;
   }
 
-  /**
-   * Computes Brier Score: Mean squared error of calibrated probability vs actual outcome (0 or 1).
-   * BS = 1/N * sum( (p_i - o_i)^2 )
-   */
   calculateBrierScore(predictions: { prob: number; outcome: number }[]): number {
     if (!predictions || predictions.length === 0) return 0.16;
     const sumSq = predictions.reduce((sum, p) => sum + Math.pow(p.prob - p.outcome, 2), 0);
     return parseFloat((sumSq / predictions.length).toFixed(4));
   }
 
-  /**
-   * Computes Expected Calibration Error (ECE) across M bins.
-   * ECE = sum( |Bm|/N * |acc(Bm) - conf(Bm)| )
-   */
   calculateECE(predictions: { prob: number; outcome: number }[], numBins: number = 10): number {
     if (!predictions || predictions.length === 0) return 0.04;
     const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from(
       { length: numBins },
-      () => ({
-        probSum: 0,
-        outcomeSum: 0,
-        count: 0,
-      })
+      () => ({ probSum: 0, outcomeSum: 0, count: 0 })
     );
 
     for (const p of predictions) {
@@ -186,19 +177,11 @@ export class CalibrationEngine {
     return parseFloat(ece.toFixed(4));
   }
 
-  /**
-   * Computes Maximum Calibration Error (MCE) across M bins.
-   * MCE = max( |acc(Bm) - conf(Bm)| )
-   */
   calculateMCE(predictions: { prob: number; outcome: number }[], numBins: number = 10): number {
     if (!predictions || predictions.length === 0) return 0.08;
     const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from(
       { length: numBins },
-      () => ({
-        probSum: 0,
-        outcomeSum: 0,
-        count: 0,
-      })
+      () => ({ probSum: 0, outcomeSum: 0, count: 0 })
     );
 
     for (const p of predictions) {
@@ -221,9 +204,6 @@ export class CalibrationEngine {
     return parseFloat(maxDiff.toFixed(4));
   }
 
-  /**
-   * Generates a full calibration report including reliability curve bins.
-   */
   generateCalibrationReport(predictions: { prob: number; outcome: number }[]): CalibrationReport {
     const brier = this.calculateBrierScore(predictions);
     const ece = this.calculateECE(predictions);
@@ -255,11 +235,21 @@ export class CalibrationEngine {
       sampleCount: predictions.length,
       fittedAt: this.lastFittedTimestamp,
       isFittedOutOfSample: this.isFittedFromValidation,
+      calibrationStatus: this.isFittedFromValidation ? 'FITTED_OUT_OF_SAMPLE' : 'FALLBACK',
     };
   }
 
   getKnots(): [number, number][] {
     return this.isotonicKnots;
+  }
+
+  setKnots(knots: [number, number][], isFitted: boolean = true) {
+    this.isotonicKnots = knots;
+    this.isFittedFromValidation = isFitted;
+  }
+
+  getCalibrationStatus(): 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK' {
+    return this.isFittedFromValidation ? 'FITTED_OUT_OF_SAMPLE' : 'FALLBACK';
   }
 
   getVersion(): string {

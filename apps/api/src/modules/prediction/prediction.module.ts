@@ -12,6 +12,7 @@ import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
 import { NewsFeatureEngine } from './engines/news-feature-engine';
 import { BacktestEngine } from './engines/backtest-engine';
+import { ModelArtifactService } from './engines/model-artifact.service';
 
 @Module({
   imports: [forwardRef(() => StockModule), NewsModule, DatabaseModule],
@@ -25,9 +26,9 @@ import { BacktestEngine } from './engines/backtest-engine';
     RiskEngine,
     DecisionEngine,
     NewsFeatureEngine,
-    BacktestEngine
+    BacktestEngine,
+    ModelArtifactService,
   ],
-  exports: [QuantPredictionService]
+  exports: [QuantPredictionService],
 })
 export class PredictionModule {}
-

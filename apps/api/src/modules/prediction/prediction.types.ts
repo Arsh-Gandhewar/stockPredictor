@@ -8,7 +8,14 @@ export interface HorizonPrediction {
   expectedValue?: number;
   expectedVolatility?: number;
   uncertainty?: number;
-  estimationMethod?: 'EMPIRICAL_TWO_STAGE' | 'ESTIMATED_DIFFUSION';
+  sampleCount?: number;
+  estimationMethod?:
+    | 'EMPIRICAL_FINE_BUCKET'
+    | 'EMPIRICAL_BROAD_BUCKET'
+    | 'EMPIRICAL_HORIZON_WIDE'
+    | 'FALLBACK_DIFFUSION'
+    | 'EMPIRICAL_TWO_STAGE'
+    | 'ESTIMATED_DIFFUSION';
 }
 
 export type Decision =
