@@ -67,10 +67,14 @@ export type MarketRegime =
   | 'HIGH_VOLATILITY' 
   | 'LOW_VOLATILITY' 
   | 'PANIC' 
-  | 'RECOVERY';
+  | 'RECOVERY'
+  | 'BULL_TREND'
+  | 'BULL_VOLATILE'
+  | 'BEAR_TREND';
 
 export type SignalQuality = 'HIGH' | 'MEDIUM' | 'LOW';
 export type DataQuality = 'HIGH' | 'MEDIUM' | 'LOW';
+export type PositionRiskState = 'NORMAL' | 'CAUTION' | 'HIGH_RISK' | 'EXIT' | 'EMERGENCY';
 
 export interface RiskAssessment {
   stopLossPrice: number;
@@ -80,6 +84,15 @@ export interface RiskAssessment {
   downsideProbability: number;
   volatility: number;
   liquidityFlag: boolean;
+  compositeRiskScore?: number;
+  riskState?: PositionRiskState;
+  annualizedVolatility?: number;
+  downsideDeviation?: number;
+  maxDrawdown60d?: number;
+  betaNifty?: number;
+  gapRiskPercent?: number;
+  tailRiskPercent?: number;
+  kellySuggestedWeight?: number;
 }
 
 export interface Evidence {
@@ -93,10 +106,22 @@ export interface FeatureContribution {
   contribution: number;
 }
 
+export interface RankingScoreBreakdown {
+  expectedValue: number;
+  sortinoRatio: number;
+  riskScore: number;
+  liquidityScore: number;
+  payoffAsymmetry?: number;
+  relativeStrength?: number;
+  compositeScore: number;
+  explanation: string;
+}
+
 export interface CrossSectionalRanking {
   rank: number;
   percentile: number;
   universeSize: number;
+  breakdown?: RankingScoreBreakdown;
 }
 
 export interface StockPrediction {
@@ -104,6 +129,9 @@ export interface StockPrediction {
     ticker: string;
     name: string;
     sector: string;
+    price?: number;
+    change?: number;
+    changePercent?: number;
   };
   prediction: {
     '1d': HorizonPrediction;
@@ -130,6 +158,10 @@ export interface ModelStatusInfo {
   version: string;
   calibration: string;
   status: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
+  activeModel?: string;
+  description?: string;
+  featureCount?: number;
+  calibrationMethod?: string;
 }
 
 export interface HorizonPerformanceMetric {
@@ -140,17 +172,20 @@ export interface HorizonPerformanceMetric {
   realizedReturn: number;
   sharpeRatio: number;
   sortinoRatio: number;
+  profitFactor?: number;
+  calmarRatio?: number;
+  cagr?: number;
   maxDrawdown: number;
   tradesCount: number;
 }
 
 export interface RegimePerformanceItem {
-  regime: MarketRegime;
-  accuracy: number;
+  regime: MarketRegime | string;
   winRate: number;
-  sharpeRatio: number;
-  maxDrawdown: number;
-  sampleCount: number;
+  avgReturn: number;
+  tradesCount: number;
+  sharpeRatio?: number;
+  maxDrawdown?: number;
 }
 
 export interface BaselineComparisonItem {

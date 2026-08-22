@@ -615,6 +615,9 @@ export interface PortfolioExitSignal {
   urgency: 'HIGH' | 'MEDIUM' | 'LOW';
   recommendedAction: 'STRONG_SELL' | 'SELL' | 'TAKE_PROFIT' | 'REDUCE' | 'STOP_LOSS' | 'HOLD';
   invalidationLevel?: number;
+  compositeRiskScore?: number;
+  riskState?: string;
+  portfolioWeightPercent?: number;
 }
 
 export function usePortfolio(userId?: string) {
@@ -677,6 +680,9 @@ export function usePortfolioSellSignals(userId?: string) {
               urgency: (item.urgency || (rawDownside > 0.7 ? 'HIGH' : 'MEDIUM')) as 'HIGH' | 'MEDIUM' | 'LOW',
               recommendedAction,
               invalidationLevel: item.invalidationLevel,
+              compositeRiskScore: item.compositeRiskScore,
+              riskState: item.riskState,
+              portfolioWeightPercent: item.portfolioWeightPercent,
             } as PortfolioExitSignal;
           });
         }

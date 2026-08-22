@@ -5,10 +5,31 @@ export interface HorizonPrediction {
   confidenceInterval: [number, number];
 }
 
-export type Decision = 'STRONG_BUY' | 'BUY' | 'ACCUMULATE' | 'HOLD' | 'REDUCE' | 'SELL' | 'STRONG_SELL' | 'NO_TRADE';
-export type MarketRegime = 'BULL' | 'BEAR' | 'SIDEWAYS' | 'HIGH_VOLATILITY' | 'LOW_VOLATILITY' | 'PANIC' | 'RECOVERY';
+export type Decision =
+  | 'STRONG_BUY'
+  | 'BUY'
+  | 'ACCUMULATE'
+  | 'HOLD'
+  | 'REDUCE'
+  | 'SELL'
+  | 'STRONG_SELL'
+  | 'NO_TRADE';
+
+export type MarketRegime =
+  | 'BULL'
+  | 'BEAR'
+  | 'SIDEWAYS'
+  | 'HIGH_VOLATILITY'
+  | 'LOW_VOLATILITY'
+  | 'PANIC'
+  | 'RECOVERY'
+  | 'BULL_TREND'
+  | 'BULL_VOLATILE'
+  | 'BEAR_TREND';
+
 export type SignalQuality = 'HIGH' | 'MEDIUM' | 'LOW';
 export type DataQuality = 'HIGH' | 'MEDIUM' | 'LOW';
+export type PositionRiskState = 'NORMAL' | 'CAUTION' | 'HIGH_RISK' | 'EXIT' | 'EMERGENCY';
 
 export interface RiskAssessment {
   stopLossPrice: number;
@@ -18,6 +39,15 @@ export interface RiskAssessment {
   downsideProbability: number;
   volatility: number;
   liquidityFlag: boolean;
+  compositeRiskScore?: number;
+  riskState?: PositionRiskState;
+  annualizedVolatility?: number;
+  downsideDeviation?: number;
+  maxDrawdown60d?: number;
+  betaNifty?: number;
+  gapRiskPercent?: number;
+  tailRiskPercent?: number;
+  kellySuggestedWeight?: number;
 }
 
 export interface ScenarioDetail {
@@ -43,10 +73,22 @@ export interface FeatureContribution {
   contribution: number;
 }
 
+export interface RankingScoreBreakdown {
+  expectedValue: number;
+  sortinoRatio: number;
+  riskScore: number;
+  liquidityScore: number;
+  payoffAsymmetry?: number;
+  relativeStrength?: number;
+  compositeScore: number;
+  explanation: string;
+}
+
 export interface CrossSectionalRanking {
   rank: number;
   percentile: number;
   universeSize: number;
+  breakdown?: RankingScoreBreakdown;
 }
 
 export interface ModelPerformanceMetric {
@@ -56,6 +98,9 @@ export interface ModelPerformanceMetric {
   logLoss: number;
   aucRoc: number;
   sharpeRatio: number;
+  sortinoRatio: number;
+  calmarRatio?: number;
+  cagr?: number;
   winRate: number;
   maxDrawdown: number;
   profitFactor: number;

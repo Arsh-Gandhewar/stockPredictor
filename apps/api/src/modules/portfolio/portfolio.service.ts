@@ -5,6 +5,8 @@ import { AiService } from '../ai/ai.service';
 import { QuantPredictionService } from '../prediction/prediction.service';
 import { TransactionType, OrderType } from 'db';
 import { Money } from '../../common/utils/money.util';
+import { MODEL_CONFIG } from '../prediction/engines/model-config';
+import { PositionRiskState } from '../prediction/prediction.types';
 
 export interface PortfolioPositionWithLiveMetrics {
   id: string;
@@ -22,6 +24,9 @@ export interface PortfolioPositionWithLiveMetrics {
   overallPnLPercent: number;
   stopLossPrice: number | null;
   targetPrice: number | null;
+  portfolioWeightPercent?: number;
+  compositeRiskScore?: number;
+  riskState?: PositionRiskState;
   stock: {
     id: string;
     ticker: string;
@@ -43,11 +48,14 @@ export interface PortfolioSummary {
   totalTodayPnLPercent: number;
   totalOverallPnL: number;
   totalOverallPnLPercent: number;
+  sectorConcentrations?: Record<string, number>;
+  concentrationAlerts?: string[];
 }
 
 @Injectable()
 export class PortfolioService {
   private readonly logger = new Logger(PortfolioService.name);
+  private autoSellExecutionTracker = new Set<string>();
 
   constructor(
     private readonly db: DatabaseService,
@@ -69,7 +77,7 @@ export class PortfolioService {
   }
 
   /**
-   * Retrieves or initializes the user's paper trading portfolio with real-time live P&L
+   * Retrieves or initializes the user's paper trading portfolio with real-time live P&L and concentration analytics
    */
   async getPortfolio(userId: string): Promise<PortfolioSummary> {
     const user = await this.getOrCreateUser(userId);
@@ -108,7 +116,10 @@ export class PortfolioService {
       const isStopLossHit = stopLoss !== null && currentPrice > 0 && currentPrice <= stopLoss;
       const isTargetHit = target !== null && currentPrice > 0 && currentPrice >= target;
 
-      if (isStopLossHit || isTargetHit) {
+      const execKey = `${pos.id}_${isStopLossHit ? 'STOP' : 'TARGET'}_${Math.floor(Date.now() / 10000)}`;
+
+      if ((isStopLossHit || isTargetHit) && !this.autoSellExecutionTracker.has(execKey)) {
+        this.autoSellExecutionTracker.add(execKey);
         const reason = isStopLossHit ? 'AUTO_STOP_LOSS' : 'AUTO_TARGET_PROFIT';
         const totalProceeds = Money.multiply(pos.quantity, currentPrice);
         cashAddedFromAutoSells = Money.add(cashAddedFromAutoSells, totalProceeds);
@@ -149,59 +160,84 @@ export class PortfolioService {
     const currentCash = Money.add(Number(portfolio.availableCash), cashAddedFromAutoSells);
 
     const hydratedPositions: PortfolioPositionWithLiveMetrics[] = activePositions.map((pos) => {
-        let currentPrice = Number(pos.averagePrice);
-        let dayChange = 0;
-        let dayChangePercent = 0;
-        let prevClose = Number(pos.averagePrice);
+      let currentPrice = Number(pos.averagePrice);
+      let dayChange = 0;
+      let dayChangePercent = 0;
+      let prevClose = Number(pos.averagePrice);
 
-        const quote = quoteMap.get(pos.stock.ticker);
-        if (quote) {
-          currentPrice = quote.price;
-          dayChange = quote.change;
-          dayChangePercent = quote.changePercent;
-          prevClose = quote.prevClose || quote.price - quote.change;
-        }
+      const quote = quoteMap.get(pos.stock.ticker);
+      if (quote) {
+        currentPrice = quote.price;
+        dayChange = quote.change;
+        dayChangePercent = quote.changePercent;
+        prevClose = quote.prevClose || quote.price - quote.change;
+      }
 
-        const investedValue = Money.multiply(pos.quantity, Number(pos.averagePrice));
-        const currentValue = Money.multiply(pos.quantity, currentPrice);
-        const overallPnL = Money.subtract(currentValue, investedValue);
-        const overallPnLPercent = Money.calculateReturnPercent(currentValue, investedValue);
-        const todayPnL = Money.multiply(pos.quantity, currentPrice - prevClose);
+      const investedValue = Money.multiply(pos.quantity, Number(pos.averagePrice));
+      const currentValue = Money.multiply(pos.quantity, currentPrice);
+      const overallPnL = Money.subtract(currentValue, investedValue);
+      const overallPnLPercent = Money.calculateReturnPercent(currentValue, investedValue);
+      const todayPnL = Money.multiply(pos.quantity, currentPrice - prevClose);
 
-        totalInvested = Money.add(totalInvested, investedValue);
-        totalCurrentValue = Money.add(totalCurrentValue, currentValue);
-        totalTodayPnL = Money.add(totalTodayPnL, todayPnL);
+      totalInvested = Money.add(totalInvested, investedValue);
+      totalCurrentValue = Money.add(totalCurrentValue, currentValue);
+      totalTodayPnL = Money.add(totalTodayPnL, todayPnL);
 
-        return {
-          id: pos.id,
-          portfolioId: pos.portfolioId,
-          stockId: pos.stockId,
-          quantity: pos.quantity,
-          averagePrice: Number(pos.averagePrice),
-          currentPrice,
-          dayChange,
-          dayChangePercent,
-          investedValue,
-          currentValue,
-          todayPnL,
-          overallPnL,
-          overallPnLPercent,
-          stopLossPrice: pos.stopLossPrice ? Number(pos.stopLossPrice) : null,
-          targetPrice: pos.targetPrice ? Number(pos.targetPrice) : null,
-          stock: {
-            id: pos.stock.id,
-            ticker: pos.stock.ticker,
-            name: pos.stock.name,
-            sector: pos.stock.sector,
-            exchange: pos.stock.exchange,
-          },
-        };
-      });
+      return {
+        id: pos.id,
+        portfolioId: pos.portfolioId,
+        stockId: pos.stockId,
+        quantity: pos.quantity,
+        averagePrice: Number(pos.averagePrice),
+        currentPrice,
+        dayChange,
+        dayChangePercent,
+        investedValue,
+        currentValue,
+        todayPnL,
+        overallPnL,
+        overallPnLPercent,
+        stopLossPrice: pos.stopLossPrice ? Number(pos.stopLossPrice) : null,
+        targetPrice: pos.targetPrice ? Number(pos.targetPrice) : null,
+        stock: {
+          id: pos.stock.id,
+          ticker: pos.stock.ticker,
+          name: pos.stock.name,
+          sector: pos.stock.sector,
+          exchange: pos.stock.exchange,
+        },
+      };
+    });
 
     const totalOverallPnL = Money.subtract(totalCurrentValue, totalInvested);
     const totalOverallPnLPercent = Money.calculateReturnPercent(totalCurrentValue, totalInvested);
     const totalPortfolioValue = Money.add(currentCash, totalCurrentValue);
     const totalTodayPnLPercent = totalPortfolioValue > 0 ? Money.round((totalTodayPnL / totalPortfolioValue) * 100) : 0;
+
+    // ── Position-Aware Concentration & Weight Analytics (Part 13) ──
+    const sectorTotals: Record<string, number> = {};
+    const concentrationAlerts: string[] = [];
+
+    hydratedPositions.forEach((p) => {
+      const weight = totalPortfolioValue > 0 ? (p.currentValue / totalPortfolioValue) * 100 : 0;
+      p.portfolioWeightPercent = parseFloat(weight.toFixed(1));
+
+      const sec = p.stock.sector || 'General';
+      sectorTotals[sec] = (sectorTotals[sec] || 0) + p.currentValue;
+
+      if (weight >= MODEL_CONFIG.RISK.POSITION_CONCENTRATION_LIMIT * 100) {
+        concentrationAlerts.push(`High position concentration in ${p.stock.ticker} (${weight.toFixed(1)}% of total portfolio)`);
+      }
+    });
+
+    const sectorConcentrations: Record<string, number> = {};
+    for (const [sec, val] of Object.entries(sectorTotals)) {
+      const secPct = totalPortfolioValue > 0 ? (val / totalPortfolioValue) * 100 : 0;
+      sectorConcentrations[sec] = parseFloat(secPct.toFixed(1));
+      if (secPct >= MODEL_CONFIG.RISK.SECTOR_CONCENTRATION_LIMIT * 100) {
+        concentrationAlerts.push(`High sector concentration in ${sec} (${secPct.toFixed(1)}% of total portfolio)`);
+      }
+    }
 
     return {
       id: portfolio.id,
@@ -215,12 +251,11 @@ export class PortfolioService {
       totalTodayPnLPercent,
       totalOverallPnL: Money.round(totalOverallPnL),
       totalOverallPnLPercent,
+      sectorConcentrations,
+      concentrationAlerts,
     };
   }
 
-  /**
-   * Executes atomic paper trade (BUY or SELL) with database transaction and balance validation
-   */
   /**
    * Executes atomic paper trade (BUY or SELL) with database transaction and balance validation
    */
@@ -453,28 +488,28 @@ export class PortfolioService {
     const quoteMap = new Map(quotes.map((q) => [q.ticker, q]));
 
     return trades.map((t) => {
-        const currentPrice = quoteMap.get(t.stock.ticker)?.price ?? Number(t.price);
+      const currentPrice = quoteMap.get(t.stock.ticker)?.price ?? Number(t.price);
 
-        const deltaSinceTrade = Money.subtract(currentPrice, Number(t.price));
-        const deltaPercentSinceTrade = Money.calculateReturnPercent(currentPrice, Number(t.price));
+      const deltaSinceTrade = Money.subtract(currentPrice, Number(t.price));
+      const deltaPercentSinceTrade = Money.calculateReturnPercent(currentPrice, Number(t.price));
 
-        return {
-          id: t.id,
-          ticker: t.stock.ticker,
-          name: t.stock.name,
-          sector: t.stock.sector || 'Equities',
-          type: t.type,
-          orderType: t.orderType,
-          quantity: t.quantity,
-          price: Number(t.price),
-          executedPrice: Number(t.price),
-          currentPrice,
-          deltaSinceTrade,
-          deltaPercentSinceTrade,
-          totalValue: Money.multiply(t.quantity, Number(t.price)),
-          timestamp: t.timestamp.toISOString(),
-        };
-      });
+      return {
+        id: t.id,
+        ticker: t.stock.ticker,
+        name: t.stock.name,
+        sector: t.stock.sector || 'Equities',
+        type: t.type,
+        orderType: t.orderType,
+        quantity: t.quantity,
+        price: Number(t.price),
+        executedPrice: Number(t.price),
+        currentPrice,
+        deltaSinceTrade,
+        deltaPercentSinceTrade,
+        totalValue: Money.multiply(t.quantity, Number(t.price)),
+        timestamp: t.timestamp.toISOString(),
+      };
+    });
   }
 
   /**
@@ -505,7 +540,8 @@ export class PortfolioService {
   }
 
   /**
-   * AI Risk Guardian: scans user portfolio positions for quantitative exit signals and evidence-constrained narrative
+   * AI Risk Guardian: scans user portfolio positions for multi-dimensional exit signals,
+   * continuous RiskScore (0-100), dynamic states (EXIT/EMERGENCY), and position-aware concentration risks.
    */
   async getPortfolioSellSignals(userId: string): Promise<any[]> {
     const portfolio = await this.getPortfolio(userId);
@@ -517,27 +553,46 @@ export class PortfolioService {
       portfolio.positions.map(async (pos) => {
         const prediction = await this.predictionService.getPrediction(pos.stock.ticker);
         const currentPrice = pos.currentPrice;
+
         const isSellDecision = prediction.decision === 'SELL' || prediction.decision === 'STRONG_SELL';
         const isHighDownside = prediction.risk.downsideProbability > 0.60;
         const isStopLossTriggered = currentPrice <= prediction.risk.stopLossPrice;
+        const isTargetReached = pos.targetPrice ? currentPrice >= pos.targetPrice : false;
         const isReduceDecision = prediction.decision === 'REDUCE';
 
-        if (isSellDecision || isHighDownside || isStopLossTriggered || isReduceDecision) {
-          const recommendation: 'STRONG_SELL' | 'SELL' | 'REDUCE' =
-            isStopLossTriggered || prediction.decision === 'STRONG_SELL' || prediction.risk.downsideProbability > 0.75
+        const riskScore = prediction.risk.compositeRiskScore || Math.round(prediction.risk.downsideProbability * 100);
+        const isRiskScoreElevated = riskScore >= MODEL_CONFIG.RISK.STATE_THRESHOLDS.HIGH_RISK;
+        const isEmergency = prediction.risk.riskState === 'EMERGENCY';
+
+        // Trigger if exit conditions or elevated risk detected
+        if (
+          isSellDecision ||
+          isHighDownside ||
+          isStopLossTriggered ||
+          isTargetReached ||
+          isReduceDecision ||
+          isRiskScoreElevated ||
+          isEmergency
+        ) {
+          const recommendation: 'STRONG_SELL' | 'SELL' | 'TAKE_PROFIT' | 'REDUCE' =
+            isTargetReached
+              ? 'TAKE_PROFIT'
+              : isStopLossTriggered || isEmergency || prediction.decision === 'STRONG_SELL' || riskScore >= MODEL_CONFIG.RISK.STATE_THRESHOLDS.EXIT
               ? 'STRONG_SELL'
               : isReduceDecision
               ? 'REDUCE'
               : 'SELL';
 
           const urgency: 'HIGH' | 'MEDIUM' | 'LOW' =
-            isStopLossTriggered || prediction.risk.downsideProbability > 0.75
+            isStopLossTriggered || isEmergency || riskScore >= MODEL_CONFIG.RISK.STATE_THRESHOLDS.EXIT
               ? 'HIGH'
-              : prediction.risk.downsideProbability > 0.60
+              : riskScore >= MODEL_CONFIG.RISK.STATE_THRESHOLDS.HIGH_RISK || isHighDownside
               ? 'MEDIUM'
               : 'LOW';
 
           const targetExitPrice = isStopLossTriggered
+            ? currentPrice
+            : isTargetReached
             ? currentPrice
             : prediction.risk.targetPrice || Money.round(currentPrice * 0.98);
 
@@ -575,6 +630,9 @@ export class PortfolioService {
             unrealizedPnLPercent: pos.overallPnLPercent,
             downsideProbability: Math.round(prediction.risk.downsideProbability * 100),
             exitProbability: Math.round(prediction.risk.downsideProbability * 100),
+            compositeRiskScore: riskScore,
+            riskState: prediction.risk.riskState || (riskScore >= 85 ? 'EXIT' : riskScore >= 65 ? 'HIGH_RISK' : 'CAUTION'),
+            portfolioWeightPercent: pos.portfolioWeightPercent || 0,
             stopLossPrice: prediction.risk.stopLossPrice,
             targetExitPrice,
             targetPrice: targetExitPrice,
@@ -582,11 +640,13 @@ export class PortfolioService {
             confidenceScore: Math.round(prediction.prediction['20d'].calibratedProbability * 100),
             financialReasoning:
               aiNarrative?.financialReasoning ||
-              `Quantitative exit rule triggered: ${
+              `Risk Guardian exit threshold reached (Risk Score: ${riskScore}/100): ${
                 isStopLossTriggered
-                  ? `Stop loss breached (₹${prediction.risk.stopLossPrice.toFixed(2)})`
+                  ? `Trailing stop loss breached at ₹${prediction.risk.stopLossPrice.toFixed(2)}`
+                  : isTargetReached
+                  ? `Profit target achieved at ₹${pos.targetPrice?.toFixed(2)}`
                   : isHighDownside
-                  ? `High downside probability (${Math.round(prediction.risk.downsideProbability * 100)}%)`
+                  ? `Elevated downside probability (${Math.round(prediction.risk.downsideProbability * 100)}%)`
                   : `Model ${prediction.decision} signal emitted`
               }.`,
             newsImpact:
@@ -594,7 +654,7 @@ export class PortfolioService {
               (prediction.evidence.find((e) => e.type === 'NEWS')?.description || 'No adverse news detected.'),
             gmpAnalysis:
               aiNarrative?.gmpAnalysis ||
-              `Market regime: ${prediction.marketRegime}. Momentum alignment in ${pos.stock.sector || 'Equities'}.`,
+              `Market regime: ${prediction.marketRegime}. Sector allocation in ${pos.stock.sector || 'Equities'}.`,
             invalidationConditions: prediction.invalidationConditions,
           };
         }
