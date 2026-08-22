@@ -85,7 +85,7 @@
       "dispersion": 0.0255,
       "sampleCount": 25,
       "uncertainty": 0.0051,
-      "fittedAt": "2026-08-22T07:23:10.144Z"
+      "fittedAt": "2026-08-22T07:22:17.217Z"
     },
     {
       "horizon": "5d",
@@ -97,7 +97,7 @@
       "dispersion": 0.0261,
       "sampleCount": 12,
       "uncertainty": 0.0075,
-      "fittedAt": "2026-08-22T07:23:10.144Z"
+      "fittedAt": "2026-08-22T07:22:17.217Z"
     },
     {
       "horizon": "5d",
@@ -109,7 +109,7 @@
       "dispersion": 0.0244,
       "sampleCount": 7,
       "uncertainty": 0.0092,
-      "fittedAt": "2026-08-22T07:23:10.145Z"
+      "fittedAt": "2026-08-22T07:22:17.217Z"
     },
     {
       "horizon": "5d",
@@ -121,7 +121,7 @@
       "dispersion": 0.0258,
       "sampleCount": 6,
       "uncertainty": 0.0105,
-      "fittedAt": "2026-08-22T07:23:10.145Z"
+      "fittedAt": "2026-08-22T07:22:17.217Z"
     }
   ],
   "statisticalGatePassed": true,
@@ -131,7 +131,7 @@
     "versionCompatibility": true,
     "dateRangeIntegrity": true
   },
-  "createdAt": "2026-08-22T07:23:10.158Z",
-  "id": "art_1787383390159_7e0e4d91",
-  "checksum": "29032d2d8ee6fd9f148c6c5f9503358d8dc6637d737527ae7f557037b8ba760e"
+  "createdAt": "2026-08-22T07:22:17.218Z",
+  "id": "art_1787383337218_abac5f59",
+  "checksum": "80443b7a41cf4cd3977ee75d874391f454998aeb0df9c68b8cd8de0601a2a58b"
 }
