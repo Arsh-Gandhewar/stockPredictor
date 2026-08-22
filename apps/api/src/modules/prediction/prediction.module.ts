@@ -13,6 +13,7 @@ import { DecisionEngine } from './engines/decision-engine';
 import { NewsFeatureEngine } from './engines/news-feature-engine';
 import { BacktestEngine } from './engines/backtest-engine';
 import { ModelArtifactService } from './engines/model-artifact.service';
+import { ProductionScorecardService } from './engines/production-scorecard';
 
 @Module({
   imports: [forwardRef(() => StockModule), NewsModule, DatabaseModule],
@@ -28,6 +29,7 @@ import { ModelArtifactService } from './engines/model-artifact.service';
     NewsFeatureEngine,
     BacktestEngine,
     ModelArtifactService,
+    ProductionScorecardService,
   ],
   exports: [QuantPredictionService],
 })

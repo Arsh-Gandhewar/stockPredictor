@@ -21,6 +21,7 @@ import { DecisionEngine } from './engines/decision-engine';
 import { NewsFeatureEngine } from './engines/news-feature-engine';
 import { BacktestEngine } from './engines/backtest-engine';
 import { ModelArtifactService, ModelArtifact, STATISTICAL_GATES } from './engines/model-artifact.service';
+import { ProductionScorecardService } from './engines/production-scorecard';
 import { MODEL_CONFIG } from './engines/model-config';
 import { ModelRegistry } from './engines/model-registry';
 
@@ -72,7 +73,8 @@ export class QuantPredictionService implements OnModuleInit {
     private readonly decisionEngine: DecisionEngine,
     private readonly newsFeatureEngine: NewsFeatureEngine,
     private readonly backtestEngine: BacktestEngine,
-    private readonly artifactService: ModelArtifactService
+    private readonly artifactService: ModelArtifactService,
+    private readonly scorecardService: ProductionScorecardService
   ) {}
 
   onModuleInit() {
@@ -90,27 +92,26 @@ export class QuantPredictionService implements OnModuleInit {
       this.activeArtifact = artifact;
       this.applyModelArtifact(artifact);
 
+      const scorecard = this.scorecardService.evaluateScorecard(artifact);
+
       this.governanceStatus = {
-        productionReady: true,
+        productionReady: scorecard.overallStatus === 'PRODUCTION_READY',
         modelStatus: 'ACTIVE',
-        calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
+        calibrationStatus: artifact.calibrationStatus as any,
         artifactStatus: 'VALID_ACTIVE',
-        dataSufficiencyStatus: 'SUFFICIENT',
-        walkForwardStatus: 'VERIFIED_OUT_OF_SAMPLE',
+        dataSufficiencyStatus: scorecard.criteria['DATA_INTEGRITY']?.status === 'PASS' ? 'SUFFICIENT' : 'INSUFFICIENT',
+        walkForwardStatus: scorecard.criteria['WALK_FORWARD_VALIDITY']?.status === 'PASS' ? 'VERIFIED_OUT_OF_SAMPLE' : 'UNVERIFIED',
         holdoutStatus: 'UNTOUCHED_VERIFIED',
-        statisticalValidationStatus: 'PASSED',
+        statisticalValidationStatus: scorecard.overallStatus === 'PRODUCTION_READY' ? 'PASSED' : 'FAILED',
         activeArtifactId: artifact.id,
         activeArtifactChecksum: artifact.checksum,
-        lastValidatedAt: new Date().toISOString(),
-        blockingIssues: [],
+        lastValidatedAt: scorecard.evaluatedAt,
+        blockingIssues: scorecard.blockingFailures,
       };
 
-      this.logger.log(`Verified active artifact loaded: ID ${artifact.id} (Calibration: FITTED_OUT_OF_SAMPLE)`);
+      this.logger.log(`Verified active artifact loaded: ID ${artifact.id} (Calibration: ${artifact.calibrationStatus}, Scorecard: ${scorecard.overallStatus})`);
     } else {
       this.activeArtifact = null;
-      this.calibrationEngine.setKnots([], false);
-      this.inferenceEngine.setEmpiricalBuckets([]);
-
       this.governanceStatus = {
         productionReady: false,
         modelStatus: 'FALLBACK',
@@ -121,11 +122,14 @@ export class QuantPredictionService implements OnModuleInit {
         holdoutStatus: 'UNVERIFIED',
         statisticalValidationStatus: 'FAILED',
         lastValidatedAt: new Date().toISOString(),
-        blockingIssues: validation.blockingReasons.length > 0 ? validation.blockingReasons : ['No valid statistical artifact found'],
+        blockingIssues: validation.blockingReasons.length > 0 ? validation.blockingReasons : ['No valid active artifact found in canonical directory.'],
       };
-
-      this.logger.log(`No valid artifact passing statistical gates. Running in clean FALLBACK mode (Blocking: ${this.governanceStatus.blockingIssues.join(', ')})`);
+      this.logger.warn(`No valid active model artifact available. Operating in strict FAIL-CLOSED fallback mode.`);
     }
+  }
+
+  getProductionScorecard() {
+    return this.scorecardService.evaluateScorecard(this.activeArtifact);
   }
 
   private applyModelArtifact(artifact: ModelArtifact) {
@@ -277,16 +281,20 @@ export class QuantPredictionService implements OnModuleInit {
       signalQuality
     );
 
-    // Statistical Scenario Analysis
-    const sigma20 = (risk.annualizedVolatility || 0.25) / Math.sqrt(252) * Math.sqrt(20);
+    // Statistical Scenario Analysis: Bull, Base, Bear (Probabilities sum to exactly 1.0)
+    const sigma20 = ((risk.annualizedVolatility || 0.25) / Math.sqrt(252)) * Math.sqrt(20);
     const bullReturnPercent = parseFloat(Math.max(2.5, (est20d.expectedValue + 1.645 * sigma20) * 100).toFixed(2));
-    const bullProb = parseFloat(Math.max(0.15, Math.min(0.50, pred20d * 0.50)).toFixed(2));
-
     const bearReturnPercent = parseFloat((-Math.max(2.0, (1.645 * sigma20 - est20d.expectedValue) * 100)).toFixed(2));
-    const bearProb = parseFloat(Math.max(0.15, Math.min(0.50, downsideProb * 0.50)).toFixed(2));
-
     const baseReturnPercent = parseFloat((est20d.expectedValue * 100).toFixed(2));
-    const baseProb = parseFloat(Math.max(0.10, 1 - bullProb - bearProb).toFixed(2));
+
+    const rawBullProb = Math.max(0.10, Math.min(0.45, pred20d * 0.45));
+    const rawBearProb = Math.max(0.10, Math.min(0.45, downsideProb * 0.45));
+    const rawBaseProb = Math.max(0.10, 1 - rawBullProb - rawBearProb);
+    const probSum = rawBullProb + rawBearProb + rawBaseProb;
+
+    const bullProb = parseFloat((rawBullProb / probSum).toFixed(4));
+    const bearProb = parseFloat((rawBearProb / probSum).toFixed(4));
+    const baseProb = parseFloat((1.0 - bullProb - bearProb).toFixed(4));
 
     const scenarios = {
       bull: {

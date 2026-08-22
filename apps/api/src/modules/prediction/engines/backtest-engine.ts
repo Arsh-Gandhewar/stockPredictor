@@ -72,6 +72,36 @@ export interface PartitionPerformanceBreakdown {
   brierScore: number;
 }
 
+export interface RollingWindowMetric {
+  windowIndex: number;
+  trainPeriod: string;
+  testPeriod: string;
+  tradesCount: number;
+  winRate: number;
+  cagr: number;
+  sharpeRatio: number;
+  sortinoRatio: number;
+  brierScore: number;
+  ece: number;
+}
+
+export interface RollingWindowSummary {
+  windows: RollingWindowMetric[];
+  meanSharpe: number;
+  medianSharpe: number;
+  stdDevSharpe: number;
+  worstSharpe: number;
+  bestSharpe: number;
+  meanWinRate: number;
+  medianWinRate: number;
+  worstWinRate: number;
+  bestWinRate: number;
+  meanCAGR: number;
+  medianCAGR: number;
+  worstCAGR: number;
+  bestCAGR: number;
+}
+
 export interface BacktestResult {
   lastBacktestDate: string;
   datasetPeriod: string;
@@ -90,6 +120,7 @@ export interface BacktestResult {
   ece: number;
   regimePerformance: Array<{ regime: string; winRate: number; avgReturn: number; tradesCount: number }>;
   partitionPerformance: PartitionPerformanceBreakdown[];
+  rollingWindowSummary?: RollingWindowSummary;
   holdoutPerformance: {
     startDate: string;
     endDate: string;
@@ -347,6 +378,70 @@ export class BacktestEngine {
 
     const holdoutMetrics = partitionPerformance.find((p) => p.partition === 'HOLDOUT');
 
+    // Rolling Window Robustness Analysis (3 Chronological Windows)
+    const rollingWindows: RollingWindowMetric[] = [];
+    const windowPairs: [string[], string[]][] = [
+      [trainDates.slice(0, Math.floor(trainDates.length * 0.7)), trainDates.slice(Math.floor(trainDates.length * 0.7))],
+      [valDates.slice(0, Math.floor(valDates.length * 0.7)), valDates.slice(Math.floor(valDates.length * 0.7))],
+      [testDates.slice(0, Math.floor(testDates.length * 0.7)), testDates.slice(Math.floor(testDates.length * 0.7))],
+    ];
+
+    windowPairs.forEach(([wTrain, wTest], idx) => {
+      const startTr = wTrain[0] || 'N/A';
+      const endTr = wTrain[wTrain.length - 1] || 'N/A';
+      const startTe = wTest[0] || 'N/A';
+      const endTe = wTest[wTest.length - 1] || 'N/A';
+      const wTrades = allTrades.filter((t) => t.entryDate >= startTe && t.entryDate <= endTe && t.horizon === '5d');
+      const m = this.computeDirectHorizonMetrics(wTrades, '5d');
+
+      rollingWindows.push({
+        windowIndex: idx + 1,
+        trainPeriod: `${startTr} to ${endTr}`,
+        testPeriod: `${startTe} to ${endTe}`,
+        tradesCount: wTrades.length,
+        winRate: m.winRate,
+        cagr: m.cagr,
+        sharpeRatio: m.sharpeRatio,
+        sortinoRatio: m.sortinoRatio,
+        brierScore: m.brierScore,
+        ece: m.ece,
+      });
+    });
+
+    const sharpes = rollingWindows.map((w) => w.sharpeRatio);
+    const winRates = rollingWindows.map((w) => w.winRate);
+    const cagrs = rollingWindows.map((w) => w.cagr);
+
+    const calcMean = (arr: number[]) => (arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0);
+    const calcMedian = (arr: number[]) => {
+      if (!arr.length) return 0;
+      const s = [...arr].sort((a, b) => a - b);
+      const mid = Math.floor(s.length / 2);
+      return s.length % 2 !== 0 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+    };
+    const calcStd = (arr: number[]) => {
+      if (arr.length < 2) return 0;
+      const m = calcMean(arr);
+      return Math.sqrt(arr.reduce((s, x) => s + Math.pow(x - m, 2), 0) / (arr.length - 1));
+    };
+
+    const rollingWindowSummary: RollingWindowSummary = {
+      windows: rollingWindows,
+      meanSharpe: this.roundTo2(calcMean(sharpes)),
+      medianSharpe: this.roundTo2(calcMedian(sharpes)),
+      stdDevSharpe: this.roundTo2(calcStd(sharpes)),
+      worstSharpe: this.roundTo2(Math.min(...sharpes)),
+      bestSharpe: this.roundTo2(Math.max(...sharpes)),
+      meanWinRate: this.roundTo1(calcMean(winRates)),
+      medianWinRate: this.roundTo1(calcMedian(winRates)),
+      worstWinRate: this.roundTo1(Math.min(...winRates)),
+      bestWinRate: this.roundTo1(Math.max(...winRates)),
+      meanCAGR: this.roundTo1(calcMean(cagrs)),
+      medianCAGR: this.roundTo1(calcMedian(cagrs)),
+      worstCAGR: this.roundTo1(Math.min(...cagrs)),
+      bestCAGR: this.roundTo1(Math.max(...cagrs)),
+    };
+
     // Comparative Model Evaluation on TEST Partition
     const test5dTrades = testTrades.filter((t) => t.horizon === '5d');
     const testPairs = test5dTrades.map((t) => ({ prob: t.predictedProb, outcome: t.directionCorrect ? 1 : 0 }));
@@ -376,6 +471,7 @@ export class BacktestEngine {
       ece: this.roundTo2(ece),
       regimePerformance,
       partitionPerformance,
+      rollingWindowSummary,
       holdoutPerformance: {
         startDate: holdoutMetrics?.startDate || '2026-07-16',
         endDate: holdoutMetrics?.endDate || '2026-08-22',

@@ -15,6 +15,11 @@ export class PredictionController {
     return this.predictionService.getProductionGovernanceStatus();
   }
 
+  @Get('scorecard')
+  getScorecard() {
+    return this.predictionService.getProductionScorecard();
+  }
+
   @Get('top-ranked')
   async getTopRanked() {
     return this.predictionService.getTopRankedStocks();
