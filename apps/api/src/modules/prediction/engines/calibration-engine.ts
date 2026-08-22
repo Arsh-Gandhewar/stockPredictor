@@ -143,7 +143,7 @@ export class CalibrationEngine {
     }
 
     // Anti-Pathological Shrinkage for sparse extreme tails (< 15 observations in tail)
-    const fittedKnots: [number, number][] = blocks.map((b) => {
+    const rawKnots: [number, number][] = blocks.map((b) => {
       let rawOutcome = b.meanOutcome;
       if (b.weight < STATISTICAL_GATES.MIN_TAIL_SAMPLES_FOR_EXTREME_PROB) {
         // Shrink towards prior base rate 0.50
@@ -155,6 +155,27 @@ export class CalibrationEngine {
         parseFloat(Math.max(0.08, Math.min(0.92, rawOutcome)).toFixed(3)),
       ];
     });
+
+    // Ensure continuous boundary anchors exist across the full [0.05, 0.95] spectrum
+    const fittedKnots: [number, number][] = [...rawKnots].sort((a, b) => a[0] - b[0]);
+    if (fittedKnots.length > 0) {
+      if (fittedKnots[0][0] > 0.05) {
+        const yMin = Math.max(0.05, Math.min(fittedKnots[0][1], fittedKnots[0][1] - (fittedKnots[0][0] - 0.05) * 0.8));
+        fittedKnots.unshift([0.05, parseFloat(yMin.toFixed(3))]);
+      }
+      if (fittedKnots[fittedKnots.length - 1][0] < 0.95) {
+        const last = fittedKnots[fittedKnots.length - 1];
+        const yMax = Math.min(0.95, Math.max(last[1], last[1] + (0.95 - last[0]) * 0.8));
+        fittedKnots.push([0.95, parseFloat(yMax.toFixed(3))]);
+      }
+
+      // Enforce strict non-decreasing monotonicity
+      for (let k = 1; k < fittedKnots.length; k++) {
+        if (fittedKnots[k][1] < fittedKnots[k - 1][1]) {
+          fittedKnots[k][1] = fittedKnots[k - 1][1];
+        }
+      }
+    }
 
     if (fittedKnots.length >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS) {
       this.isotonicKnots = fittedKnots;

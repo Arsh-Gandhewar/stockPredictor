@@ -58,11 +58,11 @@
     ],
     [
       0.7,
-      0.7
+      0.667
     ],
     [
       0.77,
-      0.7
+      0.667
     ],
     [
       0.95,
@@ -71,12 +71,12 @@
   ],
   "calibrationStatus": "FITTED_OUT_OF_SAMPLE",
   "calibrationMetrics": {
-    "brierScore": 0.1677,
-    "ece": 0.1983,
+    "brierScore": 0.173,
+    "ece": 0.2075,
     "mce": 0.3312,
     "sampleCount": 40,
     "populatedBins": 7,
-    "isMonotonic": true
+    "isMonotonic": false
   },
   "empiricalDistributions": [
     {
@@ -89,7 +89,7 @@
       "dispersion": 0.0268,
       "sampleCount": 25,
       "uncertainty": 0.0054,
-      "fittedAt": "2026-08-22T07:47:16.696Z"
+      "fittedAt": "2026-08-22T07:46:53.630Z"
     },
     {
       "horizon": "5d",
@@ -101,7 +101,7 @@
       "dispersion": 0.0195,
       "sampleCount": 6,
       "uncertainty": 0.008,
-      "fittedAt": "2026-08-22T07:47:16.696Z"
+      "fittedAt": "2026-08-22T07:46:53.630Z"
     },
     {
       "horizon": "5d",
@@ -113,7 +113,7 @@
       "dispersion": 0.0158,
       "sampleCount": 7,
       "uncertainty": 0.006,
-      "fittedAt": "2026-08-22T07:47:16.696Z"
+      "fittedAt": "2026-08-22T07:46:53.630Z"
     },
     {
       "horizon": "5d",
@@ -125,7 +125,7 @@
       "dispersion": 0.0168,
       "sampleCount": 14,
       "uncertainty": 0.0045,
-      "fittedAt": "2026-08-22T07:47:16.696Z"
+      "fittedAt": "2026-08-22T07:46:53.630Z"
     }
   ],
   "statisticalGatePassed": true,
@@ -135,7 +135,7 @@
     "versionCompatibility": true,
     "dateRangeIntegrity": true
   },
-  "createdAt": "2026-08-22T07:47:16.697Z",
-  "id": "art_1787384836698_3dfb7de4",
-  "checksum": "76df0c8a1a177b5a29640e5e074764bf110f8eac056a3cd52d2e1608da08c6af"
+  "createdAt": "2026-08-22T07:46:53.631Z",
+  "id": "art_1787384813632_e2103fa7",
+  "checksum": "399b725de49d5bc36794dd18ed7027636c3ab148b189c1bc731abe46621c8915"
 }

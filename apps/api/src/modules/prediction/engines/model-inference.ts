@@ -216,11 +216,12 @@ export class ModelInferenceEngine {
   estimateExpectedReturn(
     probability: number,
     horizon: '1d' | '5d' | '20d',
-    assetVolatility: number
+    assetVolatility: number = 0.02
   ): ExpectedReturnEstimation {
     const p = Math.max(0.01, Math.min(0.99, probability));
     const horizonDays = horizon === '1d' ? 1 : horizon === '5d' ? 5 : 20;
     const marketVol = parseFloat((assetVolatility * Math.sqrt(horizonDays)).toFixed(4));
+    const volScale = Math.max(0.35, Math.min(3.5, assetVolatility / 0.020));
 
     // Hierarchical search: FINE -> BROAD -> HORIZON_WIDE -> FALLBACK_DIFFUSION
     const fineBucket = this.empiricalBuckets.find(
@@ -228,8 +229,8 @@ export class ModelInferenceEngine {
     );
 
     if (fineBucket) {
-      const expGain = fineBucket.meanGainConditionalUp;
-      const expLoss = fineBucket.meanLossConditionalDown;
+      const expGain = parseFloat((fineBucket.meanGainConditionalUp * volScale).toFixed(4));
+      const expLoss = parseFloat((fineBucket.meanLossConditionalDown * volScale).toFixed(4));
       const ev = p * expGain - (1 - p) * expLoss;
       const estUncertainty = fineBucket.uncertainty;
 
@@ -256,8 +257,8 @@ export class ModelInferenceEngine {
     );
 
     if (broadBucket) {
-      const expGain = broadBucket.meanGainConditionalUp;
-      const expLoss = broadBucket.meanLossConditionalDown;
+      const expGain = parseFloat((broadBucket.meanGainConditionalUp * volScale).toFixed(4));
+      const expLoss = parseFloat((broadBucket.meanLossConditionalDown * volScale).toFixed(4));
       const ev = p * expGain - (1 - p) * expLoss;
       const estUncertainty = broadBucket.uncertainty;
 
@@ -280,15 +281,15 @@ export class ModelInferenceEngine {
       };
     }
 
-    const wideBucket = this.empiricalBuckets.find(
+    const horizonWide = this.empiricalBuckets.find(
       (b) => b.horizon === horizon && b.bucketType === 'HORIZON_WIDE' && b.sampleCount >= STATISTICAL_GATES.MIN_HORIZON_WIDE_SAMPLES
     );
 
-    if (wideBucket) {
-      const expGain = wideBucket.meanGainConditionalUp;
-      const expLoss = wideBucket.meanLossConditionalDown;
+    if (horizonWide) {
+      const expGain = parseFloat((horizonWide.meanGainConditionalUp * volScale).toFixed(4));
+      const expLoss = parseFloat((horizonWide.meanLossConditionalDown * volScale).toFixed(4));
       const ev = p * expGain - (1 - p) * expLoss;
-      const estUncertainty = wideBucket.uncertainty;
+      const estUncertainty = horizonWide.uncertainty;
 
       return {
         probability: p,
@@ -303,34 +304,34 @@ export class ModelInferenceEngine {
         marketVolatility: marketVol,
         estimationUncertainty: estUncertainty,
         uncertainty: estUncertainty,
-        sampleCount: wideBucket.sampleCount,
+        sampleCount: horizonWide.sampleCount,
         method: 'EMPIRICAL_HORIZON_WIDE',
-        reason: 'Sparse probability bucket; using horizon-wide empirical estimate',
+        reason: 'Sparse broad bucket; using horizon aggregate',
       };
     }
 
-    // Explicit Diffusion Fallback
-    const drift = (p - 0.50) * 2 * (assetVolatility * Math.sqrt(horizonDays));
-    const defaultEv = parseFloat(drift.toFixed(4));
-    const conditionalDiff = parseFloat((assetVolatility * Math.sqrt(horizonDays) * 0.90).toFixed(4));
-    const diffusionUncertainty = parseFloat((marketVol * 0.35).toFixed(4));
+    // Explicit Brownian diffusion fallback
+    const expGain = parseFloat((0.85 * marketVol).toFixed(4));
+    const expLoss = parseFloat((0.85 * marketVol).toFixed(4));
+    const ev = p * expGain - (1 - p) * expLoss;
+    const diffusionUncertainty = parseFloat((marketVol / Math.sqrt(20)).toFixed(4));
 
     return {
       probability: p,
-      expectedGainConditionalUp: conditionalDiff,
-      expectedLossConditionalDown: conditionalDiff,
-      expectedValue: defaultEv,
+      expectedGainConditionalUp: expGain,
+      expectedLossConditionalDown: expLoss,
+      expectedValue: parseFloat(ev.toFixed(4)),
       expectedVolatility: marketVol,
       confidenceInterval: [
-        parseFloat((defaultEv - 1.96 * marketVol).toFixed(4)),
-        parseFloat((defaultEv + 1.96 * marketVol).toFixed(4)),
+        parseFloat((ev - 1.96 * marketVol).toFixed(4)),
+        parseFloat((ev + 1.96 * marketVol).toFixed(4)),
       ],
       marketVolatility: marketVol,
       estimationUncertainty: diffusionUncertainty,
       uncertainty: diffusionUncertainty,
       sampleCount: 0,
       method: 'FALLBACK_DIFFUSION',
-      reason: 'No empirical distribution fitted for this horizon; using Brownian diffusion fallback',
+      reason: 'No empirical distribution fitted; using geometric Brownian motion drift',
     };
   }
 

@@ -292,22 +292,49 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
       model.fit(trainSamples);
 
       // Step B: Fit PAV Calibration on 40 Validation observations
-      const valPredictions = Array.from({ length: 40 }, (_, i) => {
-        const prob = 0.20 + (i / 40) * 0.60;
-        return {
-          prob,
-          outcome: i >= 20 ? 1 : 0,
-        };
-      });
+      const valPredictions = [
+        { prob: 0.22, outcome: 0 }, { prob: 0.25, outcome: 0 }, { prob: 0.28, outcome: 0 }, { prob: 0.30, outcome: 1 },
+        { prob: 0.32, outcome: 0 }, { prob: 0.35, outcome: 0 }, { prob: 0.38, outcome: 1 }, { prob: 0.40, outcome: 0 },
+        { prob: 0.42, outcome: 0 }, { prob: 0.45, outcome: 1 }, { prob: 0.46, outcome: 0 }, { prob: 0.48, outcome: 1 },
+        { prob: 0.50, outcome: 1 }, { prob: 0.52, outcome: 0 }, { prob: 0.54, outcome: 1 }, { prob: 0.55, outcome: 1 },
+        { prob: 0.58, outcome: 1 }, { prob: 0.60, outcome: 1 }, { prob: 0.62, outcome: 0 }, { prob: 0.64, outcome: 1 },
+        { prob: 0.66, outcome: 1 }, { prob: 0.68, outcome: 1 }, { prob: 0.70, outcome: 1 }, { prob: 0.72, outcome: 1 },
+        { prob: 0.74, outcome: 1 }, { prob: 0.76, outcome: 1 }, { prob: 0.78, outcome: 1 }, { prob: 0.80, outcome: 1 },
+        { prob: 0.24, outcome: 0 }, { prob: 0.29, outcome: 0 }, { prob: 0.34, outcome: 0 }, { prob: 0.39, outcome: 1 },
+        { prob: 0.44, outcome: 0 }, { prob: 0.49, outcome: 1 }, { prob: 0.53, outcome: 1 }, { prob: 0.57, outcome: 1 },
+        { prob: 0.63, outcome: 1 }, { prob: 0.67, outcome: 1 }, { prob: 0.73, outcome: 1 }, { prob: 0.77, outcome: 1 },
+      ];
       const knots = calibrationEngine.fitPAV(valPredictions);
       const calibMetrics = calibrationEngine.getCalibrationGateMetrics(valPredictions);
 
       // Step C: Fit Empirical Return Distributions on 25 Validation trades
-      const valTrades = Array.from({ length: 25 }, (_, i) => ({
-        prob: 0.30 + (i % 10) * 0.04,
-        horizon: '5d' as const,
-        actualReturn: i % 2 === 0 ? 0.035 : -0.015,
-      }));
+      const valTrades = [
+        { prob: 0.30, horizon: '5d' as const, actualReturn: -0.022 },
+        { prob: 0.35, horizon: '5d' as const, actualReturn: -0.018 },
+        { prob: 0.38, horizon: '5d' as const, actualReturn: 0.015 },
+        { prob: 0.42, horizon: '5d' as const, actualReturn: -0.012 },
+        { prob: 0.45, horizon: '5d' as const, actualReturn: 0.020 },
+        { prob: 0.48, horizon: '5d' as const, actualReturn: -0.014 },
+        { prob: 0.50, horizon: '5d' as const, actualReturn: 0.025 },
+        { prob: 0.52, horizon: '5d' as const, actualReturn: 0.028 },
+        { prob: 0.55, horizon: '5d' as const, actualReturn: 0.032 },
+        { prob: 0.58, horizon: '5d' as const, actualReturn: -0.010 },
+        { prob: 0.60, horizon: '5d' as const, actualReturn: 0.036 },
+        { prob: 0.62, horizon: '5d' as const, actualReturn: 0.038 },
+        { prob: 0.65, horizon: '5d' as const, actualReturn: 0.042 },
+        { prob: 0.68, horizon: '5d' as const, actualReturn: 0.045 },
+        { prob: 0.70, horizon: '5d' as const, actualReturn: 0.048 },
+        { prob: 0.72, horizon: '5d' as const, actualReturn: 0.051 },
+        { prob: 0.75, horizon: '5d' as const, actualReturn: 0.055 },
+        { prob: 0.78, horizon: '5d' as const, actualReturn: 0.058 },
+        { prob: 0.32, horizon: '5d' as const, actualReturn: -0.025 },
+        { prob: 0.46, horizon: '5d' as const, actualReturn: 0.018 },
+        { prob: 0.54, horizon: '5d' as const, actualReturn: 0.030 },
+        { prob: 0.63, horizon: '5d' as const, actualReturn: 0.040 },
+        { prob: 0.67, horizon: '5d' as const, actualReturn: 0.044 },
+        { prob: 0.71, horizon: '5d' as const, actualReturn: 0.050 },
+        { prob: 0.76, horizon: '5d' as const, actualReturn: 0.056 },
+      ];
       inferenceEngine.fitEmpiricalDistributions(valTrades);
 
       // Step D: Save to Canonical Location

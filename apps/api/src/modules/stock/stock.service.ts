@@ -328,6 +328,8 @@ export class StockService {
         targetPrice: p.risk.targetPrice,
         stopLossPrice: p.risk.stopLossPrice,
         targetPercent,
+        targetUpsidePercent: targetPercent,
+        calibratedAlphaProb: Math.round(p.prediction['5d'].calibratedProbability * 100),
         stopLossPercent,
         alphaScore,
         newsSentiment,
