@@ -1,0 +1,59 @@
+{
+  "modelVersion": "4.0.0",
+  "modelType": "BASELINE_HEURISTIC",
+  "featureVersion": "v4.0.0-multi-factor-25",
+  "trainingStart": "2025-08-22",
+  "trainingEnd": "2026-02-15",
+  "validationStart": "2026-02-16",
+  "validationEnd": "2026-05-15",
+  "testStart": "2026-05-16",
+  "testEnd": "2026-07-15",
+  "holdoutStart": "2026-07-16",
+  "holdoutEnd": "2026-08-22",
+  "horizon": "5d",
+  "fittingMethod": "PAV + Empirical Two-Stage",
+  "parameters": {
+    "rsi_14": -0.0811,
+    "macd_hist": 0,
+    "sma_20_dist": 0,
+    "sma_50_dist": 0,
+    "ema_20_dist": 0,
+    "atr_percent": 0,
+    "bb_width": 0,
+    "stoch_k": 0,
+    "volume_z_score": 0,
+    "annualized_volatility": 0,
+    "downside_deviation": 0,
+    "beta_nifty": 0,
+    "relative_strength_nifty": 0,
+    "momentum_5": 0,
+    "momentum_20": 0,
+    "bias": 0
+  },
+  "calibrationVersion": "v4.0.0-isotonic",
+  "calibrationKnots": [
+    [
+      0.3,
+      0.05
+    ],
+    [
+      0.7,
+      0.95
+    ]
+  ],
+  "calibrationStatus": "FITTED_OUT_OF_SAMPLE",
+  "empiricalDistributions": [
+    {
+      "horizon": "5d",
+      "probLower": 0,
+      "probUpper": 1,
+      "bucketType": "HORIZON_WIDE",
+      "meanGainConditionalUp": 0.0293,
+      "meanLossConditionalDown": 0.0243,
+      "sampleCount": 6,
+      "uncertainty": 0.013,
+      "fittedAt": "2026-08-22T07:09:08.112Z"
+    }
+  ],
+  "createdAt": "2026-08-22T07:09:08.113Z"
+}

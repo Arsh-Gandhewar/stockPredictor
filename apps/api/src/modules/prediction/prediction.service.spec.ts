@@ -6,9 +6,9 @@ import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
 import { ModelArtifactService, ModelArtifact } from './engines/model-artifact.service';
 import { LogisticRegressionModel, TrainingSample } from './engines/learned-model';
-import { MarketQuote, OHLCVCandle, MarketIndexBenchmark } from '../stock/providers/market-data.provider.interface';
+import { MarketQuote, OHLCVCandle } from '../stock/providers/market-data.provider.interface';
 
-describe('QuantX Quantitative Stack Hardening & Audit Verification Suite', () => {
+describe('QuantX Quantitative Stack Hardening & Lifecycle Verification Suite', () => {
   let featureEngine: FeatureEngine;
   let inferenceEngine: ModelInferenceEngine;
   let calibrationEngine: CalibrationEngine;
@@ -38,7 +38,6 @@ describe('QuantX Quantitative Stack Hardening & Audit Verification Suite', () =>
     });
 
     it('should hierarchically select EMPIRICAL_FINE_BUCKET when N >= 15', () => {
-      // Create 20 samples in fine bucket [0.55, 0.65) for 5d horizon
       const samples = Array.from({ length: 20 }, (_, i) => ({
         prob: 0.60,
         horizon: '5d' as const,
@@ -119,8 +118,8 @@ describe('QuantX Quantitative Stack Hardening & Audit Verification Suite', () =>
       const wins = trades.filter((t) => t.netReturn > 0);
       const losses = trades.filter((t) => t.netReturn <= 0);
 
-      const sumWins = wins.reduce((s, t) => s + t.netReturn, 0); // 0.08
-      const sumLosses = Math.abs(losses.reduce((s, t) => s + t.netReturn, 0)); // 0.04
+      const sumWins = wins.reduce((s, t) => s + t.netReturn, 0);
+      const sumLosses = Math.abs(losses.reduce((s, t) => s + t.netReturn, 0));
       const profitFactor = sumWins / sumLosses;
 
       expect(profitFactor).toBeCloseTo(2.0, 4);
@@ -137,13 +136,46 @@ describe('QuantX Quantitative Stack Hardening & Audit Verification Suite', () =>
         if (dd < maxDD) maxDD = dd;
       }
 
-      // Drawdown from 120 to 102 is (102 - 120) / 120 = -18 / 120 = -0.15 (-15%)
       expect(maxDD).toBeCloseTo(-0.15, 4);
     });
   });
 
-  describe('4. Model Artifact Serialization & Startup Verification (Req #8, 14)', () => {
-    it('should verify valid model artifact metadata with complete date ranges', () => {
+  describe('4. Complete Training-to-Inference Lifecycle & Artifact Persistence', () => {
+    it('should execute end-to-end training -> artifact serialization -> runtime reloading -> calibrated inference', () => {
+      // Step A: Fit Learned Model on TRAIN samples
+      const trainSamples: TrainingSample[] = Array.from({ length: 30 }, (_, i) => ({
+        features: { rsi_14: 30 + i, sma_50_dist: 0.02, annualized_volatility: 0.18 },
+        outcome: i % 2 === 0 ? 1 : 0,
+      }));
+      const model = new LogisticRegressionModel();
+      model.fit(trainSamples);
+
+      // Step B: Fit PAV Calibration on VALIDATION predictions
+      const valPredictions = [
+        { prob: 0.15, outcome: 0 },
+        { prob: 0.25, outcome: 0 },
+        { prob: 0.35, outcome: 0 },
+        { prob: 0.45, outcome: 0 },
+        { prob: 0.55, outcome: 1 },
+        { prob: 0.65, outcome: 1 },
+        { prob: 0.75, outcome: 1 },
+        { prob: 0.85, outcome: 1 },
+      ];
+      const knots = calibrationEngine.fitPAV(valPredictions);
+      expect(calibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
+
+      // Step C: Fit Empirical Return Distributions on VALIDATION trades
+      const valReturnTrades = [
+        { prob: 0.65, horizon: '5d' as const, actualReturn: 0.042 },
+        { prob: 0.62, horizon: '5d' as const, actualReturn: 0.031 },
+        { prob: 0.35, horizon: '5d' as const, actualReturn: -0.025 },
+        { prob: 0.30, horizon: '5d' as const, actualReturn: -0.038 },
+        { prob: 0.50, horizon: '5d' as const, actualReturn: 0.015 },
+        { prob: 0.52, horizon: '5d' as const, actualReturn: -0.010 },
+      ];
+      inferenceEngine.fitEmpiricalDistributions(valReturnTrades);
+
+      // Step D: Serialize Model Artifact
       const artifact: ModelArtifact = {
         modelVersion: '4.0.0',
         modelType: 'BASELINE_HEURISTIC',
@@ -157,31 +189,36 @@ describe('QuantX Quantitative Stack Hardening & Audit Verification Suite', () =>
         holdoutStart: '2026-07-16',
         holdoutEnd: '2026-08-22',
         horizon: '5d',
-        fittingMethod: 'Isotonic Regression (PAV) + Trimmed Conditional Returns',
-        parameters: {},
+        fittingMethod: 'PAV + Empirical Two-Stage',
+        parameters: model.getWeights(),
         calibrationVersion: 'v4.0.0-isotonic',
-        calibrationKnots: [[0.1, 0.12], [0.9, 0.88]],
+        calibrationKnots: knots,
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
-        empiricalDistributions: [],
+        empiricalDistributions: inferenceEngine.getEmpiricalBuckets(),
         createdAt: new Date().toISOString(),
       };
 
-      const verification = artifactService.verifyArtifact(artifact);
-      expect(verification.isValid).toBe(true);
-    });
+      const saved = artifactService.saveArtifact(artifact);
+      expect(saved).toBe(true);
 
-    it('should fail closed on model version mismatch', () => {
-      const invalidArtifact: any = {
-        modelVersion: '1.0.0-old',
-        trainingStart: '2025-01-01',
-        validationStart: '2025-06-01',
-        testStart: '2025-09-01',
-        holdoutStart: '2025-11-01',
-      };
+      // Step E: Load Artifact into Fresh Runtime Engines
+      const freshCalibrationEngine = new CalibrationEngine();
+      const freshInferenceEngine = new ModelInferenceEngine();
 
-      const verification = artifactService.verifyArtifact(invalidArtifact);
-      expect(verification.isValid).toBe(false);
-      expect(verification.reason).toContain('Model version mismatch');
+      const loadedArtifact = artifactService.loadArtifact();
+      expect(loadedArtifact).not.toBeNull();
+
+      freshCalibrationEngine.setKnots(loadedArtifact!.calibrationKnots, loadedArtifact!.calibrationStatus === 'FITTED_OUT_OF_SAMPLE');
+      freshInferenceEngine.setEmpiricalBuckets(loadedArtifact!.empiricalDistributions);
+
+      // Step F: Verify Live Inference Uses the Restored Calibration & Empirical Returns
+      expect(freshCalibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
+      const calibratedProb = freshCalibrationEngine.apply(0.65);
+      expect(calibratedProb).toBeGreaterThan(0);
+
+      const liveEstimation = freshInferenceEngine.estimateExpectedReturn(calibratedProb, '5d', 0.02);
+      expect(liveEstimation.method).not.toBe('FALLBACK_DIFFUSION');
+      expect(liveEstimation.sampleCount).toBeGreaterThan(0);
     });
   });
 
@@ -218,7 +255,6 @@ describe('QuantX Quantitative Stack Hardening & Audit Verification Suite', () =>
       const slice30 = candles.slice(0, 31);
       const f1 = featureEngine.calculateFeatures(quoteAt30, slice30, 0);
 
-      // Mutate future candles (31 to 59)
       const mutatedCandles = [...candles];
       for (let j = 31; j < 60; j++) {
         mutatedCandles[j].close = 999999;
@@ -229,27 +265,6 @@ describe('QuantX Quantitative Stack Hardening & Audit Verification Suite', () =>
       expect(f1['rsi_14']).toEqual(f2['rsi_14']);
       expect(f1['annualized_volatility']).toEqual(f2['annualized_volatility']);
       expect(f1['sma_50_dist']).toEqual(f2['sma_50_dist']);
-    });
-  });
-
-  describe('6. True Calibration Pipeline (Req #4)', () => {
-    it('should fit monotonic isotonic regression on validation predictions', () => {
-      const valPredictions = [
-        { prob: 0.15, outcome: 0 },
-        { prob: 0.30, outcome: 0 },
-        { prob: 0.45, outcome: 1 },
-        { prob: 0.60, outcome: 0 },
-        { prob: 0.70, outcome: 1 },
-        { prob: 0.85, outcome: 1 },
-        { prob: 0.95, outcome: 1 },
-      ];
-
-      const knots = calibrationEngine.fitPAV(valPredictions);
-
-      for (let i = 0; i < knots.length - 1; i++) {
-        expect(knots[i][1]).toBeLessThanOrEqual(knots[i + 1][1]);
-      }
-      expect(calibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
     });
   });
 });

@@ -1,9 +1,14 @@
-import { Controller, Get, Param } from '@nestjs/common';
+import { Controller, Get, Post, Param } from '@nestjs/common';
 import { QuantPredictionService } from './prediction.service';
 
 @Controller('prediction')
 export class PredictionController {
   constructor(private readonly predictionService: QuantPredictionService) {}
+
+  @Post('train')
+  async trainModel() {
+    return this.predictionService.trainPipeline();
+  }
 
   @Get('top-ranked')
   async getTopRanked() {

@@ -20,7 +20,7 @@ import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
 import { NewsFeatureEngine } from './engines/news-feature-engine';
 import { BacktestEngine } from './engines/backtest-engine';
-import { ModelArtifactService } from './engines/model-artifact.service';
+import { ModelArtifactService, ModelArtifact } from './engines/model-artifact.service';
 import { MODEL_CONFIG } from './engines/model-config';
 import { ModelRegistry } from './engines/model-registry';
 
@@ -28,6 +28,7 @@ import { ModelRegistry } from './engines/model-registry';
 export class QuantPredictionService implements OnModuleInit {
   private readonly logger = new Logger(QuantPredictionService.name);
   private cache = new Map<string, { data: StockPrediction; expiresAt: number }>();
+  private isTrainingRunning: boolean = false;
 
   constructor(
     @Inject(forwardRef(() => StockService))
@@ -47,28 +48,100 @@ export class QuantPredictionService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.logger.log('QuantPredictionService v4.0 initializing startup verification...');
+    this.logger.log('QuantPredictionService v4.0 initializing lifecycle & model artifact verification...');
 
-    // Load persisted model artifact if present
+    // 1. Try loading existing verified model artifact from disk
     const artifact = this.artifactService.loadArtifact();
     if (artifact) {
-      if (artifact.calibrationKnots && artifact.calibrationKnots.length > 0) {
-        this.calibrationEngine.setKnots(
-          artifact.calibrationKnots,
-          artifact.calibrationStatus === 'FITTED_OUT_OF_SAMPLE'
-        );
-      }
-      if (artifact.empiricalDistributions && artifact.empiricalDistributions.length > 0) {
-        this.inferenceEngine.setEmpiricalBuckets(artifact.empiricalDistributions);
-      }
-      if (artifact.parameters) {
-        this.inferenceEngine.getLearnedModel().deserialize({ weights: artifact.parameters });
-      }
+      this.applyModelArtifact(artifact);
       this.logger.log(
         `Loaded verified model artifact (Trained: ${artifact.trainingStart} to ${artifact.trainingEnd}, Calibration: ${artifact.calibrationStatus})`
       );
     } else {
-      this.logger.log('No prior artifact found. System starting in clean FALLBACK mode until backtest calibration is run.');
+      this.logger.log('No existing model artifact found. Initiating automated walk-forward training in background...');
+      // 2. Automatically trigger background training lifecycle to fit and persist artifact
+      setTimeout(() => {
+        this.trainPipeline().catch((err) => {
+          this.logger.warn(`Initial background training encountered error: ${err}`);
+        });
+      }, 3000);
+    }
+  }
+
+  /**
+   * Applies a loaded model artifact into the active runtime inference engines
+   */
+  private applyModelArtifact(artifact: ModelArtifact) {
+    if (artifact.calibrationKnots && artifact.calibrationKnots.length > 0) {
+      this.calibrationEngine.setKnots(
+        artifact.calibrationKnots,
+        artifact.calibrationStatus === 'FITTED_OUT_OF_SAMPLE'
+      );
+    }
+    if (artifact.empiricalDistributions && artifact.empiricalDistributions.length > 0) {
+      this.inferenceEngine.setEmpiricalBuckets(artifact.empiricalDistributions);
+    }
+    if (artifact.parameters) {
+      this.inferenceEngine.getLearnedModel().deserialize({ weights: artifact.parameters });
+    }
+    this.cache.clear();
+  }
+
+  /**
+   * Complete Training Lifecycle:
+   * TRAIN -> Fit Learned Model -> VALIDATION -> Fit PAV Calibration & Empirical Distributions -> TEST/HOLDOUT Evaluation -> Persist Artifact -> Reload Runtime
+   */
+  async trainPipeline(): Promise<{
+    success: boolean;
+    modelVersion: string;
+    calibrationStatus: string;
+    totalTrades: number;
+    metrics: any;
+    timestamp: string;
+  }> {
+    if (this.isTrainingRunning) {
+      this.logger.log('Training pipeline is already running. Skipping duplicate invocation.');
+      const artifact = this.artifactService.loadArtifact();
+      return {
+        success: true,
+        modelVersion: ModelRegistry.getModelVersion(),
+        calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
+        totalTrades: 0,
+        metrics: artifact?.metrics || {},
+        timestamp: new Date().toISOString(),
+      };
+    }
+
+    this.isTrainingRunning = true;
+    this.logger.log('Starting full walk-forward model training & calibration lifecycle...');
+
+    try {
+      const backtestResult = await this.backtestEngine.runFullBacktest();
+
+      // Reload newly generated artifact into active memory
+      const artifact = this.artifactService.loadArtifact();
+      if (artifact) {
+        this.applyModelArtifact(artifact);
+      }
+
+      this.logger.log('Training & calibration lifecycle completed successfully. Model artifact active in runtime.');
+
+      return {
+        success: true,
+        modelVersion: backtestResult.modelVersion,
+        calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
+        totalTrades: backtestResult.totalTrades,
+        metrics: {
+          overallWinRate: backtestResult.overallWinRate,
+          annualizedReturn: backtestResult.annualizedReturn,
+          overallSharpe: backtestResult.overallSharpe,
+          overallSortino: backtestResult.overallSortino,
+          holdoutPerformance: backtestResult.holdoutPerformance,
+        },
+        timestamp: new Date().toISOString(),
+      };
+    } finally {
+      this.isTrainingRunning = false;
     }
   }
 
@@ -527,6 +600,7 @@ export class QuantPredictionService implements OnModuleInit {
 
   getModelStatus() {
     const model = ModelRegistry.getActiveModel();
+    const artifact = this.artifactService.loadArtifact();
     return {
       version: model.modelVersion,
       modelType: model.modelType,
@@ -537,10 +611,11 @@ export class QuantPredictionService implements OnModuleInit {
       description: model.description,
       featureCount: model.activeFeatures.length,
       calibrationMethod: model.calibrationMethod,
-      trainingWindow: model.trainingWindow,
-      validationWindow: model.validationWindow,
-      testWindow: model.testWindow,
-      holdoutWindow: model.holdoutWindow,
+      trainingWindow: artifact ? `${artifact.trainingStart} to ${artifact.trainingEnd}` : model.trainingWindow,
+      validationWindow: artifact ? `${artifact.validationStart} to ${artifact.validationEnd}` : model.validationWindow,
+      testWindow: artifact ? `${artifact.testStart} to ${artifact.testEnd}` : model.testWindow,
+      holdoutWindow: artifact ? `${artifact.holdoutStart} to ${artifact.holdoutEnd}` : model.holdoutWindow,
+      isFittedArtifactActive: artifact !== null,
     };
   }
 
@@ -551,6 +626,12 @@ export class QuantPredictionService implements OnModuleInit {
     }
 
     const result = await this.backtestEngine.runFullBacktest();
+
+    // Reload active engines with newly fitted artifact
+    const artifact = this.artifactService.loadArtifact();
+    if (artifact) {
+      this.applyModelArtifact(artifact);
+    }
 
     const response = {
       modelVersion: result.modelVersion,
