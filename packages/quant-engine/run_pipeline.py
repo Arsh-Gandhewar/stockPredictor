@@ -1,68 +1,147 @@
+"""
+Master Orchestration Pipeline for QuantX Quantitative Research Engine.
+Runs end-to-end data ingestion, point-in-time feature extraction, walk-forward training,
+isotonic calibration, equity curve backtesting, and canonical ONNX artifact export.
+"""
 import os
 import sys
-import yaml
 import glob
 import pandas as pd
+import numpy as np
+
 sys.path.append(os.path.dirname(__file__))
 
-from data.download_historical import download_data
-from features.feature_engine import calculate_features
+from universe import NSE_UNIVERSE, INDICES
+from data.download_historical import download_data, DATA_DIR
+from features.feature_engine import calculate_features, FEATURE_NAMES
 from targets.target_definition import compute_targets
-from models.train_model import train_walk_forward, get_model_json
+from models.train_model import train_horizon_model
 from calibration.calibrate import calibrate_probabilities
-from backtest.backtest_engine import run_backtest
+from backtest.backtest_engine import run_portfolio_backtest
 from export.export_model import export_artifacts
+from costs import TransactionCostEngine
 
-def main():
-    print("1. Downloading Data...")
-    # download_data() # commented for speed in testing, should be uncommented in production
+def run_full_pipeline():
+    print("=" * 60)
+    print("QUANTX AUTHORITATIVE RESEARCH PIPELINE EXECUTION")
+    print("=" * 60)
     
-    print("2. Processing Features & Targets...")
-    data_dir = os.path.join(os.path.dirname(__file__), 'data', 'historical')
-    files = glob.glob(f"{data_dir}/*.parquet")
+    # 1. Download / Load Data
+    print("\n[1/7] Ingesting Historical Market Data...")
+    download_data(period="5y", force_refresh=False)
     
-    if not files:
-        print("No data found! Please run download_data() first.")
-        return
-        
-    all_metrics = {}
+    # Load NIFTY benchmark for relative features
+    nifty_file = os.path.join(DATA_DIR, "NSEI.parquet")
+    nifty_df = pd.read_parquet(nifty_file) if os.path.exists(nifty_file) else None
     
-    for file in files[:2]: # Demo: run on a subset or aggregate all
-        ticker = os.path.basename(file).split('.')[0]
-        print(f"Processing {ticker}...")
-        df = pd.read_parquet(file)
-        if len(df) < 300: continue
-        
-        df = calculate_features(df)
-        df = compute_targets(df)
-        
-        print("3. Training Model...")
-        features = [c for c in df.columns if c not in ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'] and not c.startswith('future_') and not c.startswith('target_')]
-        target = 'target_5d'
-        model, val_df = train_walk_forward(df, features, target)
-        
-        if model is None:
+    # 2. Compute Point-in-Time Features & Targets across Universe
+    print("\n[2/7] Computing Point-in-Time 25-Factor Features & Net-Return Targets...")
+    files = glob.glob(f"{DATA_DIR}/*.parquet")
+    all_processed_dfs = []
+    
+    cost_engine = TransactionCostEngine('BASE_COST')
+    
+    for f in files:
+        ticker = os.path.basename(f).replace('.parquet', '')
+        if ticker in ['NSEI', 'BSESN', 'NSEBANK', 'INDIAVIX']:
             continue
             
-        model_json = get_model_json(model)
+        df = pd.read_parquet(f)
+        if len(df) < 200:
+            continue
+            
+        # Calculate features & targets
+        feat_df = calculate_features(df, nifty_df)
+        targ_df = compute_targets(feat_df, cost_engine)
+        targ_df['ticker'] = ticker
+        all_processed_dfs.append(targ_df)
         
-        print("4. Calibrating...")
-        y_val = val_df[target]
-        y_prob = model.predict_proba(val_df[features])[:, 1]
-        iso, cal_lookup, cal_metrics = calibrate_probabilities(y_val, y_prob)
+    if not all_processed_dfs:
+        raise RuntimeError("No historical data available to train models!")
         
-        print("5. Backtesting...")
-        val_preds = pd.Series(y_prob, index=val_df.index)
-        metrics = run_backtest(val_df, val_preds, 5)
-        metrics['calibration'] = cal_metrics
-        all_metrics[ticker] = metrics
+    combined_df = pd.concat(all_processed_dfs).sort_index()
+    print(f"Processed {len(all_processed_dfs)} securities across {len(combined_df)} total observations.")
+    
+    # 3. Train Models across Horizons (1d, 5d, 20d) with Rolling Walk-Forward
+    print("\n[3/7] Training Rolling Walk-Forward Models for 1d, 5d, and 20d Horizons...")
+    models_dict = {}
+    calibration_dict = {}
+    empirical_quantiles = {}
+    walk_forward_folds = []
+    holdout_metrics = {}
+    
+    for h in ['1d', '5d', '20d']:
+        print(f"--- Training Horizon {h} ---")
+        h_res = train_horizon_model(combined_df, FEATURE_NAMES, h)
+        models_dict[h] = h_res['prod_model']
         
-        print("6. Exporting...")
-        export_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'apps', 'api', 'src', 'modules', 'prediction', 'models'))
-        feature_config = {"features": features, "version": "1.0", "ticker": ticker}
-        export_artifacts(model_json, cal_lookup, feature_config, all_metrics, export_path)
+        # Calibrate validation predictions
+        calib_res = calibrate_probabilities(h_res['val_predictions'])
+        calibration_dict[h] = calib_res
         
-    print("Pipeline complete.")
+        # Empirical return quantiles (85th Bull, 50th Base, 15th Bear)
+        h_days = 1 if h == '1d' else (5 if h == '5d' else 20)
+        returns_col = f'future_net_ret_{h_days}d'
+        if returns_col in combined_df.columns:
+            valid_returns = combined_df[returns_col].dropna()
+            bull_q = float(round(valid_returns.quantile(0.85), 4))
+            base_q = float(round(valid_returns.quantile(0.50), 4))
+            bear_q = float(round(valid_returns.quantile(0.15), 4))
+        else:
+            bull_q, base_q, bear_q = 0.045, 0.015, -0.025
+            
+        empirical_quantiles[h] = {
+            'bull_85th': bull_q,
+            'base_50th': base_q,
+            'bear_15th': bear_q,
+        }
+        
+        if h == '5d':
+            walk_forward_folds = h_res['fold_metrics']
+            holdout_metrics = h_res['holdout_metrics']
+            date_bounds = {
+                'trainingStart': h_res['training_bounds']['start'],
+                'trainingEnd': h_res['training_bounds']['end'],
+                'validationStart': walk_forward_folds[0]['valStart'] if walk_forward_folds else '2025-01-01',
+                'validationEnd': walk_forward_folds[0]['valEnd'] if walk_forward_folds else '2025-06-30',
+                'testStart': walk_forward_folds[0]['testStart'] if walk_forward_folds else '2025-07-01',
+                'testEnd': walk_forward_folds[0]['testEnd'] if walk_forward_folds else '2025-12-31',
+                'holdoutStart': h_res['holdout_bounds']['start'],
+                'holdoutEnd': h_res['holdout_bounds']['end'],
+            }
+            
+    # 4. Out-of-Sample Portfolio Backtest
+    print("\n[4/7] Simulating Out-of-Sample Portfolio Daily Equity Curve...")
+    prod_5d_model = models_dict['5d']
+    combined_clean = combined_df.dropna(subset=FEATURE_NAMES).copy()
+    combined_clean['pred_prob'] = prod_5d_model.predict_proba(combined_clean[FEATURE_NAMES])[:, 1]
+    
+    backtest_res = run_portfolio_backtest(combined_clean, horizon_days=5, prob_threshold=0.55, cost_regime='BASE_COST')
+    print(f"Backtest: Win Rate={backtest_res['winRate']}%, CAGR={backtest_res['cagr']}%, Sharpe={backtest_res['sharpe']}, MaxDD={backtest_res['maxDrawdown']}%, Trades={backtest_res['totalTrades']}")
+    
+    # 5. Export Canonical Artifact & ONNX Graphs
+    print("\n[5/7] Exporting ONNX Models and Canonical Metadata Manifest...")
+    base_export_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'apps', 'api', 'data', 'artifacts'))
+    
+    manifest = export_artifacts(
+        models_dict=models_dict,
+        calibration_dict=calibration_dict,
+        empirical_quantiles_dict=empirical_quantiles,
+        walk_forward_folds=walk_forward_folds,
+        holdout_metrics=holdout_metrics,
+        backtest_metrics=backtest_res,
+        feature_schema=FEATURE_NAMES,
+        date_bounds=date_bounds,
+        base_export_dir=base_export_dir,
+        model_version="5.0.0",
+        feature_version="v5.0.0-multi-factor-25"
+    )
+    
+    print("\n[6/7] Pipeline execution successfully completed!")
+    print(f"Active Artifact ID: {manifest['id']}")
+    print(f"Checksum: {manifest['checksum']}")
+    print("=" * 60)
+    return manifest
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    run_full_pipeline()

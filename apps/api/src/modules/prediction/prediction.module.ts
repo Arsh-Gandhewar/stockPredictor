@@ -14,6 +14,7 @@ import { NewsFeatureEngine } from './engines/news-feature-engine';
 import { BacktestEngine } from './engines/backtest-engine';
 import { ModelArtifactService } from './engines/model-artifact.service';
 import { ProductionScorecardService } from './engines/production-scorecard';
+import { OnnxInferenceEngine } from './engines/onnx-inference.engine';
 
 @Module({
   imports: [forwardRef(() => StockModule), NewsModule, DatabaseModule],
@@ -22,6 +23,7 @@ import { ProductionScorecardService } from './engines/production-scorecard';
     QuantPredictionService,
     FeatureEngine,
     ModelInferenceEngine,
+    OnnxInferenceEngine,
     CalibrationEngine,
     RegimeEngine,
     RiskEngine,

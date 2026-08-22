@@ -1,26 +1,39 @@
+"""
+Directional Net-Return Target Formulation Engine.
+Formulates mathematically interpretable directional binary targets:
+y = 1 if forward net return (after centralized friction & slippage) > 0, y = 0 otherwise.
+"""
 import pandas as pd
 import numpy as np
-import yaml
-import os
+import os, sys
 
-def load_config():
-    with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.yaml'), 'r') as f:
-        return yaml.safe_load(f)
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from costs import TransactionCostEngine
 
-def compute_targets(df):
-    config = load_config()
-    horizons = config['targets']['horizons']
-    thresholds = config['targets']['thresholds']
-    
+TARGET_HORIZONS = [1, 5, 20]
+
+def compute_targets(df: pd.DataFrame, cost_engine: TransactionCostEngine = None) -> pd.DataFrame:
     df = df.copy()
+    if cost_engine is None:
+        cost_engine = TransactionCostEngine('BASE_COST')
+        
+    friction_rate = cost_engine.calculate_round_trip_cost_rate()
     
-    for h in horizons:
-        # Shift negatively to align future returns with current features
-        df[f'future_ret_{h}d'] = df['Close'].shift(-h) / df['Close'] - 1.0
-        t = thresholds[h]
-        df[f'target_{h}d'] = (df[f'future_ret_{h}d'] > t).astype(int)
+    for h in TARGET_HORIZONS:
+        # Gross forward return from close[t] to close[t+h]
+        future_close = df['Close'].shift(-h)
+        gross_ret = (future_close - df['Close']) / df['Close']
         
-        # Prevent look-ahead bias and zero-filling by enforcing NaN where future is unknown
-        df.loc[df[f'future_ret_{h}d'].isna(), f'target_{h}d'] = np.nan
+        # Net forward return after deducting total round-trip transaction friction
+        net_ret = gross_ret - friction_rate
         
+        df[f'future_gross_ret_{h}d'] = gross_ret
+        df[f'future_net_ret_{h}d'] = net_ret
+        
+        # Binary directional target: 1 if profitable net of costs, 0 otherwise
+        target_series = (net_ret > 0.0).astype(float)
+        # Prevent lookahead contamination: set target to NaN where future is unknown
+        target_series[future_close.isna()] = np.nan
+        df[f'target_{h}d'] = target_series
+
     return df

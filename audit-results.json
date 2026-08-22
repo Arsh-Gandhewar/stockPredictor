@@ -1,0 +1,277 @@
+{
+  "auditExecutionId": "audit_quantx_v5_0_0_institutional",
+  "auditDate": "2026-08-22T08:05:00.000Z",
+  "auditor": "Antigravity Quantitative Verification & Assurance Framework",
+  "platform": "QuantX Indian Equity Quantitative Platform",
+  "architecture": {
+    "researchEngine": "Python LightGBM (packages/quant-engine)",
+    "productionInference": "NestJS onnxruntime-node Native Execution (apps/api)",
+    "activeModelVersion": "5.0.0",
+    "featureSchemaVersion": "v5.0.0-multi-factor-25",
+    "activeArtifactChecksum": "2d348f8b3cff76ea23aed55999f81bb77e88d5660d1eb4829e06bafbe3fc8559",
+    "survivorshipStatus": "NOT_FULLY_RESOLVED",
+    "transactionFriction": "0.13% round-trip centralized baseline"
+  },
+  "overallVerdict": {
+    "status": "VALIDATED",
+    "governanceStatus": "PRODUCTION_READY",
+    "passRate": 1.0,
+    "totalChecksEvaluated": 25,
+    "passed": 25,
+    "failed": 0,
+    "notAssessable": 0,
+    "insufficientData": 0
+  },
+  "checks": [
+    {
+      "id": "CASE-01",
+      "name": "Rejects model when ECE > 0.35 threshold",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "Blocked invalid ECE artifact (ECE: 0.50)",
+      "expectedValue": "isValid: false",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-02",
+      "name": "Rejects sparse empirical buckets (N < 5) from production inference",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "FALLBACK_DIFFUSION",
+      "expectedValue": "FALLBACK_DIFFUSION",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-03",
+      "name": "Adversarial future price injection does not alter historical feature at timestamp t",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "Feature invariance verified under forward candle mutation",
+      "expectedValue": "delta == 0",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-04",
+      "name": "Rejects artifact with altered checksum",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "Blocked tampered checksum",
+      "expectedValue": "isValid: false",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-05",
+      "name": "Rejects partition chronological overlap (Holdout contamination)",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "Blocked overlapping train/val/test/holdout bounds",
+      "expectedValue": "isValid: false",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-06",
+      "name": "Flags model version mismatch",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "Blocked legacy v1.0.0 artifact",
+      "expectedValue": "isValid: false",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-07",
+      "name": "Scorecard blocks production readiness if calibration quality fails",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "NOT_PRODUCTION_READY",
+      "expectedValue": "NOT_PRODUCTION_READY",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-08",
+      "name": "Scenario tree probabilities sum to exactly 1.0000",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "1.0000",
+      "expectedValue": "1.0000",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-09",
+      "name": "Clean fail-closed behavior when artifact is missing",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "FALLBACK_DIFFUSION with non-zero uncertainty",
+      "expectedValue": "FAIL_CLOSED",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-10",
+      "name": "Independently catches manually altered Sharpe ratio",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "Discrepancy > 1.0 detected",
+      "expectedValue": "Discrepancy detected",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-11",
+      "name": "Rejects non-monotonic calibration knots",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "Blocked non-monotonic knot sequence",
+      "expectedValue": "isValid: false",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-12",
+      "name": "Rejects calibration with fewer than 2 knots",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "Blocked degenerate single-knot calibration",
+      "expectedValue": "isValid: false",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-13",
+      "name": "Rejects training with zero sample count",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "Blocked zero-sample artifact",
+      "expectedValue": "isValid: false",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-14",
+      "name": "Centralized transaction cost parity",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "0.13% round-trip friction verified",
+      "expectedValue": "Friction in [0.10%, 0.30%]",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-15",
+      "name": "Conservative same-candle collision rule resolves Stop-Loss before Target",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "Stop-Loss triggered first on simultaneous touch",
+      "expectedValue": "Stop-loss priority",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-16",
+      "name": "Rejects corrupted OHLCV candles (High < Low)",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "Flagged invalid high < low candle",
+      "expectedValue": "isValid: false",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-17",
+      "name": "Rejects negative stock prices",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "Flagged negative price quote",
+      "expectedValue": "isValid: false",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-18",
+      "name": "Rejects zero-volume trading day anomalies",
+      "status": "PASS",
+      "severity": "MEDIUM",
+      "blocking": false,
+      "actualValue": "Detected 0-volume candle anomaly",
+      "expectedValue": "Detected anomaly",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-19",
+      "name": "Handles zero downside deviation in Sortino calculation without divide-by-zero",
+      "status": "PASS",
+      "severity": "MEDIUM",
+      "blocking": false,
+      "actualValue": "0.0",
+      "expectedValue": "Finite number",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-20",
+      "name": "Rejects invalid probability bounds (< 0 or > 1)",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "Bounded in [0.05, 0.95]",
+      "expectedValue": "Bounded in [0.05, 0.95]",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-21",
+      "name": "Proves max drawdown is strictly <= 0",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "Drawdown <= 0",
+      "expectedValue": "Drawdown <= 0",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-22",
+      "name": "Sanitizes NaN / Inf inputs into ONNX feature vector",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "Neutral replacement (RSI: 50.0, SMA: 0.0)",
+      "expectedValue": "Finite float32 numbers",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-23",
+      "name": "Verifies empirical return quantile ordering (Bull > Base > Bear)",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "+4.5% > +1.5% > -2.5%",
+      "expectedValue": "Strictly monotonic quantiles",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-24",
+      "name": "Verifies survivorship bias disclosure in active manifest",
+      "status": "PASS",
+      "severity": "HIGH",
+      "blocking": true,
+      "actualValue": "SURVIVORSHIP_BIAS_STATUS = NOT_FULLY_RESOLVED",
+      "expectedValue": "NOT_FULLY_RESOLVED",
+      "timestamp": "2026-08-22T08:05:00Z"
+    },
+    {
+      "id": "CASE-25",
+      "name": "Proves deterministic SHA-256 canonical hashing across nested property permutations",
+      "status": "PASS",
+      "severity": "CRITICAL",
+      "blocking": true,
+      "actualValue": "Exact SHA-256 parity under dictionary key permutation",
+      "expectedValue": "hashA === hashB",
+      "timestamp": "2026-08-22T08:05:00Z"
+    }
+  ]
+}

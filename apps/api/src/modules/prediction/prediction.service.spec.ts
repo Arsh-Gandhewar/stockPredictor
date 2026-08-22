@@ -358,6 +358,8 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
         calibrationMetrics: calibMetrics,
         empiricalDistributions: inferenceEngine.getEmpiricalBuckets(),
+        survivorshipStatus: 'NOT_FULLY_RESOLVED',
+        survivorshipDisclosure: 'Point-in-time trailing liquidity on NSE equities with survivorship limitation explicitly documented.',
         statisticalGatePassed: true,
         gateDetails: {
           sampleSufficiency: true,
@@ -382,8 +384,8 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
       const freshCalibrationEngine = new CalibrationEngine();
       const freshInferenceEngine = new ModelInferenceEngine();
 
-      freshCalibrationEngine.setKnots(loadedArtifact!.calibrationKnots, loadedArtifact!.calibrationStatus === 'FITTED_OUT_OF_SAMPLE');
-      freshInferenceEngine.setEmpiricalBuckets(loadedArtifact!.empiricalDistributions);
+      freshCalibrationEngine.setKnots(loadedArtifact!.calibrationKnots!, loadedArtifact!.calibrationStatus === 'FITTED_OUT_OF_SAMPLE');
+      freshInferenceEngine.setEmpiricalBuckets(loadedArtifact!.empiricalDistributions!);
 
       expect(freshCalibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
       const calibratedProb = freshCalibrationEngine.apply(0.60);

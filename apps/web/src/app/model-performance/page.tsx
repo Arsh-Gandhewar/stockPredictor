@@ -65,8 +65,8 @@ export default function ModelPerformancePage() {
   const totalTrades = perf?.totalTrades ?? 0;
   const stocksEvaluated = perf?.stocksEvaluated ?? 0;
   const datasetPeriod = perf?.datasetPeriod ?? '1 year';
-  const overallSharpe = perf?.overallSharpe ?? 1.12;
-  const overallSortino = perf?.overallSortino ?? 1.58;
+  const overallSharpe = perf?.overallSharpe ?? null;
+  const overallSortino = perf?.overallSortino ?? null;
 
   const h1d = perf?.horizons?.['1d'];
   const h5d = perf?.horizons?.['5d'];
@@ -239,7 +239,7 @@ export default function ModelPerformancePage() {
                   <Scale className="h-4 w-4 text-primary" />
                 </div>
                 <div className="text-2xl font-bold font-mono text-foreground mt-1">
-                  {overallSharpe > 0 ? overallSharpe.toFixed(2) : 'N/A'} / <span className="text-emerald-400">{overallSortino > 0 ? overallSortino.toFixed(2) : 'N/A'}</span>
+                  {overallSharpe !== null && overallSharpe > 0 ? overallSharpe.toFixed(2) : 'N/A'} / <span className="text-emerald-400">{overallSortino !== null && overallSortino > 0 ? overallSortino.toFixed(2) : 'N/A'}</span>
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-1">
@@ -416,13 +416,13 @@ export default function ModelPerformancePage() {
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground">Sharpe / Sortino:</span>
                     <span className="font-mono text-foreground font-semibold">
-                      {(h1d?.sharpeRatio ?? 0.85).toFixed(2)} / {(h1d?.sortinoRatio ?? 1.15).toFixed(2)}
+                      {h1d?.sharpeRatio !== undefined && h1d?.sharpeRatio !== null ? h1d.sharpeRatio.toFixed(2) : 'N/A'} / {h1d?.sortinoRatio !== undefined && h1d?.sortinoRatio !== null ? h1d.sortinoRatio.toFixed(2) : 'N/A'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground">Brier Score (MSE):</span>
                     <span className="font-mono text-foreground font-semibold">
-                      {(h1d?.brierScore ?? 0.18).toFixed(2)}
+                      {h1d?.brierScore !== undefined && h1d?.brierScore !== null ? h1d.brierScore.toFixed(2) : 'N/A'}
                     </span>
                   </div>
                   <div className="w-full bg-muted/40 h-1.5 rounded-full overflow-hidden mt-2">
@@ -458,13 +458,13 @@ export default function ModelPerformancePage() {
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground">Sharpe / Sortino:</span>
                     <span className="font-mono text-emerald-400 font-bold">
-                      {(h5d?.sharpeRatio ?? 1.12).toFixed(2)} / {(h5d?.sortinoRatio ?? 1.58).toFixed(2)}
+                      {h5d?.sharpeRatio !== undefined && h5d?.sharpeRatio !== null ? h5d.sharpeRatio.toFixed(2) : 'N/A'} / {h5d?.sortinoRatio !== undefined && h5d?.sortinoRatio !== null ? h5d.sortinoRatio.toFixed(2) : 'N/A'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground">Brier Score (MSE):</span>
                     <span className="font-mono text-foreground font-semibold">
-                      {(h5d?.brierScore ?? 0.16).toFixed(2)}
+                      {h5d?.brierScore !== undefined && h5d?.brierScore !== null ? h5d.brierScore.toFixed(2) : 'N/A'}
                     </span>
                   </div>
                   <div className="w-full bg-muted/40 h-1.5 rounded-full overflow-hidden mt-2">
@@ -500,13 +500,13 @@ export default function ModelPerformancePage() {
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground">Sharpe / Sortino:</span>
                     <span className="font-mono text-foreground font-semibold">
-                      {(h20d?.sharpeRatio ?? 1.28).toFixed(2)} / {(h20d?.sortinoRatio ?? 1.84).toFixed(2)}
+                      {h20d?.sharpeRatio !== undefined && h20d?.sharpeRatio !== null ? h20d.sharpeRatio.toFixed(2) : 'N/A'} / {h20d?.sortinoRatio !== undefined && h20d?.sortinoRatio !== null ? h20d.sortinoRatio.toFixed(2) : 'N/A'}
                     </span>
                   </div>
                   <div className="flex justify-between items-center text-xs">
                     <span className="text-muted-foreground">Brier Score (MSE):</span>
                     <span className="font-mono text-foreground font-semibold">
-                      {(h20d?.brierScore ?? 0.15).toFixed(2)}
+                      {h20d?.brierScore !== undefined && h20d?.brierScore !== null ? h20d.brierScore.toFixed(2) : 'N/A'}
                     </span>
                   </div>
                   <div className="w-full bg-muted/40 h-1.5 rounded-full overflow-hidden mt-2">

@@ -1,13 +1,40 @@
+"""
+Strict Point-in-Time Quantitative Feature Engineering Engine.
+Generates 25 deterministic technical, momentum, volatility, and benchmark features with zero lookahead bias.
+"""
 import pandas as pd
 import numpy as np
-import yaml
-import os
+from typing import List, Optional
 
-def load_config():
-    with open(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config.yaml'), 'r') as f:
-        return yaml.safe_load(f)
+FEATURE_NAMES: List[str] = [
+    'rsi_14',
+    'macd_hist',
+    'sma_20_dist',
+    'sma_50_dist',
+    'ema_20_dist',
+    'atr_percent',
+    'bb_width',
+    'stoch_k',
+    'volume_z_score',
+    'annualized_volatility',
+    'downside_deviation',
+    'beta_nifty',
+    'relative_strength_nifty',
+    'momentum_5',
+    'momentum_20',
+    'ret_1d',
+    'ret_5d',
+    'ret_20d',
+    'gap_pct',
+    'dist_52w_high',
+    'dist_52w_low',
+    'roc_12',
+    'rel_volume',
+    'vol_20d',
+    'vol_60d',
+]
 
-def calculate_rsi(series, period=14):
+def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
@@ -16,68 +43,109 @@ def calculate_rsi(series, period=14):
     rs = avg_gain / avg_loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
-def calculate_atr(df, period=14):
+def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     high_low = df['High'] - df['Low']
-    high_close = (df['High'] - df['Close'].shift()).abs()
-    low_close = (df['Low'] - df['Close'].shift()).abs()
+    high_close = (df['High'] - df['Close'].shift(1)).abs()
+    low_close = (df['Low'] - df['Close'].shift(1)).abs()
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-def calculate_features(df):
-    config = load_config()
-    lookbacks = config['features']['lookback_periods']
-    
+def calculate_features(df: pd.DataFrame, benchmark_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+    """
+    Computes all 25 point-in-time features strictly using historical candles at or before timestamp t.
+    """
     df = df.copy()
     df.sort_index(inplace=True)
     
-    # Missing data handled as NaN, never zero fill for features
+    close = df['Close']
+    open_p = df['Open']
+    high = df['High']
+    low = df['Low']
+    vol = df['Volume']
     
-    # Price features
-    for lb in lookbacks:
-        df[f'ret_{lb}d'] = df['Close'].pct_change(lb)
+    # 1. Momentum & Oscillators
+    df['rsi_14'] = calculate_rsi(close, 14).fillna(50.0)
+    
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd_line = ema12 - ema26
+    macd_signal = macd_line.ewm(span=9, adjust=False).mean()
+    df['macd_hist'] = (macd_line - macd_signal) / close.replace(0, np.nan)
+    
+    low14 = low.rolling(14).min()
+    high14 = high.rolling(14).max()
+    df['stoch_k'] = (100 * (close - low14) / (high14 - low14).replace(0, np.nan)).fillna(50.0)
+    df['roc_12'] = (close.pct_change(12) * 100).fillna(0.0)
+    
+    # 2. Moving Average Distance & Trend
+    sma20 = close.rolling(20).mean()
+    sma50 = close.rolling(50).mean()
+    ema20 = close.ewm(span=20, adjust=False).mean()
+    
+    df['sma_20_dist'] = ((close - sma20) / sma20.replace(0, np.nan)).fillna(0.0)
+    df['sma_50_dist'] = ((close - sma50) / sma50.replace(0, np.nan)).fillna(0.0)
+    df['ema_20_dist'] = ((close - ema20) / ema20.replace(0, np.nan)).fillna(0.0)
+    
+    # 3. Volatility & Bands
+    atr14 = calculate_atr(df, 14)
+    df['atr_percent'] = (atr14 / close.replace(0, np.nan)).fillna(0.02)
+    
+    std20 = close.rolling(20).std()
+    bb_upper = sma20 + 2 * std20
+    bb_lower = sma20 - 2 * std20
+    df['bb_width'] = ((bb_upper - bb_lower) / sma20.replace(0, np.nan)).fillna(0.05)
+    
+    daily_returns = close.pct_change()
+    df['vol_20d'] = (daily_returns.rolling(20).std() * np.sqrt(252)).fillna(0.20)
+    df['vol_60d'] = (daily_returns.rolling(60).std() * np.sqrt(252)).fillna(0.20)
+    df['annualized_volatility'] = df['vol_20d']
+    
+    downside_returns = daily_returns.clip(upper=0)
+    df['downside_deviation'] = (downside_returns.rolling(20).std() * np.sqrt(252)).fillna(0.15)
+    
+    # 4. Multi-Horizon Returns & Price Action
+    df['ret_1d'] = close.pct_change(1).fillna(0.0)
+    df['ret_5d'] = close.pct_change(5).fillna(0.0)
+    df['ret_20d'] = close.pct_change(20).fillna(0.0)
+    df['momentum_5'] = df['ret_5d']
+    df['momentum_20'] = df['ret_20d']
+    
+    prev_close = close.shift(1)
+    df['gap_pct'] = ((open_p - prev_close) / prev_close.replace(0, np.nan)).fillna(0.0)
+    
+    rolling_252_high = high.rolling(252, min_periods=40).max()
+    rolling_252_low = low.rolling(252, min_periods=40).min()
+    df['dist_52w_high'] = ((close - rolling_252_high) / rolling_252_high.replace(0, np.nan)).fillna(0.0)
+    df['dist_52w_low'] = ((close - rolling_252_low) / rolling_252_low.replace(0, np.nan)).fillna(0.0)
+    
+    # 5. Volume Features
+    vol_mean_20 = vol.rolling(20).mean()
+    vol_std_20 = vol.rolling(20).std().replace(0, np.nan)
+    df['volume_z_score'] = ((vol - vol_mean_20) / vol_std_20).clip(-3.0, 3.0).fillna(0.0)
+    df['rel_volume'] = (vol / vol_mean_20.replace(0, np.nan)).clip(0.1, 10.0).fillna(1.0)
+    
+    # 6. Benchmark Features (Nifty 50)
+    if benchmark_df is not None and len(benchmark_df) > 0:
+        bench_close = benchmark_df['Close'].reindex(df.index).ffill()
+        bench_returns = bench_close.pct_change()
         
-    df['gap_pct'] = (df['Open'] - df['Close'].shift(1)) / df['Close'].shift(1)
-    df['dist_52w_high'] = df['Close'] / df['Close'].rolling(252, min_periods=100).max() - 1
-    df['dist_52w_low'] = df['Close'] / df['Close'].rolling(252, min_periods=100).min() - 1
-    
-    # Trend
-    for lb in [20, 50, 100, 200]:
-        df[f'sma_{lb}'] = df['Close'].rolling(lb).mean()
-        df[f'price_to_sma_{lb}'] = df['Close'] / df[f'sma_{lb}']
+        # 60-day rolling Beta vs Nifty
+        cov = daily_returns.rolling(60).cov(bench_returns)
+        var_bench = bench_returns.rolling(60).var().replace(0, np.nan)
+        df['beta_nifty'] = (cov / var_bench).clip(0.2, 3.0).fillna(1.0)
         
-    for lb in [9, 20, 50]:
-        df[f'ema_{lb}'] = df['Close'].ewm(span=lb, adjust=False).mean()
+        # 20-day Relative Strength vs Nifty
+        stock_perf_20 = close.pct_change(20)
+        bench_perf_20 = bench_close.pct_change(20)
+        df['relative_strength_nifty'] = (stock_perf_20 - bench_perf_20).fillna(0.0)
+    else:
+        df['beta_nifty'] = 1.0
+        df['relative_strength_nifty'] = 0.0
         
-    # Momentum
-    for lb in [7, 14, 21]:
-        df[f'rsi_{lb}'] = calculate_rsi(df['Close'], period=lb)
+    # Ensure all NaN in feature columns are replaced with neutral values
+    for feat in FEATURE_NAMES:
+        if feat not in df.columns:
+            df[feat] = 0.0
+        df[feat] = df[feat].replace([np.inf, -np.inf], np.nan).fillna(0.0)
         
-    ema12 = df['Close'].ewm(span=12, adjust=False).mean()
-    ema26 = df['Close'].ewm(span=26, adjust=False).mean()
-    df['macd'] = ema12 - ema26
-    df['macd_signal'] = df['macd'].ewm(span=9, adjust=False).mean()
-    df['macd_hist'] = df['macd'] - df['macd_signal']
-    
-    df['roc'] = df['Close'].pct_change(12) * 100
-    
-    low14 = df['Low'].rolling(14).min()
-    high14 = df['High'].rolling(14).max()
-    df['stoch'] = 100 * ((df['Close'] - low14) / (high14 - low14).replace(0, np.nan))
-    
-    # Volatility
-    df['atr_14'] = calculate_atr(df, period=14)
-    df['atr_pct'] = df['atr_14'] / df['Close']
-    df['vol_20d'] = df['Close'].pct_change().rolling(20).std() * np.sqrt(252)
-    df['vol_60d'] = df['Close'].pct_change().rolling(60).std() * np.sqrt(252)
-    
-    sma20 = df['Close'].rolling(20).mean()
-    std20 = df['Close'].rolling(20).std()
-    upper = sma20 + (std20 * 2)
-    lower = sma20 - (std20 * 2)
-    df['bb_bandwidth'] = ((upper - lower) / sma20.replace(0, np.nan)) * 100
-    
-    # Volume
-    df['vol_sma_20'] = df['Volume'].rolling(20).mean()
-    df['rel_volume'] = df['Volume'] / df['vol_sma_20']
-    
     return df

@@ -6,9 +6,9 @@
  */
 
 export const MODEL_CONFIG = {
-  VERSION: '4.0.0',
-  CALIBRATION_VERSION: 'v4.0.0-isotonic',
-  FEATURE_SCHEMA_VERSION: 'v2.0.0',
+  VERSION: '5.0.0',
+  CALIBRATION_VERSION: 'v5.0.0-isotonic',
+  FEATURE_SCHEMA_VERSION: 'v5.0.0-multi-factor-25',
 
   // ── Technical & Statistical Feature Parameters ──
   FEATURES: {

@@ -20,6 +20,41 @@ export class PredictionController {
     return this.predictionService.getProductionScorecard();
   }
 
+  @Get('model-status')
+  getModelStatus() {
+    return this.predictionService.getModelStatus();
+  }
+
+  @Get('model-performance')
+  async getModelPerformance() {
+    return this.predictionService.getModelPerformance();
+  }
+
+  @Get('model-audit')
+  getModelAudit() {
+    return this.predictionService.getModelAuditReport();
+  }
+
+  @Get('model-artifact')
+  getModelArtifact() {
+    return this.predictionService.getArtifactDetails();
+  }
+
+  @Get('walk-forward')
+  getWalkForward() {
+    return this.predictionService.getWalkForwardFolds();
+  }
+
+  @Get('calibration')
+  getCalibration() {
+    return this.predictionService.getCalibrationReport();
+  }
+
+  @Get('holdout')
+  getHoldout() {
+    return this.predictionService.getHoldoutReport();
+  }
+
   @Get('top-ranked')
   async getTopRanked() {
     return this.predictionService.getTopRankedStocks();
@@ -33,16 +68,6 @@ export class PredictionController {
   @Get('regime')
   async getRegime() {
     return { regime: await this.predictionService.getMarketRegime() };
-  }
-
-  @Get('model-status')
-  getModelStatus() {
-    return this.predictionService.getModelStatus();
-  }
-
-  @Get('model-performance')
-  async getModelPerformance() {
-    return this.predictionService.getModelPerformance();
   }
 
   @Get(':ticker')
