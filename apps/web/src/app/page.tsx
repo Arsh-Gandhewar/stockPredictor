@@ -296,8 +296,14 @@ export default function Dashboard() {
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="h-5 w-5 animate-spin text-primary" />
               </div>
+            ) : !topPicks || topPicks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <ShieldCheck className="h-6 w-6 text-muted-foreground/50 mb-2" />
+                <p className="text-xs text-muted-foreground">Evaluating live universe for low-risk opportunities...</p>
+                <button onClick={() => refetchPicks()} className="mt-2 text-xs text-primary hover:underline">Refresh</button>
+              </div>
             ) : (
-              topPicks?.slice(0, 5).map((pick: TopPickItem) => {
+              topPicks.slice(0, 5).map((pick: TopPickItem) => {
                 const prob5d = pick.calibrated5dProb ?? pick.confidenceScore ?? 72;
                 const expRet = pick.expectedReturn ?? (pick.changePercent !== 0 ? pick.changePercent : 3.8);
                 const decision = pick.recommendation || 'BUY';
@@ -382,8 +388,14 @@ export default function Dashboard() {
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="h-5 w-5 animate-spin text-amber-500" />
               </div>
+            ) : !highRiskPicks || highRiskPicks.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <Flame className="h-6 w-6 text-muted-foreground/50 mb-2" />
+                <p className="text-xs text-muted-foreground">Evaluating live universe for high-beta alpha setups...</p>
+                <button onClick={() => refetchHighRisk()} className="mt-2 text-xs text-primary hover:underline">Refresh</button>
+              </div>
             ) : (
-              highRiskPicks?.slice(0, 5).map((stock: HighRiskStockItem) => {
+              highRiskPicks.slice(0, 5).map((stock: HighRiskStockItem) => {
                 const alphaProb = stock.calibratedAlphaProb ?? 68;
                 const rrRatio = stock.rewardRiskRatio ?? 3.2;
 

@@ -1,0 +1,217 @@
+{
+  "modelVersion": "5.0.0",
+  "modelType": "BASELINE_HEURISTIC",
+  "featureVersion": "v4.0.0-multi-factor-25",
+  "trainingStart": "2025-11-10",
+  "trainingEnd": "2026-03-16",
+  "validationStart": "2026-03-19",
+  "validationEnd": "2026-05-22",
+  "testStart": "2026-05-27",
+  "testEnd": "2026-06-30",
+  "holdoutStart": "2026-07-03",
+  "holdoutEnd": "2026-07-24",
+  "horizon": "5d",
+  "fittingMethod": "Isotonic Regression (PAV) + Trimmed Two-Stage Conditional Return Estimation",
+  "parameters": {
+    "rsi_14": 0.0593,
+    "macd_hist": -0.1562,
+    "sma_20_dist": -0.0035,
+    "sma_50_dist": 0.0978,
+    "ema_20_dist": 0.0577,
+    "atr_percent": -0.018,
+    "bb_width": 0.0046,
+    "stoch_k": 0.0548,
+    "volume_z_score": -0.0513,
+    "annualized_volatility": -0.0433,
+    "downside_deviation": -0.038,
+    "beta_nifty": 0.0152,
+    "relative_strength_nifty": 0.0295,
+    "momentum_5": 0.0962,
+    "momentum_20": -0.0218,
+    "bias": -0.2014
+  },
+  "calibrationVersion": "v5.0.0-isotonic",
+  "calibrationKnots": [
+    [
+      0.05,
+      0.05
+    ],
+    [
+      0.146,
+      0.083
+    ],
+    [
+      0.224,
+      0.208
+    ],
+    [
+      0.283,
+      0.229
+    ],
+    [
+      0.329,
+      0.333
+    ],
+    [
+      0.382,
+      0.434
+    ],
+    [
+      0.95,
+      0.888
+    ]
+  ],
+  "calibrationStatus": "FITTED_OUT_OF_SAMPLE",
+  "calibrationMetrics": {
+    "brierScore": 0.1974,
+    "ece": 0.0057,
+    "mce": 0.0246,
+    "sampleCount": 196,
+    "populatedBins": 5,
+    "isMonotonic": true
+  },
+  "empiricalDistributions": [
+    {
+      "horizon": "1d",
+      "probLower": 0,
+      "probUpper": 1,
+      "bucketType": "HORIZON_WIDE",
+      "meanGainConditionalUp": 0.0121,
+      "meanLossConditionalDown": 0.0203,
+      "dispersion": 0.0215,
+      "sampleCount": 53,
+      "uncertainty": 0.003,
+      "fittedAt": "2026-08-24T06:18:47.257Z"
+    },
+    {
+      "horizon": "1d",
+      "probLower": 0,
+      "probUpper": 0.45,
+      "bucketType": "BROAD",
+      "meanGainConditionalUp": 0.0121,
+      "meanLossConditionalDown": 0.0203,
+      "dispersion": 0.0215,
+      "sampleCount": 53,
+      "uncertainty": 0.003,
+      "fittedAt": "2026-08-24T06:18:47.257Z"
+    },
+    {
+      "horizon": "1d",
+      "probLower": 0.3,
+      "probUpper": 0.4,
+      "bucketType": "FINE",
+      "meanGainConditionalUp": 0.0124,
+      "meanLossConditionalDown": 0.021,
+      "dispersion": 0.0229,
+      "sampleCount": 35,
+      "uncertainty": 0.0039,
+      "fittedAt": "2026-08-24T06:18:47.257Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0,
+      "probUpper": 1,
+      "bucketType": "HORIZON_WIDE",
+      "meanGainConditionalUp": 0.0198,
+      "meanLossConditionalDown": 0.0367,
+      "dispersion": 0.0384,
+      "sampleCount": 70,
+      "uncertainty": 0.0046,
+      "fittedAt": "2026-08-24T06:18:47.258Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0,
+      "probUpper": 0.45,
+      "bucketType": "BROAD",
+      "meanGainConditionalUp": 0.0198,
+      "meanLossConditionalDown": 0.0367,
+      "dispersion": 0.0384,
+      "sampleCount": 70,
+      "uncertainty": 0.0046,
+      "fittedAt": "2026-08-24T06:18:47.258Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0.2,
+      "probUpper": 0.3,
+      "bucketType": "FINE",
+      "meanGainConditionalUp": 0.025,
+      "meanLossConditionalDown": 0.0385,
+      "dispersion": 0.0375,
+      "sampleCount": 19,
+      "uncertainty": 0.0086,
+      "fittedAt": "2026-08-24T06:18:47.258Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0.3,
+      "probUpper": 0.4,
+      "bucketType": "FINE",
+      "meanGainConditionalUp": 0.0174,
+      "meanLossConditionalDown": 0.033,
+      "dispersion": 0.0385,
+      "sampleCount": 35,
+      "uncertainty": 0.0065,
+      "fittedAt": "2026-08-24T06:18:47.258Z"
+    },
+    {
+      "horizon": "20d",
+      "probLower": 0,
+      "probUpper": 1,
+      "bucketType": "HORIZON_WIDE",
+      "meanGainConditionalUp": 0.0513,
+      "meanLossConditionalDown": 0.0595,
+      "dispersion": 0.0495,
+      "sampleCount": 73,
+      "uncertainty": 0.0058,
+      "fittedAt": "2026-08-24T06:18:47.258Z"
+    },
+    {
+      "horizon": "20d",
+      "probLower": 0,
+      "probUpper": 0.45,
+      "bucketType": "BROAD",
+      "meanGainConditionalUp": 0.0513,
+      "meanLossConditionalDown": 0.0595,
+      "dispersion": 0.0495,
+      "sampleCount": 73,
+      "uncertainty": 0.0058,
+      "fittedAt": "2026-08-24T06:18:47.258Z"
+    },
+    {
+      "horizon": "20d",
+      "probLower": 0.2,
+      "probUpper": 0.3,
+      "bucketType": "FINE",
+      "meanGainConditionalUp": 0.0481,
+      "meanLossConditionalDown": 0.0574,
+      "dispersion": 0.047,
+      "sampleCount": 31,
+      "uncertainty": 0.0084,
+      "fittedAt": "2026-08-24T06:18:47.258Z"
+    },
+    {
+      "horizon": "20d",
+      "probLower": 0.3,
+      "probUpper": 0.4,
+      "bucketType": "FINE",
+      "meanGainConditionalUp": 0.048,
+      "meanLossConditionalDown": 0.0568,
+      "dispersion": 0.0559,
+      "sampleCount": 23,
+      "uncertainty": 0.0117,
+      "fittedAt": "2026-08-24T06:18:47.258Z"
+    }
+  ],
+  "statisticalGatePassed": true,
+  "gateDetails": {
+    "sampleSufficiency": true,
+    "calibrationQuality": true,
+    "versionCompatibility": true,
+    "dateRangeIntegrity": true
+  },
+  "createdAt": "2026-08-24T06:18:47.261Z",
+  "id": "art_1787552327261_47fb478e",
+  "checksum": "9f06c09224d54eb05b22f81d01fe743df4eca1e30b3c977e81d927d208c01487"
+}

@@ -100,12 +100,12 @@ def run_full_pipeline():
             walk_forward_folds = h_res['fold_metrics']
             holdout_metrics = h_res['holdout_metrics']
             date_bounds = {
-                'trainingStart': h_res['training_bounds']['start'],
-                'trainingEnd': h_res['training_bounds']['end'],
-                'validationStart': walk_forward_folds[0]['valStart'] if walk_forward_folds else '2025-01-01',
-                'validationEnd': walk_forward_folds[0]['valEnd'] if walk_forward_folds else '2025-06-30',
-                'testStart': walk_forward_folds[0]['testStart'] if walk_forward_folds else '2025-07-01',
-                'testEnd': walk_forward_folds[0]['testEnd'] if walk_forward_folds else '2025-12-31',
+                'trainingStart': walk_forward_folds[0]['trainStart'] if walk_forward_folds else '2021-08-23',
+                'trainingEnd': walk_forward_folds[0]['trainEnd'] if walk_forward_folds else '2023-08-13',
+                'validationStart': walk_forward_folds[0]['valStart'] if walk_forward_folds else '2023-08-14',
+                'validationEnd': walk_forward_folds[0]['valEnd'] if walk_forward_folds else '2024-02-13',
+                'testStart': walk_forward_folds[0]['testStart'] if walk_forward_folds else '2024-02-14',
+                'testEnd': walk_forward_folds[-1]['testEnd'] if walk_forward_folds else '2026-02-13',
                 'holdoutStart': h_res['holdout_bounds']['start'],
                 'holdoutEnd': h_res['holdout_bounds']['end'],
             }

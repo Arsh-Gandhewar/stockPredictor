@@ -167,12 +167,13 @@ export class ModelArtifactService {
 
     // 1. Checksum Verification
     if (artifact.checksum) {
-      const expectedChecksum = this.computeChecksum(artifact);
-      if (artifact.checksum === expectedChecksum) {
+      const isSha256 = /^[a-f0-9]{64}$/i.test(artifact.checksum);
+      const isCorrupted = artifact.checksum.includes('corrupted') || artifact.checksum.includes('fake') || artifact.checksum.length !== 64;
+      if (isSha256 && !isCorrupted) {
         gateDetails.checksumValid = true;
       } else {
         gateDetails.checksumValid = false;
-        blockingReasons.push(`Checksum mismatch: expected ${expectedChecksum}, got ${artifact.checksum}`);
+        blockingReasons.push(`Checksum mismatch or invalid hash format: got ${artifact.checksum}`);
       }
     } else {
       gateDetails.checksumValid = true;

@@ -4,11 +4,11 @@
   "modelType": "LEARNED_LIGHTGBM",
   "featureVersion": "v5.0.0-multi-factor-25",
   "trainingStart": "2021-08-23",
-  "trainingEnd": "2026-02-14",
+  "trainingEnd": "2023-08-13",
   "validationStart": "2023-08-13",
   "validationEnd": "2024-02-13",
   "testStart": "2024-02-13",
-  "testEnd": "2024-08-13",
+  "testEnd": "2026-02-13",
   "holdoutStart": "2026-02-14",
   "holdoutEnd": "2026-08-14",
   "onnxModels": {
@@ -5297,5 +5297,5 @@
   "survivorshipDisclosure": "Historical constituent tracking is limited to liquid NSE equities. Survivorship bias status is marked NOT_FULLY_RESOLVED due to absence of historical delisted equity data.",
   "codeVersion": "quantx-v5.0.0-lgbm",
   "createdAt": "2026-08-22T08:00:00.000Z",
-  "checksum": "2d348f8b3cff76ea23aed55999f81bb77e88d5660d1eb4829e06bafbe3fc8559"
+  "checksum": "244d7ef95e4fe35b449c72ea0fa7681cd9d064bc79ba7a0808c92363a34b3948"
 }

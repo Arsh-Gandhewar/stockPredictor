@@ -499,13 +499,20 @@ export class QuantPredictionService implements OnModuleInit {
   async getTopRankedStocks(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
 
-    const defensiveCandidates = all.filter((p) => {
+    let defensiveCandidates = all.filter((p) => {
       const isNotSell = p.decision !== 'SELL' && p.decision !== 'STRONG_SELL';
       const downsideOk = p.risk.downsideProbability <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_DOWNSIDE_PROBABILITY;
       const atrOk = p.risk.volatility <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_ATR_PERCENT;
       const drawdownOk = (p.risk.maxDrawdown60d || 0) <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_MAX_DRAWDOWN;
       return isNotSell && downsideOk && atrOk && drawdownOk;
     });
+
+    if (defensiveCandidates.length < 5) {
+      defensiveCandidates = all.filter((p) => p.decision !== 'SELL' && p.decision !== 'STRONG_SELL');
+    }
+    if (defensiveCandidates.length === 0) {
+      defensiveCandidates = all;
+    }
 
     const scoredList = defensiveCandidates.map((p) => {
       const pred = p.prediction['5d'];
@@ -568,12 +575,19 @@ export class QuantPredictionService implements OnModuleInit {
   async getHighRiskOpportunities(): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
 
-    const highBetaCandidates = all.filter((p) => {
+    let highBetaCandidates = all.filter((p) => {
       const isNotSell = p.decision !== 'SELL' && p.decision !== 'STRONG_SELL';
       const hasVol = p.risk.volatility >= MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_ATR_PERCENT;
       const hasRR = p.risk.rewardRiskRatio >= MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_REWARD_RISK_RATIO;
       return isNotSell && (hasVol || hasRR);
     });
+
+    if (highBetaCandidates.length < 5) {
+      highBetaCandidates = all.filter((p) => p.decision !== 'SELL' && p.decision !== 'STRONG_SELL');
+    }
+    if (highBetaCandidates.length === 0) {
+      highBetaCandidates = all;
+    }
 
     const scoredList = highBetaCandidates.map((p) => {
       const pred = p.prediction['5d'];
