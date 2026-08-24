@@ -241,8 +241,9 @@ export interface HoldoutPerformance {
 }
 
 export interface ModelComparisonStats {
-  baselineHeuristic: { brierScore: number; winRate: number; avgReturn: number };
-  learnedBaseline: { brierScore: number; winRate: number; avgReturn: number };
+  baselineHeuristic?: { brierScore: number; winRate: number; avgReturn: number };
+  learnedBaseline?: { brierScore: number; winRate: number; avgReturn: number };
+  learnedLightGBM?: { brierScore: number; winRate: number; avgReturn: number };
 }
 
 export interface AuditDisclosures {

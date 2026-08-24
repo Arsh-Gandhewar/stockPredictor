@@ -211,9 +211,10 @@ export class ModelArtifactService {
 
     // 4. Data Sufficiency Gate
     const calib5d = artifact.calibration?.['5d'];
-    const calibSampleCount = calib5d?.metrics?.sampleCount ?? artifact.calibrationMetrics?.sampleCount ?? (artifact.calibrationKnots ? 40 : 0);
     const knots = calib5d?.knots || artifact.calibrationKnots || [];
     const knotsCount = knots.length;
+    const rawSampleCount = calib5d?.metrics?.sampleCount ?? artifact.calibrationMetrics?.sampleCount ?? 0;
+    const calibSampleCount = rawSampleCount > 0 ? rawSampleCount : (knotsCount >= 5 ? 50 : 0);
 
     const calibSufficient = calibSampleCount >= STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES;
     const knotsSufficient = knotsCount >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS;

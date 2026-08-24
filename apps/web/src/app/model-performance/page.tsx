@@ -279,7 +279,7 @@ export default function ModelPerformancePage() {
               Model Architecture Comparison (Out-of-Sample Test Partition)
             </CardTitle>
             <CardDescription className="text-xs text-muted-foreground">
-              Comparative out-of-sample performance between current heuristic baseline and learned ridge logistic model
+              Comparative out-of-sample performance between current heuristic baseline and learned LightGBM model
             </CardDescription>
           </CardHeader>
           <CardContent className="px-4 pb-4">
@@ -291,34 +291,34 @@ export default function ModelPerformancePage() {
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Brier Score (MSE):</span>
-                  <span className="font-mono font-bold text-foreground">{modelComp.baselineHeuristic.brierScore.toFixed(2)}</span>
+                  <span className="font-mono font-bold text-foreground">{modelComp.baselineHeuristic?.brierScore !== undefined ? modelComp.baselineHeuristic.brierScore.toFixed(2) : 'N/A'}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Directional Win Rate:</span>
-                  <span className="font-mono font-bold text-emerald-400">{modelComp.baselineHeuristic.winRate.toFixed(1)}%</span>
+                  <span className="font-mono font-bold text-emerald-400">{modelComp.baselineHeuristic?.winRate !== undefined ? `${modelComp.baselineHeuristic.winRate.toFixed(1)}%` : 'N/A'}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Avg Net Return:</span>
-                  <span className="font-mono font-bold text-emerald-400">+{modelComp.baselineHeuristic.avgReturn.toFixed(2)}%</span>
+                  <span className="font-mono font-bold text-emerald-400">{modelComp.baselineHeuristic?.avgReturn !== undefined ? `+${modelComp.baselineHeuristic.avgReturn.toFixed(2)}%` : 'N/A'}</span>
                 </div>
               </div>
 
               <div className="p-3 rounded-lg bg-muted/30 border border-border/30 space-y-1.5">
                 <div className="flex justify-between items-center">
-                  <span className="text-xs font-bold text-foreground">LEARNED_BASELINE (Ridge Logistic)</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">CHALLENGER</span>
+                  <span className="text-xs font-bold text-foreground">LEARNED_LIGHTGBM (Production ONNX)</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">BENCHMARK</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Brier Score (MSE):</span>
-                  <span className="font-mono font-bold text-foreground">{modelComp.learnedBaseline.brierScore.toFixed(2)}</span>
+                  <span className="font-mono font-bold text-foreground">{(modelComp.learnedLightGBM || modelComp.learnedBaseline)?.brierScore !== undefined ? (modelComp.learnedLightGBM || modelComp.learnedBaseline)!.brierScore.toFixed(2) : 'N/A'}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Directional Win Rate:</span>
-                  <span className="font-mono font-bold text-emerald-400">{modelComp.learnedBaseline.winRate.toFixed(1)}%</span>
+                  <span className="font-mono font-bold text-emerald-400">{(modelComp.learnedLightGBM || modelComp.learnedBaseline)?.winRate !== undefined ? `${(modelComp.learnedLightGBM || modelComp.learnedBaseline)!.winRate.toFixed(1)}%` : 'N/A'}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Avg Net Return:</span>
-                  <span className="font-mono font-bold text-emerald-400">+{modelComp.learnedBaseline.avgReturn.toFixed(2)}%</span>
+                  <span className="font-mono font-bold text-emerald-400">{(modelComp.learnedLightGBM || modelComp.learnedBaseline)?.avgReturn !== undefined ? `+${(modelComp.learnedLightGBM || modelComp.learnedBaseline)!.avgReturn.toFixed(2)}%` : 'N/A'}</span>
                 </div>
               </div>
             </div>

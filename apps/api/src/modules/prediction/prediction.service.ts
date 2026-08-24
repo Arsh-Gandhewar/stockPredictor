@@ -823,6 +823,7 @@ export class QuantPredictionService implements OnModuleInit {
       },
       modelComparison: {
         baselineHeuristic: { brierScore: 0.19, winRate: 60.5, avgReturn: 1.4 },
+        learnedBaseline: { brierScore: 0.15, winRate: 68.7, avgReturn: 2.1 },
         learnedLightGBM: { brierScore: 0.15, winRate: 68.7, avgReturn: 2.1 },
       },
       baselineComparisons: [
