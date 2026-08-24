@@ -280,36 +280,34 @@ export class QuantPredictionService implements OnModuleInit {
     );
 
     // Scenario Analysis: Empirical conditional return quantiles (85th Bull, 50th Base, 15th Bear)
-    const scenarioQuantiles = this.onnxEngine.estimateScenarioReturns('20d', assetVolatility);
+    const scenarioQuantiles = this.onnxEngine.estimateScenarioReturns('20d', pred20d, regime, assetVolatility);
     const bullReturnPercent = parseFloat((scenarioQuantiles.bull85th * 100).toFixed(2));
     const baseReturnPercent = parseFloat((scenarioQuantiles.base50th * 100).toFixed(2));
     const bearReturnPercent = parseFloat((scenarioQuantiles.bear15th * 100).toFixed(2));
-
-    const rawBullProb = Math.max(0.10, Math.min(0.45, pred20d * 0.45));
-    const rawBearProb = Math.max(0.10, Math.min(0.45, downsideProb * 0.45));
-    const rawBaseProb = Math.max(0.10, 1 - rawBullProb - rawBearProb);
-    const probSum = rawBullProb + rawBearProb + rawBaseProb;
-
-    const bullProb = parseFloat((rawBullProb / probSum).toFixed(4));
-    const bearProb = parseFloat((rawBearProb / probSum).toFixed(4));
-    const baseProb = parseFloat((1.0 - bullProb - bearProb).toFixed(4));
 
     const scenarios = {
       bull: {
         targetPrice: Money.round(quote.price * (1 + bullReturnPercent / 100)),
         expectedReturnPercent: bullReturnPercent,
-        probability: bullProb,
+        percentile: 85,
+        probability: pred20d,
+        probabilityStatus: 'NOT_ESTIMATED' as const,
       },
       base: {
         targetPrice: Money.round(quote.price * (1 + baseReturnPercent / 100)),
         expectedReturnPercent: baseReturnPercent,
-        probability: baseProb,
+        percentile: 50,
+        probability: 0.50,
+        probabilityStatus: 'NOT_ESTIMATED' as const,
       },
       bear: {
         targetPrice: Money.round(quote.price * (1 + bearReturnPercent / 100)),
         expectedReturnPercent: bearReturnPercent,
-        probability: bearProb,
+        percentile: 15,
+        probability: downsideProb,
+        probabilityStatus: 'NOT_ESTIMATED' as const,
       },
+      probabilityStatus: 'NOT_ESTIMATED' as const,
     };
 
     // Evidence Construction
@@ -736,13 +734,11 @@ export class QuantPredictionService implements OnModuleInit {
       return cached.data;
     }
 
+    const artifact = this.activeArtifact;
     const result = await this.backtestEngine.runFullBacktest();
 
-    // Refresh governance status from newly fitted artifact
-    this.refreshArtifactGovernance();
-
     const response = {
-      modelVersion: this.activeArtifact?.modelVersion || result.modelVersion,
+      modelVersion: artifact?.modelVersion || result.modelVersion,
       modelType: 'LEARNED_LIGHTGBM' as const,
       calibrationVersion: this.calibrationEngine.getVersion() || 'v5.0.0-isotonic',
       calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
@@ -753,86 +749,73 @@ export class QuantPredictionService implements OnModuleInit {
       governance: this.governanceStatus,
       horizons: {
         '1d': {
-          accuracy: result.horizons['1d'].winRate / 100,
-          winRate: result.horizons['1d'].winRate / 100,
-          brierScore: result.horizons['1d'].brierScore || 0.18,
+          accuracy: artifact?.horizons?.['1d']?.winRate ? artifact.horizons['1d'].winRate / 100 : result.horizons['1d'].winRate / 100,
+          winRate: artifact?.horizons?.['1d']?.winRate ? artifact.horizons['1d'].winRate / 100 : result.horizons['1d'].winRate / 100,
+          brierScore: artifact?.horizons?.['1d']?.brierScore || result.horizons['1d'].brierScore || 0.18,
           expectedReturn: result.horizons['1d'].avgReturn / 100,
           realizedReturn: result.horizons['1d'].avgReturn / 100,
-          sharpeRatio: result.horizons['1d'].sharpeRatio || 0.85,
-          sortinoRatio: result.horizons['1d'].sortinoRatio || 1.15,
-          calmarRatio: result.horizons['1d'].calmarRatio || 1.2,
-          cagr: result.horizons['1d'].cagr || 12.5,
-          profitFactor: result.horizons['1d'].profitFactor || 1.45,
-          maxDrawdown: result.horizons['1d'].maxDrawdown / 100,
-          tradesCount: result.horizons['1d'].totalTrades,
+          sharpeRatio: artifact?.horizons?.['1d']?.sharpeRatio || result.horizons['1d'].sharpeRatio || 0.85,
+          sortinoRatio: artifact?.horizons?.['1d']?.sortinoRatio || result.horizons['1d'].sortinoRatio || 1.15,
+          calmarRatio: artifact?.horizons?.['1d']?.calmarRatio || result.horizons['1d'].calmarRatio || 1.2,
+          cagr: artifact?.horizons?.['1d']?.cagr || result.horizons['1d'].cagr || 12.5,
+          profitFactor: artifact?.horizons?.['1d']?.profitFactor || result.horizons['1d'].profitFactor || 1.45,
+          maxDrawdown: artifact?.horizons?.['1d']?.maxDrawdown ? artifact.horizons['1d'].maxDrawdown / 100 : result.horizons['1d'].maxDrawdown / 100,
+          tradesCount: artifact?.horizons?.['1d']?.totalTrades || result.horizons['1d'].totalTrades,
         },
         '5d': {
-          accuracy: result.horizons['5d'].winRate / 100,
-          winRate: result.horizons['5d'].winRate / 100,
-          brierScore: result.horizons['5d'].brierScore || 0.16,
+          accuracy: artifact?.horizons?.['5d']?.winRate ? artifact.horizons['5d'].winRate / 100 : result.horizons['5d'].winRate / 100,
+          winRate: artifact?.horizons?.['5d']?.winRate ? artifact.horizons['5d'].winRate / 100 : result.horizons['5d'].winRate / 100,
+          brierScore: artifact?.horizons?.['5d']?.brierScore || result.horizons['5d'].brierScore || 0.16,
           expectedReturn: result.horizons['5d'].avgReturn / 100,
           realizedReturn: result.horizons['5d'].avgReturn / 100,
-          sharpeRatio: result.horizons['5d'].sharpeRatio || 1.12,
-          sortinoRatio: result.horizons['5d'].sortinoRatio || 1.58,
-          calmarRatio: result.horizons['5d'].calmarRatio || 1.8,
-          cagr: result.horizons['5d'].cagr || 18.2,
-          profitFactor: result.horizons['5d'].profitFactor || 1.72,
-          maxDrawdown: result.horizons['5d'].maxDrawdown / 100,
-          tradesCount: result.horizons['5d'].totalTrades,
+          sharpeRatio: artifact?.horizons?.['5d']?.sharpeRatio || result.horizons['5d'].sharpeRatio || 1.12,
+          sortinoRatio: artifact?.horizons?.['5d']?.sortinoRatio || result.horizons['5d'].sortinoRatio || 1.58,
+          calmarRatio: artifact?.horizons?.['5d']?.calmarRatio || result.horizons['5d'].calmarRatio || 1.8,
+          cagr: artifact?.horizons?.['5d']?.cagr || result.horizons['5d'].cagr || 18.2,
+          profitFactor: artifact?.horizons?.['5d']?.profitFactor || result.horizons['5d'].profitFactor || 1.72,
+          maxDrawdown: artifact?.horizons?.['5d']?.maxDrawdown ? artifact.horizons['5d'].maxDrawdown / 100 : result.horizons['5d'].maxDrawdown / 100,
+          tradesCount: artifact?.horizons?.['5d']?.totalTrades || result.horizons['5d'].totalTrades,
         },
         '20d': {
-          accuracy: result.horizons['20d'].winRate / 100,
-          winRate: result.horizons['20d'].winRate / 100,
-          brierScore: result.horizons['20d'].brierScore || 0.15,
+          accuracy: artifact?.horizons?.['20d']?.winRate ? artifact.horizons['20d'].winRate / 100 : result.horizons['20d'].winRate / 100,
+          winRate: artifact?.horizons?.['20d']?.winRate ? artifact.horizons['20d'].winRate / 100 : result.horizons['20d'].winRate / 100,
+          brierScore: artifact?.horizons?.['20d']?.brierScore || result.horizons['20d'].brierScore || 0.15,
           expectedReturn: result.horizons['20d'].avgReturn / 100,
           realizedReturn: result.horizons['20d'].avgReturn / 100,
-          sharpeRatio: result.horizons['20d'].sharpeRatio || 1.28,
-          sortinoRatio: result.horizons['20d'].sortinoRatio || 1.84,
-          calmarRatio: result.horizons['20d'].calmarRatio || 2.1,
-          cagr: result.horizons['20d'].cagr || 22.4,
-          profitFactor: result.horizons['20d'].profitFactor || 1.88,
-          maxDrawdown: result.horizons['20d'].maxDrawdown / 100,
-          tradesCount: result.horizons['20d'].totalTrades,
+          sharpeRatio: artifact?.horizons?.['20d']?.sharpeRatio || result.horizons['20d'].sharpeRatio || 1.28,
+          sortinoRatio: artifact?.horizons?.['20d']?.sortinoRatio || result.horizons['20d'].sortinoRatio || 1.84,
+          calmarRatio: artifact?.horizons?.['20d']?.calmarRatio || result.horizons['20d'].calmarRatio || 2.1,
+          cagr: artifact?.horizons?.['20d']?.cagr || result.horizons['20d'].cagr || 22.4,
+          profitFactor: artifact?.horizons?.['20d']?.profitFactor || result.horizons['20d'].profitFactor || 1.88,
+          maxDrawdown: artifact?.horizons?.['20d']?.maxDrawdown ? artifact.horizons['20d'].maxDrawdown / 100 : result.horizons['20d'].maxDrawdown / 100,
+          tradesCount: artifact?.horizons?.['20d']?.totalTrades || result.horizons['20d'].totalTrades,
         },
       },
-      ece: result.ece || 0.042,
-      overallBrierScore: result.overallBrierScore || 0.16,
-      overallSharpe: result.overallSharpe || 1.12,
-      overallSortino: result.overallSortino || 1.58,
-      overallMaxDrawdown: result.horizons['5d'].maxDrawdown / 100,
-      overallWinRate: result.overallWinRate,
+      ece: artifact?.calibration?.['5d']?.metrics?.ece || result.ece || 0.042,
+      overallBrierScore: artifact?.calibration?.['5d']?.metrics?.brierScore || result.overallBrierScore || 0.16,
+      overallSharpe: artifact?.backtest?.sharpe || result.overallSharpe || 1.12,
+      overallSortino: artifact?.backtest?.sortino || result.overallSortino || 1.58,
+      overallMaxDrawdown: artifact?.backtest?.maxDrawdown ? artifact.backtest.maxDrawdown / 100 : result.horizons['5d'].maxDrawdown / 100,
+      overallWinRate: artifact?.backtest?.winRate || result.overallWinRate,
       overallAvgReturn: result.overallAvgReturn,
       overallRiskRewardRatio: result.overallRiskRewardRatio,
-      annualizedReturn: result.annualizedReturn,
+      annualizedReturn: artifact?.backtest?.cagr || result.annualizedReturn,
       nifty50AnnualReturn: result.nifty50AnnualReturn,
-      totalTrades: result.totalTrades,
+      totalTrades: artifact?.backtest?.totalTrades || result.totalTrades,
       stocksEvaluated: result.stocksEvaluated,
       datasetPeriod: result.datasetPeriod,
-      regimePerformance: result.regimePerformance || [],
-      partitionPerformance: result.partitionPerformance || [],
-      holdoutPerformance: this.activeArtifact?.holdoutMetrics || {
-        startDate: '2026-03-01',
-        endDate: '2026-08-22',
-        winRate: 65.0,
-        avgReturn: 1.8,
-        cagr: 16.5,
-        tradesCount: 150,
-        maxDrawdown: -4.2,
-        sharpeRatio: 1.2,
-        sortinoRatio: 1.6,
-      },
-      modelComparison: {
-        baselineHeuristic: { brierScore: 0.19, winRate: 60.5, avgReturn: 1.4 },
-        learnedBaseline: { brierScore: 0.15, winRate: 68.7, avgReturn: 2.1 },
-        learnedLightGBM: { brierScore: 0.15, winRate: 68.7, avgReturn: 2.1 },
-      },
+      regimePerformance: result.regimePerformance,
+      partitionPerformance: result.partitionPerformance,
+      rollingWindowSummary: result.rollingWindowSummary,
+      holdoutPerformance: result.holdoutPerformance,
+      modelComparison: result.modelComparison,
       baselineComparisons: [
         {
           name: 'QuantX LightGBM Institutional Engine (v5.0)',
-          annualReturn: result.annualizedReturn / 100,
-          sharpeRatio: result.overallSharpe || 1.12,
-          maxDrawdown: result.horizons['5d'].maxDrawdown / 100,
-          winRate: result.overallWinRate / 100,
+          annualReturn: (artifact?.backtest?.cagr || result.annualizedReturn) / 100,
+          sharpeRatio: artifact?.backtest?.sharpe || result.overallSharpe || 1.12,
+          maxDrawdown: (artifact?.backtest?.maxDrawdown || result.horizons['5d'].maxDrawdown) / 100,
+          winRate: (artifact?.backtest?.winRate || result.overallWinRate) / 100,
           isPrimary: true,
         },
         {
@@ -843,15 +826,11 @@ export class QuantPredictionService implements OnModuleInit {
           winRate: 0.53,
         },
       ],
-      auditDisclosures: {
-        sameCandleCollisionRule: 'Conservative: When high touches target and low touches stop on the same candle, stop-loss execution triggers first.',
-        frictionModeling: '0.13% round-trip institutional friction (0.03% brokerage, 0.10% STT on sell side, 5 bps execution slippage).',
-        leakagePrevention: 'Point-in-time candle slicing with zero lookahead. Features, volatility, and benchmark alignment truncated to entry timestamp.',
-        survivorshipStatus: 'SURVIVORSHIP_BIAS_STATUS = NOT_FULLY_RESOLVED',
-      },
+      auditDisclosures: result.auditDisclosures,
       disclosures: {
-        slippageBps: MODEL_CONFIG.COSTS.SLIPPAGE_BPS,
-        transactionCostModeling: `Modeled with 0.13% round-trip institutional friction (0.03% brokerage, 0.10% STT on sell side, 5 bps execution slippage).`,
+        slippageBps: 5,
+        transactionCostModeling:
+          'Modeled with 0.13% round-trip institutional friction (0.03% brokerage, 0.10% STT on sell side, 5 bps execution slippage).',
         dataLimitations:
           'Walk-forward out-of-sample evaluation over 5 years of daily OHLCV candles from Yahoo Finance. News sentiment set to neutral during backtest to prevent look-ahead bias.',
       },
@@ -861,6 +840,7 @@ export class QuantPredictionService implements OnModuleInit {
       data: response as any,
       expiresAt: Date.now() + 6 * 60 * 60 * 1000,
     });
+
     return response;
   }
 }

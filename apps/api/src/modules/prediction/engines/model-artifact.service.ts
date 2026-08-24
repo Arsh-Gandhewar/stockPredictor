@@ -48,11 +48,14 @@ export interface ModelArtifact {
   calibrationStatus?: 'FITTED_OUT_OF_SAMPLE' | 'FALLBACK';
   calibrationMetrics?: CalibrationGateMetrics;
   empiricalDistributions?: EmpiricalDistributionBucket[];
-  onnxModels?: Record<string, string>;
+  onnxModels?: Record<string, any>;
   featureSchema?: string[];
   calibration?: Record<string, any>;
+  conditionalReturns?: Record<string, any>;
   empiricalQuantiles?: Record<string, any>;
   walkForwardFolds?: any[];
+  horizons?: Record<string, any>;
+  backtest?: Record<string, any>;
   holdoutMetrics?: any;
   outOfSampleMetrics?: any;
   survivorshipStatus?: string;
@@ -238,6 +241,21 @@ export class ModelArtifactService {
       if (!isMonotonic) blockingReasons.push('Calibration knots violate non-decreasing monotonicity');
       if (!eceOk) blockingReasons.push(`ECE (${(ece * 100).toFixed(1)}%) exceeds maximum threshold`);
       if (calibStatus !== 'FITTED_OUT_OF_SAMPLE') blockingReasons.push(`Calibration status is ${calibStatus}`);
+    }
+
+    // 6. ONNX Model Hash Verification Gate
+    if (artifact.onnxModels && typeof artifact.onnxModels === 'object') {
+      for (const [horizon, mInfo] of Object.entries(artifact.onnxModels as Record<string, any>)) {
+        if (typeof mInfo === 'object' && mInfo !== null && mInfo.filename && mInfo.sha256) {
+          const mPath = path.join(this.activeDir, mInfo.filename);
+          if (fs.existsSync(mPath)) {
+            const actualSha = crypto.createHash('sha256').update(fs.readFileSync(mPath)).digest('hex');
+            if (actualSha !== mInfo.sha256) {
+              blockingReasons.push(`ONNX file hash mismatch for ${horizon} (${mInfo.filename}): expected ${mInfo.sha256.slice(0, 12)}..., got ${actualSha.slice(0, 12)}...`);
+            }
+          }
+        }
+      }
     }
 
     const isValid = blockingReasons.length === 0;

@@ -67,12 +67,15 @@ export interface ScenarioDetail {
   targetPrice: number;
   expectedReturnPercent: number;
   probability: number;
+  percentile?: number;
+  probabilityStatus?: string;
 }
 
 export interface PredictionScenarios {
   bull: ScenarioDetail;
   base: ScenarioDetail;
   bear: ScenarioDetail;
+  probabilityStatus?: string;
 }
 
 export interface Evidence {

@@ -56,16 +56,24 @@ def export_artifacts(
     n_features = len(feature_schema)
     initial_type = [('float_input', FloatTensorType([None, n_features]))]
     
-    onnx_file_names = {}
+    onnx_file_models: Dict[str, Dict[str, str]] = {}
     for horizon, model_obj in models_dict.items():
         onnx_name = f"model_{horizon}.onnx"
         onnx_path = os.path.join(active_dir, onnx_name)
         
-        # Convert LightGBM model to ONNX format
-        onnx_model = onnxmltools.convert_lightgbm(model_obj, initial_types=initial_type, target_opset=12)
+        # Convert LightGBM model to ONNX format with raw float tensor output
+        onnx_model = onnxmltools.convert_lightgbm(model_obj, initial_types=initial_type, target_opset=12, zipmap=False)
         onnxmltools.utils.save_model(onnx_model, onnx_path)
-        onnx_file_names[horizon] = onnx_name
-        print(f"Exported ONNX model: {onnx_path}")
+        
+        # Compute SHA-256 hash of the generated ONNX file
+        with open(onnx_path, 'rb') as f:
+            onnx_sha256 = hashlib.sha256(f.read()).hexdigest()
+            
+        onnx_file_models[horizon] = {
+            "filename": onnx_name,
+            "sha256": onnx_sha256
+        }
+        print(f"Exported ONNX model: {onnx_path} (SHA-256: {onnx_sha256[:12]}...)")
         
     artifact_id = f"art_lgbm_{model_version.replace('.', '_')}"
     
@@ -82,13 +90,15 @@ def export_artifacts(
         "testEnd": date_bounds["testEnd"],
         "holdoutStart": date_bounds["holdoutStart"],
         "holdoutEnd": date_bounds["holdoutEnd"],
-        "onnxModels": onnx_file_names,
+        "onnxModels": onnx_file_models,
         "featureSchema": feature_schema,
         "calibration": calibration_dict,
+        "conditionalReturns": empirical_quantiles_dict,
         "empiricalQuantiles": empirical_quantiles_dict,
         "walkForwardFolds": walk_forward_folds,
         "holdoutMetrics": holdout_metrics,
         "outOfSampleMetrics": backtest_metrics,
+        "backtest": backtest_metrics,
         "survivorshipStatus": "NOT_FULLY_RESOLVED",
         "survivorshipDisclosure": (
             "Historical constituent tracking is limited to liquid NSE equities. "

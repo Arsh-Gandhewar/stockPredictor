@@ -278,7 +278,7 @@ export class BacktestEngine {
       },
       createdAt: new Date().toISOString(),
     };
-    this.artifactService.saveArtifact(artifactData);
+    // Note: Authoritative immutable artifact is governed and exported from Python pipeline
 
     // 5. Evaluate Multi-Horizon Metrics using Direct Daily Equity Curve
     const trades1d = allTrades.filter((t) => t.horizon === '1d');

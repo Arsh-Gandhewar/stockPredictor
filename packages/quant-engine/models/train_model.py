@@ -1,13 +1,19 @@
 """
 LightGBM Walk-Forward Training Engine.
 Executes true rolling chronological walk-forward validation across 1d, 5d, and 20d horizons.
+Generates an authenticated Out-of-Sample (OOS) prediction ledger without historical dataset contamination.
 Preserves an untouched final holdout partition for frozen model verification.
 """
+import os
+import sys
 import lightgbm as lgb
 import pandas as pd
 import numpy as np
 from typing import Dict, List, Tuple, Any
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score, accuracy_score
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibration
 
 LIGHTGBM_PARAMS = {
     '1d': {
@@ -51,29 +57,17 @@ LIGHTGBM_PARAMS = {
     }
 }
 
-class WalkForwardFoldResult:
-    def __init__(self, fold_idx: int, train_start: str, train_end: str, val_start: str, val_end: str, test_start: str, test_end: str):
-        self.fold_idx = fold_idx
-        self.train_start = str(train_start)[:10]
-        self.train_end = str(train_end)[:10]
-        self.val_start = str(val_start)[:10]
-        self.val_end = str(val_end)[:10]
-        self.test_start = str(test_start)[:10]
-        self.test_end = str(test_end)[:10]
-        self.train_samples = 0
-        self.val_samples = 0
-        self.test_samples = 0
-        self.raw_brier = 0.0
-        self.calibrated_brier = 0.0
-        self.raw_ece = 0.0
-        self.calibrated_ece = 0.0
-        self.test_accuracy = 0.0
-        self.test_win_rate = 0.0
-        self.test_auc = 0.50
-
-def generate_walk_forward_folds(dates: pd.DatetimeIndex, n_folds: int = 4, train_months: int = 24, val_months: int = 6, test_months: int = 6, holdout_months: int = 6) -> Tuple[List[Dict[str, pd.Timestamp]], Dict[str, pd.Timestamp]]:
+def generate_walk_forward_folds(
+    dates: pd.DatetimeIndex,
+    n_folds: int = 4,
+    train_months: int = 24,
+    val_months: int = 6,
+    test_months: int = 6,
+    holdout_months: int = 6
+) -> Tuple[List[Dict[str, pd.Timestamp]], Dict[str, pd.Timestamp]]:
     """
     Generates non-overlapping chronological walk-forward fold boundaries and an untouched final holdout window.
+    Enforces strict chronological ordering: trainStart < trainEnd <= valStart < valEnd <= testStart < testEnd <= holdoutStart < holdoutEnd
     """
     min_date = dates.min()
     max_date = dates.max()
@@ -87,7 +81,7 @@ def generate_walk_forward_folds(dates: pd.DatetimeIndex, n_folds: int = 4, train
     wf_end = wf_dates.max()
     
     folds = []
-    # Step backwards from wf_end
+    # Step backwards from wf_end to construct non-overlapping test partitions
     for i in range(n_folds):
         step_offset = (n_folds - 1 - i) * pd.DateOffset(months=val_months)
         cur_test_end = wf_end - step_offset
@@ -114,17 +108,23 @@ def generate_walk_forward_folds(dates: pd.DatetimeIndex, n_folds: int = 4, train
 
 def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: str) -> Dict[str, Any]:
     """
-    Trains LightGBM model across rolling walk-forward folds and fits the final production model on full historical data prior to holdout.
+    Trains LightGBM models across rolling walk-forward folds, computes out-of-sample test calibration,
+    assembles the strict OOS prediction ledger, and trains the final production model on full pre-holdout data.
     """
     target_col = f'target_{horizon_str}'
-    clean_df = df_all.dropna(subset=features + [target_col]).copy()
+    h_days = 1 if horizon_str == '1d' else (5 if horizon_str == '5d' else 20)
+    net_return_col = f'future_net_ret_{h_days}d'
+    
+    req_cols = features + [target_col]
+    clean_df = df_all.dropna(subset=req_cols).copy()
     clean_df.sort_index(inplace=True)
     
     dates = clean_df.index
     folds_config, holdout_bounds = generate_walk_forward_folds(dates)
     
     fold_metrics = []
-    val_predictions_list = []
+    oos_records: List[Dict[str, Any]] = []
+    all_val_predictions_for_prod_calib: List[Dict[str, Any]] = []
     
     params = LIGHTGBM_PARAMS[horizon_str]
     
@@ -144,25 +144,33 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
         X_val, y_val = val_df[features], val_df[target_col]
         X_test, y_test = test_df[features], test_df[target_col]
         
-        model = lgb.LGBMClassifier(**params)
-        model.fit(
+        # 1. Fit Fold Model strictly on Train
+        fold_model = lgb.LGBMClassifier(**params)
+        fold_model.fit(
             X_train, y_train,
             eval_set=[(X_val, y_val)],
             callbacks=[lgb.early_stopping(stopping_rounds=15, verbose=False)]
         )
         
-        # Test partition predictions (Strictly out-of-sample)
-        test_prob = model.predict_proba(X_test)[:, 1]
-        test_pred = (test_prob > 0.50).astype(int)
-        
-        # Validation predictions for calibration aggregation
-        val_prob = model.predict_proba(X_val)[:, 1]
-        for p, y, date in zip(val_prob, y_val, val_df.index):
-            val_predictions_list.append({'prob': float(p), 'outcome': int(y), 'date': str(date)[:10]})
+        # 2. Predict on Validation & Fit Fold Calibrator strictly on Validation
+        val_raw_prob = fold_model.predict_proba(X_val)[:, 1]
+        val_preds_list = []
+        for p, y, date in zip(val_raw_prob, y_val, val_df.index):
+            val_preds_list.append({'prob': float(p), 'outcome': int(y), 'date': str(date)[:10]})
+            all_val_predictions_for_prod_calib.append({'prob': float(p), 'outcome': int(y), 'date': str(date)[:10]})
             
-        brier = float(brier_score_loss(y_test, test_prob))
-        acc = float(accuracy_score(y_test, test_pred))
-        auc = float(roc_auc_score(y_test, test_prob)) if len(np.unique(y_test)) > 1 else 0.50
+        fold_calib_res = fit_isotonic_calibrator(val_preds_list)
+        fold_calibrator = fold_calib_res['calibrator']
+        
+        # 3. Predict on Test & Apply Fold Calibrator to Test
+        test_raw_prob = fold_model.predict_proba(X_test)[:, 1]
+        test_cal_prob = fold_calibrator.transform(test_raw_prob)
+        test_pred = (test_cal_prob > 0.50).astype(int)
+        
+        # 4. Evaluate Test Calibration Metrics (Strictly Out-of-Sample)
+        test_calib_eval = evaluate_test_calibration(y_test.values, test_raw_prob, test_cal_prob)
+        acc = float(round(accuracy_score(y_test, test_pred), 4))
+        auc = float(round(roc_auc_score(y_test, test_raw_prob), 4)) if len(np.unique(y_test)) > 1 else 0.50
         
         fold_metrics.append({
             'fold': fold['fold'],
@@ -175,42 +183,123 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             'trainSamples': len(train_df),
             'valSamples': len(val_df),
             'testSamples': len(test_df),
-            'brierScore': round(brier, 4),
-            'accuracy': round(acc, 4),
-            'auc': round(auc, 4),
+            'rawBrierTest': test_calib_eval['rawBrier'],
+            'calibratedBrierTest': test_calib_eval['calibratedBrier'],
+            'brierScore': test_calib_eval['calibratedBrier'],
+            'rawECETest': test_calib_eval['rawECE'],
+            'calibratedECETest': test_calib_eval['calibratedECE'],
+            'ece': test_calib_eval['calibratedECE'],
+            'rawMCE': test_calib_eval['rawMCE'],
+            'calibratedMCE': test_calib_eval['calibratedMCE'],
+            'mce': test_calib_eval['calibratedMCE'],
+            'rawLogLoss': test_calib_eval['rawLogLoss'],
+            'calibratedLogLoss': test_calib_eval['calibratedLogLoss'],
+            'accuracy': acc,
+            'auc': auc,
+            'winRate': round(float((y_test == test_pred).mean() * 100), 2)
         })
         
-    # Fit Production Model on full historical data prior to holdout
+        # 5. Populate OOS Prediction Ledger with Provenance
+        t_end_str = str(fold['train_end'])[:10]
+        v_end_str = str(fold['val_end'])[:10]
+        t_start_str = str(fold['test_start'])[:10]
+        t_end_test_str = str(fold['test_end'])[:10]
+        
+        for idx, (dt, raw_p, cal_p, y_val_actual) in enumerate(zip(test_df.index, test_raw_prob, test_cal_prob, y_test)):
+            row = test_df.iloc[idx]
+            dt_str = str(dt)[:10]
+            
+            # Mandatory invariant verification: predictionTimestamp > trainEnd
+            if dt_str <= t_end_str:
+                raise ValueError(f"CRITICAL LEAKAGE: predictionTimestamp {dt_str} <= trainEnd {t_end_str} in Fold {fold['fold']}")
+                
+            rec = {
+                'predictionTimestamp': dt_str,
+                'ticker': row.get('ticker', 'UNKNOWN'),
+                'horizon': horizon_str,
+                'rawProbability': float(round(raw_p, 4)),
+                'calibratedProbability': float(round(cal_p, 4)),
+                'pred_prob': float(round(cal_p, 4)),
+                'target_outcome': int(y_val_actual),
+                'actual_net_return': float(round(row.get(net_return_col, 0.0), 5)),
+                'future_net_ret_5d': float(round(row.get('future_net_ret_5d', 0.0), 5)),
+                'future_gross_ret_5d': float(round(row.get('future_gross_ret_5d', 0.0), 5)),
+                'Close': float(row.get('Close', 0.0)),
+                'Open': float(row.get('Open', 0.0)),
+                'High': float(row.get('High', 0.0)),
+                'Low': float(row.get('Low', 0.0)),
+                'Volume': float(row.get('Volume', 0.0)),
+                'atr_percent': float(row.get('atr_percent', 0.02)),
+                'modelVersion': '5.0.0',
+                'foldId': int(fold['fold']),
+                'trainEnd': t_end_str,
+                'validationEnd': v_end_str,
+                'testStart': t_start_str,
+                'testEnd': t_end_test_str,
+            }
+            if 'regime' in row:
+                rec['regime'] = row['regime']
+            oos_records.append(rec)
+            
+    oos_df = pd.DataFrame(oos_records)
+    if not oos_df.empty:
+        oos_df['predictionTimestamp'] = pd.to_datetime(oos_df['predictionTimestamp'])
+        oos_df.sort_values('predictionTimestamp', inplace=True)
+        
+    # 6. Fit Production Model on full historical data prior to holdout
     pre_holdout_mask = clean_df.index < holdout_bounds['start']
     prod_train_df = clean_df[pre_holdout_mask]
     
     prod_model = lgb.LGBMClassifier(**params)
     prod_model.fit(prod_train_df[features], prod_train_df[target_col])
     
-    # Evaluate untouched holdout partition
+    # 7. Fit Production Calibrator from all validation predictions across folds
+    prod_calib_res = fit_isotonic_calibrator(all_val_predictions_for_prod_calib)
+    prod_calibrator = prod_calib_res['calibrator']
+    
+    # 8. Evaluate Frozen Holdout Partition strictly on production model
     holdout_df = clean_df[clean_df.index >= holdout_bounds['start']]
     holdout_metrics = {}
     if len(holdout_df) > 0:
         X_holdout, y_holdout = holdout_df[features], holdout_df[target_col]
-        holdout_prob = prod_model.predict_proba(X_holdout)[:, 1]
-        holdout_pred = (holdout_prob > 0.50).astype(int)
+        raw_holdout_prob = prod_model.predict_proba(X_holdout)[:, 1]
+        cal_holdout_prob = prod_calibrator.transform(raw_holdout_prob)
+        holdout_pred = (cal_holdout_prob > 0.50).astype(int)
+        
+        holdout_calib_eval = evaluate_test_calibration(y_holdout.values, raw_holdout_prob, cal_holdout_prob)
         
         holdout_metrics = {
             'holdoutStart': str(holdout_bounds['start'])[:10],
             'holdoutEnd': str(holdout_bounds['end'])[:10],
             'sampleCount': len(holdout_df),
-            'brierScore': round(float(brier_score_loss(y_holdout, holdout_prob)), 4),
-            'accuracy': round(float(accuracy_score(y_holdout, holdout_pred)), 4),
-            'auc': round(float(roc_auc_score(y_holdout, holdout_prob)), 4) if len(np.unique(y_holdout)) > 1 else 0.50,
+            'rawBrier': holdout_calib_eval['rawBrier'],
+            'calibratedBrier': holdout_calib_eval['calibratedBrier'],
+            'brierScore': holdout_calib_eval['calibratedBrier'],
+            'rawECE': holdout_calib_eval['rawECE'],
+            'calibratedECE': holdout_calib_eval['calibratedECE'],
+            'ece': holdout_calib_eval['calibratedECE'],
+            'rawMCE': holdout_calib_eval['rawMCE'],
+            'calibratedMCE': holdout_calib_eval['calibratedMCE'],
+            'mce': holdout_calib_eval['calibratedMCE'],
+            'rawLogLoss': holdout_calib_eval['rawLogLoss'],
+            'calibratedLogLoss': holdout_calib_eval['calibratedLogLoss'],
+            'accuracy': float(round(accuracy_score(y_holdout, holdout_pred), 4)),
+            'auc': float(round(roc_auc_score(y_holdout, raw_holdout_prob), 4)) if len(np.unique(y_holdout)) > 1 else 0.50,
             'directionalWinRate': round(float((y_holdout == holdout_pred).mean() * 100), 2),
+            'status': 'FROZEN_HOLDOUT_VERIFIED'
         }
         
     return {
         'horizon': horizon_str,
         'prod_model': prod_model,
+        'prod_calibrator': prod_calibrator,
+        'prod_calib_knots': prod_calib_res['knots'],
+        'prod_calib_status': prod_calib_res['status'],
         'fold_metrics': fold_metrics,
-        'val_predictions': val_predictions_list,
+        'oos_predictions_df': oos_df,
+        'val_predictions': all_val_predictions_for_prod_calib,
         'holdout_metrics': holdout_metrics,
         'holdout_bounds': {'start': str(holdout_bounds['start'])[:10], 'end': str(holdout_bounds['end'])[:10]},
         'training_bounds': {'start': str(dates.min())[:10], 'end': str(holdout_bounds['start'])[:10]},
     }
+

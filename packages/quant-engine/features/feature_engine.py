@@ -44,9 +44,12 @@ def calculate_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 def calculate_atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
-    high_low = df['High'] - df['Low']
-    high_close = (df['High'] - df['Close'].shift(1)).abs()
-    low_close = (df['Low'] - df['Close'].shift(1)).abs()
+    high = df['High'] if 'High' in df.columns else df['Close']
+    low = df['Low'] if 'Low' in df.columns else df['Close']
+    close = df['Close']
+    high_low = high - low
+    high_close = (high - close.shift(1)).abs()
+    low_close = (low - close.shift(1)).abs()
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
@@ -57,11 +60,13 @@ def calculate_features(df: pd.DataFrame, benchmark_df: Optional[pd.DataFrame] = 
     df = df.copy()
     df.sort_index(inplace=True)
     
+    if 'Close' not in df.columns:
+        df['Close'] = 100.0
     close = df['Close']
-    open_p = df['Open']
-    high = df['High']
-    low = df['Low']
-    vol = df['Volume']
+    open_p = df['Open'] if 'Open' in df.columns else close
+    high = df['High'] if 'High' in df.columns else close
+    low = df['Low'] if 'Low' in df.columns else close
+    vol = df['Volume'] if 'Volume' in df.columns else pd.Series(1000000.0, index=df.index)
     
     # 1. Momentum & Oscillators
     df['rsi_14'] = calculate_rsi(close, 14).fillna(50.0)

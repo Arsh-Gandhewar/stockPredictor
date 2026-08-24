@@ -88,3 +88,13 @@ class TransactionCostEngine:
         Deducts total round-trip friction from a simulated gross return.
         """
         return gross_return - self.calculate_round_trip_cost_rate()
+
+    def get_cost_breakdown(self) -> dict:
+        return {
+            'regime': self.regime,
+            'brokerage_rate': self.config.brokerage_rate,
+            'stt_rate_sell': self.config.stt_rate_sell,
+            'slippage_bps': self.config.slippage_bps,
+            'round_trip_rate': self.calculate_round_trip_cost_rate()
+        }
+

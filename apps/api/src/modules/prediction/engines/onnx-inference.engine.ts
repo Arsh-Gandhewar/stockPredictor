@@ -7,6 +7,7 @@ export interface ScenarioReturnQuantiles {
   bull85th: number;
   base50th: number;
   bear15th: number;
+  method?: string;
 }
 
 @Injectable()
@@ -42,6 +43,7 @@ export class OnnxInferenceEngine implements OnModuleInit {
   ];
 
   private isModelLoaded: boolean = false;
+  private conditionalReturnsTable: Record<string, Record<string, any>> = {};
   private empiricalQuantiles: Record<string, { bull_85th: number; base_50th: number; bear_15th: number }> = {
     '1d': { bull_85th: 0.015, base_50th: 0.003, bear_15th: -0.012 },
     '5d': { bull_85th: 0.038, base_50th: 0.010, bear_15th: -0.024 },
@@ -61,6 +63,9 @@ export class OnnxInferenceEngine implements OnModuleInit {
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
         if (manifest.featureSchema && Array.isArray(manifest.featureSchema)) {
           this.featureSchema = manifest.featureSchema;
+        }
+        if (manifest.conditionalReturns) {
+          this.conditionalReturnsTable = manifest.conditionalReturns;
         }
         if (manifest.empiricalQuantiles) {
           this.empiricalQuantiles = manifest.empiricalQuantiles;
@@ -90,13 +95,13 @@ export class OnnxInferenceEngine implements OnModuleInit {
   }
 
   /**
-   * Executes ONNX runtime inference over 25 point-in-time features.
+   * Executes native ONNX runtime inference over 25 point-in-time features.
+   * Strictly fails closed (never silently executes heuristic baseline).
    */
   async evaluate(features: Record<string, number | null>, horizon: '1d' | '5d' | '20d'): Promise<number> {
     const session = this.sessions.get(horizon);
     if (!session) {
-      // Fallback baseline probability if ONNX model is uninitialized
-      return this.evaluateBaselineHeuristic(features, horizon);
+      throw new Error(`MODEL_UNAVAILABLE: ONNX inference session for horizon ${horizon} is not loaded`);
     }
 
     try {
@@ -113,42 +118,90 @@ export class OnnxInferenceEngine implements OnModuleInit {
       feeds[inputName] = inputTensor;
 
       const results = await session.run(feeds);
-      // For LightGBM classifier ONNX model, output 1 contains class probabilities
       const probOutput = results[session.outputNames[1]] || results[session.outputNames[0]];
 
       if (probOutput && probOutput.data) {
         const dataArr = probOutput.data as Float32Array;
-        // Binary classification: probability of positive class (index 1)
         const prob = dataArr.length >= 2 ? dataArr[1] : dataArr[0];
         return parseFloat(Math.max(0.05, Math.min(0.95, Number(prob))).toFixed(4));
       }
 
       return 0.50;
     } catch (err) {
-      this.logger.warn(`ONNX inference failed for ${horizon}, using baseline fallback: ${err}`);
-      return this.evaluateBaselineHeuristic(features, horizon);
+      this.logger.error(`ONNX inference execution failed for ${horizon}: ${err}`);
+      throw new Error(`MODEL_UNAVAILABLE: ONNX inference failed: ${err.message}`);
     }
   }
 
-  public estimateScenarioReturns(horizon: '1d' | '5d' | '20d', assetVolatility: number = 0.02): ScenarioReturnQuantiles {
-    const base = this.empiricalQuantiles[horizon] || { bull_85th: 0.038, base_50th: 0.010, bear_15th: -0.024 };
+  private getBucketName(prob: number): string {
+    const p = Math.max(0.0, Math.min(1.0, prob));
+    if (p < 0.35) return 'DOWNSIDE_LOW';
+    if (p < 0.45) return 'DOWNSIDE_MID';
+    if (p < 0.50) return 'NEUTRAL_DOWN';
+    if (p < 0.55) return 'NEUTRAL_UP';
+    if (p < 0.65) return 'MODERATE_BULL';
+    if (p < 0.75) return 'STRONG_BULL';
+    return 'HIGH_CONVICTION_BULL';
+  }
+
+  public estimateScenarioReturns(
+    horizon: '1d' | '5d' | '20d',
+    calibratedProb: number = 0.55,
+    regime: string = 'SIDEWAYS',
+    assetVolatility: number = 0.02
+  ): ScenarioReturnQuantiles {
+    const hTable = this.conditionalReturnsTable[horizon];
+    const bucketName = this.getBucketName(calibratedProb);
+
+    if (hTable) {
+      // 1. Probability + Regime
+      const prKey = `PROB_REGIME_${bucketName}_${regime}`;
+      if (hTable[prKey] && hTable[prKey].sampleCount >= 15) {
+        return {
+          bull85th: hTable[prKey].p85,
+          base50th: hTable[prKey].p50,
+          bear15th: hTable[prKey].p15,
+          method: 'PROBABILITY_REGIME_BUCKET',
+        };
+      }
+
+      // 2. Probability Bucket
+      const pKey = `PROB_${bucketName}`;
+      if (hTable[pKey] && hTable[pKey].sampleCount >= 15) {
+        return {
+          bull85th: hTable[pKey].p85,
+          base50th: hTable[pKey].p50,
+          bear15th: hTable[pKey].p15,
+          method: 'PROBABILITY_BUCKET',
+        };
+      }
+
+      // 3. Horizon-Wide Fallback
+      if (hTable['HORIZON_WIDE'] && hTable['HORIZON_WIDE'].sampleCount >= 15) {
+        return {
+          bull85th: hTable['HORIZON_WIDE'].p85,
+          base50th: hTable['HORIZON_WIDE'].p50,
+          bear15th: hTable['HORIZON_WIDE'].p15,
+          method: 'HORIZON_WIDE_FALLBACK',
+        };
+      }
+    }
+
+    // Default fallback scaling
+    const defaultScale = 0.015 * Math.sqrt(horizon === '1d' ? 1 : (horizon === '5d' ? 5 : 20));
     const volScale = Math.max(0.35, Math.min(3.5, assetVolatility / 0.020));
+    const base: any = this.empiricalQuantiles[horizon] || {};
+
+    const raw85 = base?.p85 ?? base?.bull_85th ?? base?.HORIZON_WIDE?.p85 ?? (2.0 * defaultScale);
+    const raw50 = base?.p50 ?? base?.base_50th ?? base?.HORIZON_WIDE?.p50 ?? (0.2 * defaultScale);
+    const raw15 = base?.p15 ?? base?.bear_15th ?? base?.HORIZON_WIDE?.p15 ?? (-1.5 * defaultScale);
 
     return {
-      bull85th: parseFloat((base.bull_85th * volScale).toFixed(4)),
-      base50th: parseFloat((base.base_50th * volScale).toFixed(4)),
-      bear15th: parseFloat((base.bear_15th * volScale).toFixed(4)),
+      bull85th: parseFloat((Number(raw85) * volScale).toFixed(4)),
+      base50th: parseFloat((Number(raw50) * volScale).toFixed(4)),
+      bear15th: parseFloat((Number(raw15) * volScale).toFixed(4)),
+      method: 'EMPIRICAL_QUANTILE_FALLBACK',
     };
   }
-
-  private evaluateBaselineHeuristic(features: Record<string, number | null>, horizon: '1d' | '5d' | '20d'): number {
-    const rsi = features['rsi_14'] ?? 50;
-    const mom = features['momentum_5'] ?? 0;
-    const smaDist = features['sma_50_dist'] ?? 0;
-
-    let score = (50 - rsi) * 0.02 + mom * 2.0 + smaDist * 1.5;
-    const horizonScaling = horizon === '1d' ? 0.60 : horizon === '5d' ? 1.0 : 1.35;
-    const prob = 1 / (1 + Math.exp(-score * horizonScaling));
-    return parseFloat(Math.max(0.05, Math.min(0.95, prob)).toFixed(4));
-  }
 }
+
