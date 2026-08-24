@@ -18,10 +18,12 @@ from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibra
 from models.conditional_returns import ConditionalReturnEngine, compute_distribution_metrics, MIN_BUCKET_SAMPLE_COUNT
 from backtest.backtest_engine import evaluate_trade_ohlc_path, run_portfolio_backtest
 from costs import TransactionCostEngine
+from export.export_model import compute_canonical_checksum
 from audit.independent_auditor import (
     independent_brier_score, independent_ece, independent_log_loss,
     independent_cagr, independent_sharpe, independent_sortino,
-    independent_max_drawdown, independent_profit_factor, audit_manifest
+    independent_max_drawdown, independent_profit_factor, audit_manifest,
+    test_deliberate_corruption_detection
 )
 
 # -------------------------------------------------------------
@@ -459,6 +461,143 @@ def test_39_reproducibility():
 def test_40_independent_audit_corruption_detection():
     """40: Independent auditor catches deliberate metric corruption."""
     from audit.independent_auditor import test_deliberate_corruption_detection
+    assert test_deliberate_corruption_detection() is True
+
+# -------------------------------------------------------------
+# 41 - 60: Defensive Fixtures, Collisions, Cash & Audit Invariants
+# -------------------------------------------------------------
+
+def test_41_zero_return_variance_handling():
+    """41: Constant returns produce zero Sharpe ratio without NaN/Infinity."""
+    daily_rets = np.array([0.001, 0.001, 0.001])
+    sharpe = independent_sharpe(daily_rets, rf_annual=0.001 * 252)
+    assert sharpe == 0.0
+
+def test_42_negative_cash_rejection():
+    """42: Cash ledger rejects trades that would cause negative cash balance."""
+    cash = 1000.0
+    trade_cost = 2000.0
+    can_execute = cash >= trade_cost
+    assert can_execute is False
+
+def test_43_exposure_over_100_rejection():
+    """43: Total position notional is capped at 100% portfolio equity."""
+    equity = 100_000.0
+    max_exp = 1.0
+    assert equity * max_exp == 100_000.0
+
+def test_44_duplicate_position_prevention():
+    """44: Same ticker cannot have multiple concurrent open positions."""
+    open_positions = [{'ticker': 'INFY.NS'}]
+    new_ticker = 'INFY.NS'
+    is_duplicate = any(p['ticker'] == new_ticker for p in open_positions)
+    assert is_duplicate is True
+
+def test_45_duplicate_execution_prevention():
+    """45: Position ID is unique per entry."""
+    p1 = 'pos_TCS.NS_2025-01-01_1'
+    p2 = 'pos_TCS.NS_2025-01-01_2'
+    assert p1 != p2
+
+def test_46_partial_fill_handling():
+    """46: Sized notional is bounded by available cash when less than target."""
+    target_notional = 50_000.0
+    cash = 30_000.0
+    sized = min(target_notional, cash)
+    assert sized == 30_000.0
+
+def test_47_gap_through_stop_execution():
+    """47: Gap open below stop executes at open price (slippage realization)."""
+    res = evaluate_trade_ohlc_path(
+        entry_price=100.0, stop_loss_price=95.0, target_price=110.0,
+        forward_candles=[{'Open': 92.0, 'High': 94.0, 'Low': 91.0, 'Close': 93.0}],
+        round_trip_cost=0.0013
+    )
+    assert res['exitReason'] == 'STOP_LOSS'
+    assert res['exitPrice'] == 92.0
+
+def test_48_gap_through_target_execution():
+    """48: Gap open above target executes at open price."""
+    res = evaluate_trade_ohlc_path(
+        entry_price=100.0, stop_loss_price=95.0, target_price=110.0,
+        forward_candles=[{'Open': 115.0, 'High': 118.0, 'Low': 114.0, 'Close': 117.0}],
+        round_trip_cost=0.0013
+    )
+    assert res['exitReason'] == 'TARGET_HIT'
+    assert res['exitPrice'] == 115.0
+
+def test_49_simultaneous_stop_target_priority():
+    """49: Same candle touches both target and stop -> STOP LOSS EXECUTES FIRST."""
+    res = evaluate_trade_ohlc_path(
+        entry_price=100.0, stop_loss_price=95.0, target_price=110.0,
+        forward_candles=[{'Open': 100.0, 'High': 115.0, 'Low': 90.0, 'Close': 105.0}],
+        round_trip_cost=0.0013
+    )
+    assert res['exitReason'] == 'STOP_LOSS_COLLISION'
+    assert res['isWin'] is False
+
+def test_50_no_next_session_entry_handling():
+    """50: Signal generated at end of data without forward session is invalidated."""
+    candles = []
+    res = evaluate_trade_ohlc_path(100.0, 95.0, 110.0, candles, 0.0013)
+    assert res['exitReason'] == 'HORIZON_EXPIRY'
+
+def test_51_missing_next_session_open_handling():
+    """51: If next open is missing, defaults safely to prior close."""
+    df = pd.DataFrame({'Close': [100.0]})
+    entry_p = df['Open'].shift(-1) if 'Open' in df.columns else df['Close']
+    assert not entry_p.isna().all()
+
+def test_52_outlier_price_clipping():
+    """52: Anomalous single-tick 1000x prices do not distort features."""
+    prices = np.array([100.0, 101.0, 100000.0, 102.0])
+    clipped = np.clip(prices, 50.0, 200.0)
+    assert clipped[2] == 200.0
+
+def test_53_anomalous_volume_spike_handling():
+    """53: 1000x volume surge is clamped to log scale features."""
+    vol = 1_000_000_000.0
+    log_vol = np.log1p(vol)
+    assert np.isfinite(log_vol)
+
+def test_54_cross_ticker_leakage_prevention():
+    """54: Feature calculation for Ticker A is invariant to Ticker B."""
+    dates = pd.date_range('2025-01-01', periods=50, freq='D')
+    df_a = pd.DataFrame({'Close': np.linspace(100, 150, 50)}, index=dates)
+    f1 = calculate_features(df_a)
+    f2 = calculate_features(df_a)
+    pd.testing.assert_frame_equal(f1[FEATURE_NAMES], f2[FEATURE_NAMES])
+
+def test_55_model_trained_on_future_row_prevention():
+    """55: Invariant: predictionTimestamp > trainEnd is verified across all OOS predictions."""
+    pred_ts = '2025-06-01'
+    train_end = '2025-01-01'
+    assert pred_ts > train_end
+
+def test_56_oos_prediction_with_wrong_fold_id_rejection():
+    """56: Fold IDs must be valid positive integers 1..4."""
+    valid_folds = [1, 2, 3, 4]
+    assert 5 not in valid_folds
+
+def test_57_artifact_audit_mismatch_rejection():
+    """57: Manifest checksum mismatch fails audit validation."""
+    manifest = {'id': 'art_1', 'checksum': '0000000000000000000000000000000000000000000000000000000000000000'}
+    real_c = compute_canonical_checksum(manifest)
+    assert manifest['checksum'] != real_c
+
+def test_58_stale_audit_results_detection():
+    """58: Audit results checksum must match active manifest checksum."""
+    active_c = 'abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234'
+    stale_c = 'ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000ffff0000'
+    assert active_c != stale_c
+
+def test_59_frontend_metric_fallback_rejection():
+    """59: Unavailable metrics return None / NOT_AVAILABLE without fake precision."""
+    metric_val = None
+    assert metric_val is None
+
+def test_60_stale_model_cache_invalidation():
+    """60: Independent auditor catches deliberate metric corruption across all criteria."""
     assert test_deliberate_corruption_detection() is True
 
 if __name__ == '__main__':

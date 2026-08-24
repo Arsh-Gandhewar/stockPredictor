@@ -37,14 +37,14 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
     if n < MIN_BUCKET_SAMPLE_COUNT:
         return {
             'sampleCount': n,
-            'p15': 0.0,
-            'p50': 0.0,
-            'p85': 0.0,
-            'mean': 0.0,
-            'median': 0.0,
-            'std': 0.0,
-            'standardError': 0.0,
-            'confidenceInterval': [0.0, 0.0],
+            'p15': None,
+            'p50': None,
+            'p85': None,
+            'mean': None,
+            'median': None,
+            'std': None,
+            'standardError': None,
+            'confidenceInterval': None,
             'fittedStart': start_date,
             'fittedEnd': end_date,
             'method': 'INSUFFICIENT_DATA'
@@ -142,23 +142,26 @@ class ConditionalReturnEngine:
         if p_key in h_table and h_table[p_key]['method'] == 'PROBABILITY_BUCKET':
             return h_table[p_key]
             
-        # 3. Try Horizon-Wide Fallback
+        # 3. Try Regime-Wide Fallback
+        r_key = f"REGIME_{regime}"
+        if r_key in h_table and h_table[r_key]['method'] == 'REGIME_BUCKET':
+            return h_table[r_key]
+
+        # 4. Try Horizon-Wide Fallback
         if 'HORIZON_WIDE' in h_table and h_table['HORIZON_WIDE']['method'] == 'HORIZON_WIDE_FALLBACK':
             return h_table['HORIZON_WIDE']
             
-        # 4. Default / Insufficient Data
-        h_days = 1 if horizon == '1d' else (5 if horizon == '5d' else 20)
-        default_scale = 0.015 * np.sqrt(h_days)
+        # 5. Strictly Insufficient Data (Zero fabricated numbers)
         return {
             'sampleCount': 0,
-            'p15': float(round(-1.5 * default_scale, 4)),
-            'p50': float(round(0.2 * default_scale, 4)),
-            'p85': float(round(2.0 * default_scale, 4)),
-            'mean': float(round(0.2 * default_scale, 4)),
-            'median': float(round(0.2 * default_scale, 4)),
-            'std': float(round(default_scale, 4)),
-            'standardError': 0.0,
-            'confidenceInterval': [0.0, 0.0],
+            'p15': None,
+            'p50': None,
+            'p85': None,
+            'mean': None,
+            'median': None,
+            'std': None,
+            'standardError': None,
+            'confidenceInterval': None,
             'fittedStart': "",
             'fittedEnd': "",
             'method': 'INSUFFICIENT_DATA'

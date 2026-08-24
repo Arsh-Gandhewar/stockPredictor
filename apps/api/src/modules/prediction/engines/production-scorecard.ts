@@ -137,8 +137,8 @@ export class ProductionScorecardService {
 
     // 7. PROBABILITY_CALIBRATION
     const calib5d = artifact?.calibration?.['5d'];
-    const calibSampleCount = calib5d?.metrics?.sampleCount || artifact?.calibrationMetrics?.sampleCount || (artifact?.calibrationKnots ? 40 : 0);
-    const calibStatus = calib5d?.status || artifact?.calibrationStatus || 'FITTED_OUT_OF_SAMPLE';
+    const calibSampleCount = calib5d?.metrics?.sampleCount || artifact?.calibrationMetrics?.sampleCount || 0;
+    const calibStatus = calib5d?.status || artifact?.calibrationStatus || 'UNFITTED';
     const calibPassed = Boolean(
       artifact &&
       calibStatus === 'FITTED_OUT_OF_SAMPLE' &&

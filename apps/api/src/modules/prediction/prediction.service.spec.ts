@@ -337,63 +337,74 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
       ];
       inferenceEngine.fitEmpiricalDistributions(valTrades);
 
-      // Step D: Save to Canonical Location
-      const artifactData: Omit<ModelArtifact, 'checksum' | 'id'> = {
-        modelVersion: '4.0.0',
-        modelType: 'BASELINE_HEURISTIC',
-        featureVersion: 'v4.0.0-multi-factor-25',
-        trainingStart: '2025-08-22',
-        trainingEnd: '2026-02-15',
-        validationStart: '2026-02-16',
-        validationEnd: '2026-05-15',
-        testStart: '2026-05-16',
-        testEnd: '2026-07-15',
-        holdoutStart: '2026-07-16',
-        holdoutEnd: '2026-08-22',
-        horizon: '5d',
-        fittingMethod: 'PAV + Empirical Two-Stage',
-        parameters: model.getWeights(),
-        calibrationVersion: 'v4.0.0-isotonic',
-        calibrationKnots: knots,
-        calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
-        calibrationMetrics: calibMetrics,
-        empiricalDistributions: inferenceEngine.getEmpiricalBuckets(),
-        survivorshipStatus: 'NOT_FULLY_RESOLVED',
-        survivorshipDisclosure: 'Point-in-time trailing liquidity on NSE equities with survivorship limitation explicitly documented.',
-        statisticalGatePassed: true,
-        gateDetails: {
-          sampleSufficiency: true,
-          calibrationQuality: true,
-          versionCompatibility: true,
-          dateRangeIntegrity: true,
-        },
-        createdAt: new Date().toISOString(),
-      };
+      // Step D: Save to Canonical Location (with original backup preservation)
+      const fs = require('fs');
+      const path = require('path');
+      const activePath = path.resolve(__dirname, '../../../../data/artifacts/active/model-artifact.json');
+      const originalContent = fs.existsSync(activePath) ? fs.readFileSync(activePath, 'utf8') : null;
 
-      const { success, artifactId } = artifactService.saveArtifact(artifactData);
-      expect(success).toBe(true);
-      expect(artifactId).toBeDefined();
+      try {
+        const artifactData: Omit<ModelArtifact, 'checksum' | 'id'> = {
+          modelVersion: '4.0.0',
+          modelType: 'BASELINE_HEURISTIC',
+          featureVersion: 'v4.0.0-multi-factor-25',
+          trainingStart: '2025-08-22',
+          trainingEnd: '2026-02-15',
+          validationStart: '2026-02-16',
+          validationEnd: '2026-05-15',
+          testStart: '2026-05-16',
+          testEnd: '2026-07-15',
+          holdoutStart: '2026-07-16',
+          holdoutEnd: '2026-08-22',
+          horizon: '5d',
+          fittingMethod: 'PAV + Empirical Two-Stage',
+          parameters: model.getWeights(),
+          calibrationVersion: 'v4.0.0-isotonic',
+          calibrationKnots: knots,
+          calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
+          calibrationMetrics: calibMetrics,
+          empiricalDistributions: inferenceEngine.getEmpiricalBuckets(),
+          survivorshipStatus: 'NOT_FULLY_RESOLVED',
+          survivorshipDisclosure: 'Point-in-time trailing liquidity on NSE equities with survivorship limitation explicitly documented.',
+          statisticalGatePassed: true,
+          gateDetails: {
+            sampleSufficiency: true,
+            calibrationQuality: true,
+            versionCompatibility: true,
+            dateRangeIntegrity: true,
+          },
+          createdAt: new Date().toISOString(),
+        };
 
-      // Step E: Load and Verify from Canonical Location
-      const { artifact: loadedArtifact, validation } = artifactService.loadActiveArtifact();
-      expect(validation.isValid).toBe(true);
-      expect(loadedArtifact).not.toBeNull();
-      expect(loadedArtifact!.checksum).toBeDefined();
+        const { success, artifactId } = artifactService.saveArtifact(artifactData);
+        expect(success).toBe(true);
+        expect(artifactId).toBeDefined();
 
-      // Step F: Verify Live Inference with Loaded Artifact
-      const freshCalibrationEngine = new CalibrationEngine();
-      const freshInferenceEngine = new ModelInferenceEngine();
+        // Step E: Load and Verify from Canonical Location
+        const { artifact: loadedArtifact, validation } = artifactService.loadActiveArtifact();
+        expect(validation.isValid).toBe(true);
+        expect(loadedArtifact).not.toBeNull();
+        expect(loadedArtifact!.checksum).toBeDefined();
 
-      freshCalibrationEngine.setKnots(loadedArtifact!.calibrationKnots!, loadedArtifact!.calibrationStatus === 'FITTED_OUT_OF_SAMPLE');
-      freshInferenceEngine.setEmpiricalBuckets(loadedArtifact!.empiricalDistributions!);
+        // Step F: Verify Live Inference with Loaded Artifact
+        const freshCalibrationEngine = new CalibrationEngine();
+        const freshInferenceEngine = new ModelInferenceEngine();
 
-      expect(freshCalibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
-      const calibratedProb = freshCalibrationEngine.apply(0.60);
-      expect(calibratedProb).toBeGreaterThan(0);
+        freshCalibrationEngine.setKnots(loadedArtifact!.calibrationKnots!, loadedArtifact!.calibrationStatus === 'FITTED_OUT_OF_SAMPLE');
+        freshInferenceEngine.setEmpiricalBuckets(loadedArtifact!.empiricalDistributions!);
 
-      const estimation = freshInferenceEngine.estimateExpectedReturn(calibratedProb, '5d', 0.02);
-      expect(estimation.method).not.toBe('FALLBACK_DIFFUSION');
-      expect(estimation.sampleCount).toBeGreaterThan(0);
+        expect(freshCalibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
+        const calibratedProb = freshCalibrationEngine.apply(0.60);
+        expect(calibratedProb).toBeGreaterThan(0);
+
+        const estimation = freshInferenceEngine.estimateExpectedReturn(calibratedProb, '5d', 0.02);
+        expect(estimation.method).not.toBe('FALLBACK_DIFFUSION');
+        expect(estimation.sampleCount).toBeGreaterThan(0);
+      } finally {
+        if (originalContent) {
+          fs.writeFileSync(activePath, originalContent, 'utf8');
+        }
+      }
     });
   });
 });
