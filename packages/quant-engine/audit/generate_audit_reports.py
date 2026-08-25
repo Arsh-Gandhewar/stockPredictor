@@ -149,7 +149,7 @@ The strategy simulation consumes **exclusively** the out-of-sample prediction le
 - **Pytest/Unit Verification:** PASSED
 - **Deliberate Corruption Detection Tests:** PASSED (Caught fabricated 99, 999, Infinity profit factors and corrupted checksums).
 """
-    for doc_name in ['QUANT_MODEL_FINAL_AUDIT.md', 'QUANT_MODEL_CERTIFICATION.md', 'QUANT_MODEL_AUDIT.md']:
+    for doc_name in ['QUANT_FINAL_CERTIFICATION.md', 'QUANT_FINAL_AUDIT.md', 'QUANT_MODEL_FINAL_AUDIT.md', 'QUANT_MODEL_CERTIFICATION.md', 'QUANT_MODEL_AUDIT.md']:
         p = os.path.join(docs_dir, doc_name)
         with open(p, 'w', encoding='utf-8') as f:
             f.write(md_content)

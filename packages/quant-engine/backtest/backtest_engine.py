@@ -169,8 +169,8 @@ def run_portfolio_backtest(
     daily_equity_records: List[Dict[str, Any]] = []
     
     MAX_CONCURRENT_POSITIONS = 10
-    MAX_POSITION_WEIGHT = 0.15      # Max 15% allocation per stock
-    RISK_BUDGET_PCT = 0.01          # 1.0% portfolio equity risk budget
+    MAX_POSITION_WEIGHT = 0.10      # Max 10% allocation per stock (Section 27)
+    RISK_BUDGET_PCT = 0.005         # 0.50% portfolio equity risk budget (Section 26)
     
     for current_date in unique_dates:
         start_of_day_cash = cash
@@ -346,15 +346,15 @@ def run_portfolio_backtest(
     n_days = len(daily_equity_records)
     calendar_days = max(1, (unique_dates[-1] - unique_dates[0]).days) if len(unique_dates) > 1 else 1
     
-    # 1. CAGR
+    # 1. CAGR (Section 29)
     total_ret_ratio = final_equity / initial_cash if initial_cash > 0 else 0.0
     cagr = (pow(total_ret_ratio, 365.0 / calendar_days) - 1.0) * 100.0 if total_ret_ratio > 0 and calendar_days >= 30 else ((total_ret_ratio - 1.0) * 100.0)
     
-    # 2. Sharpe (vs 6.5% risk-free rate)
-    rf_daily = 0.065 / 252.0
+    # 2. Sharpe (vs 4.00% annual risk-free rate, Section 29)
+    rf_daily = (1.0 + 0.04)**(1.0 / 252.0) - 1.0
     excess_returns = daily_returns - rf_daily if len(daily_returns) > 0 else np.array([0.0])
     mean_excess = float(np.mean(excess_returns)) if len(excess_returns) > 0 else 0.0
-    std_ret = float(np.std(daily_returns, ddof=1)) if len(daily_returns) > 1 else 0.0
+    std_ret = float(np.std(excess_returns, ddof=1)) if len(excess_returns) > 1 else 0.0
     
     if std_ret > 1e-6 and len(daily_returns) > 1:
         annualized_vol = std_ret * np.sqrt(252.0)
@@ -365,10 +365,11 @@ def run_portfolio_backtest(
         
     annualized_return = float(np.mean(daily_returns) * 252.0) if len(daily_returns) > 0 else 0.0
     
-    # 3. Sortino (vs 6.5% risk-free rate)
-    downside_rets = daily_returns[daily_returns < rf_daily]
-    downside_dev = float(np.std(downside_rets, ddof=1) * np.sqrt(252.0)) if len(downside_rets) > 1 else 0.0
-    if downside_dev > 1e-6 and len(downside_rets) > 1:
+    # 3. Sortino (mean excess / sqrt(mean(min(excess, 0)^2)) * sqrt(252), Section 29)
+    downside = np.minimum(excess_returns, 0.0)
+    downside_variance = np.mean(downside**2) if len(downside) > 0 else 0.0
+    downside_dev = float(np.sqrt(downside_variance) * np.sqrt(252.0))
+    if downside_dev > 1e-6 and len(daily_returns) > 1:
         sortino = (mean_excess * np.sqrt(252.0)) / downside_dev
     else:
         sortino = 'NOT_MEANINGFUL'
@@ -383,7 +384,7 @@ def run_portfolio_backtest(
         if dd < max_dd:
             max_dd = dd
             
-    calmar = abs(cagr / (max_dd * 100.0)) if max_dd < 0 else 0.0
+    calmar = round(float(cagr / abs(max_dd * 100.0)), 2) if max_dd < 0 else 'NOT_MEANINGFUL'
     
     # 5. Profit Factor (Never fabricated 99 or 999)
     if completed_trades:
@@ -410,7 +411,7 @@ def run_portfolio_backtest(
         'annualizedVol': round(float(annualized_vol * 100.0), 2),
         'sharpe': round(float(sharpe), 2) if isinstance(sharpe, float) else sharpe,
         'sortino': round(float(sortino), 2) if isinstance(sortino, float) else sortino,
-        'calmar': round(float(calmar), 2),
+        'calmar': round(float(calmar), 2) if isinstance(calmar, (float, int)) else calmar,
         'maxDrawdown': round(float(max_dd * 100.0), 2),
         'profitFactor': profit_factor,
         'rejectedSignalsCount': rejected_signals_count,

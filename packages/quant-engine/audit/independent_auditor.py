@@ -57,30 +57,29 @@ def independent_cagr(initial_equity: float, final_equity: float, calendar_days: 
         return float(((final_equity / initial_equity) - 1.0) * 100.0)
     return float((pow(final_equity / initial_equity, 365.0 / calendar_days) - 1.0) * 100.0)
 
-def independent_sharpe(daily_returns: np.ndarray, rf_annual: float = 0.065) -> float:
+def independent_sharpe(daily_returns: np.ndarray, rf_annual: float = 0.04) -> float:
     if len(daily_returns) < 2:
         return 0.0
-    rf_daily = rf_annual / 252.0
+    rf_daily = (1.0 + rf_annual)**(1.0 / 252.0) - 1.0
     excess = daily_returns - rf_daily
     mean_excess = np.mean(excess)
-    std_excess = np.std(daily_returns, ddof=1)
+    std_excess = np.std(excess, ddof=1)
     if std_excess < 1e-6:
         return 0.0
     return float((mean_excess * np.sqrt(252.0)) / std_excess)
 
-def independent_sortino(daily_returns: np.ndarray, rf_annual: float = 0.065) -> float:
+def independent_sortino(daily_returns: np.ndarray, rf_annual: float = 0.04) -> float:
     if len(daily_returns) < 2:
         return 0.0
-    rf_daily = rf_annual / 252.0
+    rf_daily = (1.0 + rf_annual)**(1.0 / 252.0) - 1.0
     excess = daily_returns - rf_daily
     mean_excess = np.mean(excess)
-    downside = daily_returns[daily_returns < rf_daily]
-    if len(downside) < 2:
-        return 0.0
-    downside_dev = np.std(downside, ddof=1) * np.sqrt(252.0)
+    downside = np.minimum(excess, 0.0)
+    downside_variance = np.mean(downside**2)
+    downside_dev = np.sqrt(downside_variance) * np.sqrt(252.0)
     if downside_dev < 1e-6:
         return 0.0
-    return float((mean_excess * np.sqrt(252.0)) / (downside_dev / np.sqrt(252.0) * np.sqrt(252.0)))
+    return float((mean_excess * np.sqrt(252.0)) / downside_dev)
 
 def independent_max_drawdown(equity_series: np.ndarray) -> float:
     if len(equity_series) == 0:

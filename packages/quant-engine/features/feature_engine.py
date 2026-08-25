@@ -159,4 +159,7 @@ def calculate_features(df: pd.DataFrame, benchmark_df: Optional[pd.DataFrame] = 
             df[feat] = np.nan
         df[feat] = df[feat].replace([np.inf, -np.inf], np.nan)
         
+    # Required row-level flag: featureWarmupComplete = true iff every feature is valid non-NaN
+    df['featureWarmupComplete'] = df[FEATURE_NAMES].notna().all(axis=1)
+        
     return df

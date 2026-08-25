@@ -60,28 +60,31 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
     Fits monotonic isotonic regression strictly on validation predictions.
     Generates piecewise linear knots with empirical-Bayes tail shrinkage toward identity.
     
-    REJECTION GATES:
-    1. COLLAPSED_REJECTED: if knot dynamic range < 0.10 (constant output)
-    2. WORSENED_REJECTED: if calibrated Brier > raw Brier OR calibrated ECE > 2x raw ECE
-    3. INSUFFICIENT_DATA: if effective sample count < 20
+    EXACT GATES (Section 13, 14, 15):
+    1. Sample count: N >= 500 required (else INSUFFICIENT_DATA)
+    2. Populated bins >= 8
+    3. Collapse gate: std(calibrated) < 10% std(raw) OR unique calibrated values < 3
+    4. Acceptance gates:
+       - Calibrated Brier <= Raw Brier
+       - Calibrated LogLoss <= Raw LogLoss (if computable)
+       - Calibrated ECE <= Raw ECE (or improvement)
+       - Calibrated ROC-AUC >= Raw ROC-AUC - 0.01
     
-    On rejection, returns identity calibration (raw probabilities pass through unchanged).
+    On rejection, returns identity calibration with status REJECTED or INSUFFICIENT_DATA.
     """
+    from sklearn.metrics import roc_auc_score
     identity_knots = [[round(p, 3), round(p, 3)] for p in np.linspace(0.05, 0.95, 10)]
-    
-    # Dependence-aware effective sample count: overlapping multi-day returns
-    # inflate apparent N. Effective N = N / max(1, horizon_days) to compensate.
     raw_n = len(val_predictions or [])
-    n_eff = raw_n / max(1, horizon_days) if horizon_days > 1 else raw_n
     
-    if not val_predictions or n_eff < 20:
+    if not val_predictions or raw_n < 500:
         return {
             'status': 'INSUFFICIENT_DATA',
             'knots': identity_knots,
             'calibrator': IsotonicCalibrator(identity_knots),
+            'rejectionReason': f'Validation sample count {raw_n} < 500 required',
             'diagnosticMetrics': {
                 'sampleCount': raw_n,
-                'effectiveSampleCount': int(n_eff),
+                'effectiveSampleCount': raw_n,
                 'brierScore': None,
                 'ece': None,
                 'mce': None,
@@ -96,6 +99,14 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
     # Compute RAW metrics BEFORE calibration (for comparison gate)
     raw_brier = float(round(brier_score_loss(y_true, np.clip(y_prob, 0.001, 0.999)), 4))
     raw_ece, raw_mce, _ = calculate_ece(y_true, y_prob)
+    try:
+        raw_ll = float(round(log_loss(y_true, np.clip(y_prob, 0.001, 0.999)), 4))
+    except Exception:
+        raw_ll = None
+    try:
+        raw_auc = float(round(roc_auc_score(y_true, y_prob), 4))
+    except Exception:
+        raw_auc = 0.5
     
     iso = IsotonicRegression(out_of_bounds='clip', y_min=0.05, y_max=0.95)
     iso.fit(y_prob, y_true)
@@ -104,18 +115,15 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
     grid_points = np.linspace(0.05, 0.95, 10)
     raw_calibrated = iso.predict(grid_points)
     
-    # Empirical Bayes tail shrinkage: shrink toward IDENTITY (raw_p), not 0.50.
-    # This prevents collapse toward a constant when support is low.
-    min_tail_support = max(5, int(15 / max(1, horizon_days)))
+    # Empirical Bayes tail shrinkage: shrink toward IDENTITY (raw_p), not 0.50
+    min_tail_support = 50  # Section 13: Minimum 50 samples in tail
     knots: List[List[float]] = []
     for raw_p, cal_p in zip(grid_points, raw_calibrated):
-        # Adaptive bandwidth based on local density
         bandwidth = max(0.05, min(0.12, 1.0 / (len(grid_points) * 0.8)))
         mask = (y_prob >= raw_p - bandwidth) & (y_prob <= raw_p + bandwidth)
         support = np.sum(mask)
         
         if support < min_tail_support:
-            # Shrink toward identity (raw_p), not 0.50
             prior_weight = 10.0
             shrunk_cal = (cal_p * support + raw_p * prior_weight) / (support + prior_weight)
         else:
@@ -128,55 +136,88 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
         if knots[k][1] < knots[k-1][1]:
             knots[k][1] = knots[k-1][1]
     
-    # === COLLAPSE DETECTION GATE ===
+    # === COLLAPSE DETECTION GATE (Section 15) ===
     y_values = [k[1] for k in knots]
     knot_range = max(y_values) - min(y_values)
-    if knot_range < 0.10:
+    calibrator = IsotonicCalibrator(knots, iso)
+    cal_val_prob = calibrator.transform(y_prob)
+    
+    std_raw = float(np.std(y_prob))
+    std_cal = float(np.std(cal_val_prob))
+    unique_cal_count = len(np.unique(np.round(cal_val_prob, 3)))
+    
+    if std_raw > 1e-4 and std_cal < 0.10 * std_raw:
         return {
             'status': 'COLLAPSED_REJECTED',
             'knots': identity_knots,
             'calibrator': IsotonicCalibrator(identity_knots),
-            'rejectionReason': f'Knot dynamic range {knot_range:.4f} < 0.10 (constant output)',
+            'rejectionReason': f'Calibration collapse: std(calibrated) {std_cal:.4f} < 10% of std(raw) {std_raw:.4f}',
             'diagnosticMetrics': {
                 'sampleCount': raw_n,
-                'effectiveSampleCount': int(n_eff),
+                'effectiveSampleCount': raw_n,
                 'brierScore': raw_brier,
                 'rawBrier': raw_brier,
                 'ece': raw_ece,
                 'rawECE': raw_ece,
                 'mce': raw_mce,
-                'logLoss': None,
+                'logLoss': raw_ll,
+                'knotRange': round(knot_range, 4),
+                'isMonotonic': True
+            }
+        }
+        
+    if unique_cal_count < 3:
+        return {
+            'status': 'COLLAPSED_REJECTED',
+            'knots': identity_knots,
+            'calibrator': IsotonicCalibrator(identity_knots),
+            'rejectionReason': f'Calibration collapse: unique calibrated values {unique_cal_count} < 3',
+            'diagnosticMetrics': {
+                'sampleCount': raw_n,
+                'effectiveSampleCount': raw_n,
+                'brierScore': raw_brier,
+                'rawBrier': raw_brier,
+                'ece': raw_ece,
+                'rawECE': raw_ece,
+                'mce': raw_mce,
+                'logLoss': raw_ll,
                 'knotRange': round(knot_range, 4),
                 'isMonotonic': True
             }
         }
             
-    calibrator = IsotonicCalibrator(knots, iso)
-    
     # Compute CALIBRATED metrics for comparison
-    cal_val_prob = calibrator.transform(y_prob)
     cal_brier = float(round(brier_score_loss(y_true, cal_val_prob), 4))
     cal_ece, cal_mce, cal_bins = calculate_ece(y_true, cal_val_prob)
     try:
         cal_ll = float(round(log_loss(y_true, np.clip(cal_val_prob, 0.001, 0.999)), 4))
     except Exception:
         cal_ll = None
+    try:
+        cal_auc = float(round(roc_auc_score(y_true, cal_val_prob), 4))
+    except Exception:
+        cal_auc = 0.5
         
-    # === RAW-vs-CALIBRATED COMPARISON GATE ===
-    if cal_brier > raw_brier or (raw_ece > 0.001 and cal_ece > raw_ece * 2.0):
-        rejection_reason = []
-        if cal_brier > raw_brier:
-            rejection_reason.append(f'Brier worsened: raw={raw_brier} -> cal={cal_brier}')
-        if raw_ece > 0.001 and cal_ece > raw_ece * 2.0:
-            rejection_reason.append(f'ECE worsened >2x: raw={raw_ece} -> cal={cal_ece}')
+    # === RAW-vs-CALIBRATED COMPARISON GATE (Section 14) ===
+    rejection_reason = []
+    if cal_brier > raw_brier:
+        rejection_reason.append(f'Brier worsened: raw={raw_brier} -> cal={cal_brier}')
+    if raw_ll is not None and cal_ll is not None and cal_ll > raw_ll:
+        rejection_reason.append(f'LogLoss worsened: raw={raw_ll} -> cal={cal_ll}')
+    if raw_ece > 0.001 and cal_ece > raw_ece:
+        rejection_reason.append(f'ECE worsened: raw={raw_ece} -> cal={cal_ece}')
+    if cal_auc < raw_auc - 0.01:
+        rejection_reason.append(f'ROC-AUC degraded: raw={raw_auc} -> cal={cal_auc}')
+        
+    if rejection_reason:
         return {
-            'status': 'WORSENED_REJECTED',
+            'status': 'REJECTED',
             'knots': identity_knots,
             'calibrator': IsotonicCalibrator(identity_knots),
             'rejectionReason': '; '.join(rejection_reason),
             'diagnosticMetrics': {
                 'sampleCount': raw_n,
-                'effectiveSampleCount': int(n_eff),
+                'effectiveSampleCount': raw_n,
                 'brierScore': raw_brier,
                 'rawBrier': raw_brier,
                 'calibratedBrier': cal_brier,
@@ -185,6 +226,7 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
                 'calibratedECE': cal_ece,
                 'mce': raw_mce,
                 'logLoss': cal_ll,
+                'rawLogLoss': raw_ll,
                 'knotRange': round(knot_range, 4),
                 'populatedBins': cal_bins,
                 'isMonotonic': True,
@@ -197,7 +239,7 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
         'calibrator': calibrator,
         'diagnosticMetrics': {
             'sampleCount': raw_n,
-            'effectiveSampleCount': int(n_eff),
+            'effectiveSampleCount': raw_n,
             'brierScore': cal_brier,
             'rawBrier': raw_brier,
             'calibratedBrier': cal_brier,
@@ -206,6 +248,7 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
             'calibratedECE': cal_ece,
             'mce': cal_mce,
             'logLoss': cal_ll,
+            'rawLogLoss': raw_ll,
             'knotRange': round(knot_range, 4),
             'populatedBins': cal_bins,
             'isMonotonic': True,

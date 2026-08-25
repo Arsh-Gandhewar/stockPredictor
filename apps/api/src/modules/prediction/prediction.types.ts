@@ -64,9 +64,9 @@ export interface RiskAssessment {
 }
 
 export interface ScenarioDetail {
-  targetPrice: number;
-  expectedReturnPercent: number;
-  probability: number;
+  targetPrice: number | null;
+  expectedReturnPercent: number | null;
+  probability: number | null;
   percentile?: number;
   probabilityStatus?: string;
 }

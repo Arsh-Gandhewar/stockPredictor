@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
 
-MIN_BUCKET_SAMPLE_COUNT = 15
+MIN_BUCKET_SAMPLE_COUNT = 100
 
 PROBABILITY_BUCKETS: List[Tuple[str, float, float]] = [
     ('DOWNSIDE_LOW', 0.00, 0.35),

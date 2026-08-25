@@ -160,8 +160,8 @@ export class FeatureEngine {
           : 0;
         features['downside_deviation'] = Math.sqrt(downsideVariance) * Math.sqrt(MODEL_CONFIG.FEATURES.LOOKBACKS.ANNUALIZATION_FACTOR);
       } else {
-        features['annualized_volatility'] = 0.02 * Math.sqrt(252);
-        features['downside_deviation'] = 0.015 * Math.sqrt(252);
+        features['annualized_volatility'] = null;
+        features['downside_deviation'] = null;
       }
 
       // Max Drawdown over 20d and 60d
@@ -176,7 +176,7 @@ export class FeatureEngine {
           gaps.push(Math.abs(opens[i] - closes[i - 1]) / closes[i - 1]);
         }
       }
-      features['gap_risk'] = gaps.length > 0 ? gaps.reduce((s, g) => s + g, 0) / gaps.length : 0.005;
+      features['gap_risk'] = gaps.length > 0 ? gaps.reduce((s, g) => s + g, 0) / gaps.length : null;
 
       // Tail Risk (5th percentile return from last 60 days)
       if (returns60.length >= 20) {
@@ -184,7 +184,7 @@ export class FeatureEngine {
         const p5Idx = Math.max(0, Math.floor(sortedReturns.length * 0.05));
         features['tail_risk_5pct'] = sortedReturns[p5Idx];
       } else {
-        features['tail_risk_5pct'] = -0.03;
+        features['tail_risk_5pct'] = null;
       }
 
       // ── 4. Volume & Liquidity Dynamics ──
@@ -205,9 +205,9 @@ export class FeatureEngine {
         const dailyTurnoverRupees = currentPrice * meanVol;
         features['liquidity_score'] = Math.log10(Math.max(1, dailyTurnoverRupees));
       } else {
-        features['volume_z_score'] = 0;
-        features['volume_stability'] = 1.0;
-        features['liquidity_score'] = 6.0;
+        features['volume_z_score'] = null;
+        features['volume_stability'] = null;
+        features['liquidity_score'] = null;
       }
 
       // ── 5. Benchmark & Relative Dynamics (NIFTY 50) ──
@@ -243,11 +243,13 @@ export class FeatureEngine {
           const stock20Return = closes[len - 1] / closes[Math.max(0, len - 21)] - 1;
           const bench20Return = benchCloses[benchCloses.length - 1] / benchCloses[Math.max(0, benchCloses.length - 21)] - 1;
           features['relative_strength_nifty'] = stock20Return - bench20Return;
+        } else {
+          features['beta_nifty'] = null;
+          features['relative_strength_nifty'] = null;
         }
       } else {
-        const stockVol = features['annualized_volatility'] || 0.20;
-        features['beta_nifty'] = parseFloat(Math.min(2.5, Math.max(0.4, stockVol / 0.15)).toFixed(2));
-        features['relative_strength_nifty'] = features['momentum_20'] || 0;
+        features['beta_nifty'] = null;
+        features['relative_strength_nifty'] = null;
       }
     } catch {
       // Graceful fallback
