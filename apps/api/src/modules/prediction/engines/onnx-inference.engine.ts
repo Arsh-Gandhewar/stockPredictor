@@ -2,11 +2,12 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as ort from 'onnxruntime-node';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 
 export interface ScenarioReturnQuantiles {
-  bull85th: number;
-  base50th: number;
-  bear15th: number;
+  bull85th: number | null;
+  base50th: number | null;
+  bear15th: number | null;
   method?: string;
 }
 
@@ -44,11 +45,6 @@ export class OnnxInferenceEngine implements OnModuleInit {
 
   private isModelLoaded: boolean = false;
   private conditionalReturnsTable: Record<string, Record<string, any>> = {};
-  private empiricalQuantiles: Record<string, { bull_85th: number; base_50th: number; bear_15th: number }> = {
-    '1d': { bull_85th: 0.015, base_50th: 0.003, bear_15th: -0.012 },
-    '5d': { bull_85th: 0.038, base_50th: 0.010, bear_15th: -0.024 },
-    '20d': { bull_85th: 0.085, base_50th: 0.025, bear_15th: -0.055 },
-  };
 
   private readonly artifactsDir = path.resolve(__dirname, '../../../../data/artifacts/active');
 
@@ -59,22 +55,30 @@ export class OnnxInferenceEngine implements OnModuleInit {
   async loadActiveModels() {
     try {
       const manifestPath = path.join(this.artifactsDir, 'model-artifact.json');
+      let manifest: any = {};
       if (fs.existsSync(manifestPath)) {
-        const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+        manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
         if (manifest.featureSchema && Array.isArray(manifest.featureSchema)) {
           this.featureSchema = manifest.featureSchema;
         }
         if (manifest.conditionalReturns) {
           this.conditionalReturnsTable = manifest.conditionalReturns;
         }
-        if (manifest.empiricalQuantiles) {
-          this.empiricalQuantiles = manifest.empiricalQuantiles;
-        }
       }
 
       for (const h of ['1d', '5d', '20d'] as const) {
         const modelPath = path.join(this.artifactsDir, `model_${h}.onnx`);
         if (fs.existsSync(modelPath)) {
+          const fileBuffer = fs.readFileSync(modelPath);
+          const hash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+          
+          if (manifest.onnxModels && manifest.onnxModels[h] && manifest.onnxModels[h].sha256) {
+            if (hash !== manifest.onnxModels[h].sha256) {
+              this.logger.error(`Hash mismatch for model_${h}.onnx. Expected ${manifest.onnxModels[h].sha256}, got ${hash}`);
+              continue;
+            }
+          }
+          
           const session = await ort.InferenceSession.create(modelPath);
           this.sessions.set(h, session);
           this.logger.log(`Loaded ONNX model for horizon ${h} from ${modelPath}`);
@@ -126,7 +130,7 @@ export class OnnxInferenceEngine implements OnModuleInit {
         return parseFloat(Math.max(0.05, Math.min(0.95, Number(prob))).toFixed(4));
       }
 
-      return 0.50;
+      throw new Error('ONNX model produced malformed output');
     } catch (err) {
       this.logger.error(`ONNX inference execution failed for ${horizon}: ${err}`);
       throw new Error(`MODEL_UNAVAILABLE: ONNX inference failed: ${err.message}`);
@@ -187,20 +191,11 @@ export class OnnxInferenceEngine implements OnModuleInit {
       }
     }
 
-    // Default fallback scaling
-    const defaultScale = 0.015 * Math.sqrt(horizon === '1d' ? 1 : (horizon === '5d' ? 5 : 20));
-    const volScale = Math.max(0.35, Math.min(3.5, assetVolatility / 0.020));
-    const base: any = this.empiricalQuantiles[horizon] || {};
-
-    const raw85 = base?.p85 ?? base?.bull_85th ?? base?.HORIZON_WIDE?.p85 ?? (2.0 * defaultScale);
-    const raw50 = base?.p50 ?? base?.base_50th ?? base?.HORIZON_WIDE?.p50 ?? (0.2 * defaultScale);
-    const raw15 = base?.p15 ?? base?.bear_15th ?? base?.HORIZON_WIDE?.p15 ?? (-1.5 * defaultScale);
-
     return {
-      bull85th: parseFloat((Number(raw85) * volScale).toFixed(4)),
-      base50th: parseFloat((Number(raw50) * volScale).toFixed(4)),
-      bear15th: parseFloat((Number(raw15) * volScale).toFixed(4)),
-      method: 'EMPIRICAL_QUANTILE_FALLBACK',
+      bull85th: null,
+      base50th: null,
+      bear15th: null,
+      method: 'INSUFFICIENT_DATA',
     };
   }
 }

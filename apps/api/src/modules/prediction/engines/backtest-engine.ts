@@ -45,7 +45,7 @@ export interface HorizonBacktestResult {
   winRate: number;
   avgGainPercent: number;
   avgLossPercent: number;
-  profitFactor: number;
+  profitFactor: number | 'NOT_MEANINGFUL';
   maxDrawdown: number;
   avgReturn: number;
   targetHitRate: number;
@@ -68,7 +68,7 @@ export interface PartitionPerformanceBreakdown {
   sharpeRatio: number;
   sortinoRatio: number;
   maxDrawdown: number;
-  profitFactor: number;
+  profitFactor: number | 'NOT_MEANINGFUL';
   brierScore: number;
 }
 
@@ -251,7 +251,7 @@ export class BacktestEngine {
 
     const artifactData: Omit<ModelArtifact, 'checksum' | 'id'> = {
       modelVersion: ModelRegistry.getModelVersion(),
-      modelType: 'BASELINE_HEURISTIC',
+      modelType: ModelRegistry.getModelType(),
       featureVersion: 'v4.0.0-multi-factor-25',
       trainingStart: trainDates[0] || dates[0] || '2025-08-22',
       trainingEnd: trainDates[trainDates.length - 1] || '2026-02-15',
@@ -774,7 +774,7 @@ export class BacktestEngine {
 
     const sumWins = wins.reduce((sum, t) => sum + t.netReturn, 0);
     const sumLosses = losses.reduce((sum, t) => sum + t.netReturn, 0);
-    const profitFactor = Math.abs(sumLosses) > 0 ? sumWins / Math.abs(sumLosses) : sumWins > 0 ? 99 : 0;
+    const profitFactor = Math.abs(sumLosses) > 0 ? sumWins / Math.abs(sumLosses) : sumWins > 0 ? 'NOT_MEANINGFUL' : 0;
 
     // 1. Build Time-Aligned Daily Equity Curve
     const sortedTrades = [...trades].sort((a, b) => a.exitDate.localeCompare(b.exitDate));
@@ -799,10 +799,12 @@ export class BacktestEngine {
     const targetHitRate = (trades.filter((t) => t.targetHit).length / trades.length) * 100;
 
     // 2. Direct CAGR Calculation: ((Final / Initial)^(252 / N) - 1) * 100
-    const daysMultiplier = horizon === '1d' ? 1 : horizon === '5d' ? 5 : 20;
-    const elapsedTradingDays = Math.max(10, Math.round(sortedTrades.length * (daysMultiplier / 2.5)));
+    const firstDate = new Date(sortedTrades[0].entryDate).getTime();
+    const lastDate = new Date(sortedTrades[sortedTrades.length - 1].exitDate).getTime();
+    const elapsedMs = Math.max(86400000, lastDate - firstDate);
+    const elapsedYears = elapsedMs / (1000 * 60 * 60 * 24 * 365.25);
     const totalReturn = (equity - 100) / 100;
-    const cagr = ((Math.pow(Math.max(0.01, 1 + totalReturn), 252 / elapsedTradingDays)) - 1) * 100;
+    const cagr = ((Math.pow(Math.max(0.01, 1 + totalReturn), 1 / elapsedYears)) - 1) * 100;
 
     // 3. Direct Sharpe Ratio from Actual Daily Return Series (vs 6.5% Indian Risk-Free Rate)
     const rfDaily = 0.065 / 252;
@@ -811,16 +813,16 @@ export class BacktestEngine {
     const stdDaily = Math.sqrt(varDaily);
     const annVol = stdDaily * Math.sqrt(252);
 
-    const sharpeRatio = annVol > 0 ? (cagr / 100 - 0.065) / annVol : 1.0;
+    const sharpeRatio = annVol > 0 ? (cagr / 100 - 0.065) / annVol : 0;
 
     // 4. Direct Sortino Ratio from Actual Downside Returns
     const negativeDaily = dailyReturns.filter((r) => r < 0);
     const downsideVar =
       negativeDaily.length > 0
         ? negativeDaily.reduce((s, r) => s + Math.pow(r, 2), 0) / dailyReturns.length
-        : 0.00001;
+        : 0;
     const annDownsideVol = Math.sqrt(downsideVar) * Math.sqrt(252);
-    const sortinoRatio = annDownsideVol > 0 ? (cagr / 100 - 0.065) / annDownsideVol : 1.5;
+    const sortinoRatio = annDownsideVol > 0 ? (cagr / 100 - 0.065) / annDownsideVol : 0;
 
     // 5. Calmar Ratio: CAGR / |MaxDrawdown|
     const calmarRatio = Math.abs(maxDrawdown) > 0 ? Math.abs(cagr / maxDrawdown) : 0;
@@ -836,12 +838,12 @@ export class BacktestEngine {
       winRate: this.roundTo1(winRate),
       avgGainPercent: this.roundTo1(avgGainPercent),
       avgLossPercent: this.roundTo1(avgLossPercent),
-      profitFactor: this.roundTo2(profitFactor),
+      profitFactor: profitFactor === 'NOT_MEANINGFUL' ? 'NOT_MEANINGFUL' : this.roundTo2(profitFactor as number),
       maxDrawdown: this.roundTo1(maxDrawdown),
       avgReturn: this.roundTo1(avgReturn),
       targetHitRate: this.roundTo1(targetHitRate),
-      sharpeRatio: this.roundTo2(Math.max(0, sharpeRatio)),
-      sortinoRatio: this.roundTo2(Math.max(0, sortinoRatio)),
+      sharpeRatio: this.roundTo2(sharpeRatio),
+      sortinoRatio: this.roundTo2(sortinoRatio),
       calmarRatio: this.roundTo2(calmarRatio),
       cagr: this.roundTo1(cagr),
       brierScore: this.roundTo2(brierScore),

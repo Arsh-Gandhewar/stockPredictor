@@ -170,20 +170,20 @@ export class ModelArtifactService {
 
     // 1. Checksum Verification
     if (artifact.checksum) {
-      const isSha256 = /^[a-f0-9]{64}$/i.test(artifact.checksum);
-      const isCorrupted = artifact.checksum.includes('corrupted') || artifact.checksum.includes('fake') || artifact.checksum.length !== 64;
-      if (isSha256 && !isCorrupted) {
+      const computed = this.computeChecksum(artifact as any);
+      if (computed === artifact.checksum) {
         gateDetails.checksumValid = true;
       } else {
         gateDetails.checksumValid = false;
-        blockingReasons.push(`Checksum mismatch or invalid hash format: got ${artifact.checksum}`);
+        blockingReasons.push(`Checksum mismatch: expected ${computed}, got ${artifact.checksum}`);
       }
     } else {
-      gateDetails.checksumValid = true;
+      gateDetails.checksumValid = false;
+      blockingReasons.push('Checksum missing from artifact');
     }
 
     // 2. Version & Schema Compatibility Gate
-    const modelVerMatch = artifact.modelVersion === ModelRegistry.getModelVersion() || artifact.modelVersion === '5.0.0' || artifact.modelVersion === '4.0.0';
+    const modelVerMatch = artifact.modelVersion === ModelRegistry.getModelVersion() || artifact.modelVersion === '5.0.0';
     const featureVerMatch = artifact.featureVersion?.includes('v5.0.0') || artifact.featureVersion?.includes('v4.0.0') || artifact.featureVersion?.includes('v2.0.0');
     if (modelVerMatch && featureVerMatch) {
       gateDetails.versionCompatibility = true;
@@ -253,6 +253,8 @@ export class ModelArtifactService {
             if (actualSha !== mInfo.sha256) {
               blockingReasons.push(`ONNX file hash mismatch for ${horizon} (${mInfo.filename}): expected ${mInfo.sha256.slice(0, 12)}..., got ${actualSha.slice(0, 12)}...`);
             }
+          } else {
+            blockingReasons.push(`ONNX file missing for ${horizon}: ${mPath}`);
           }
         }
       }

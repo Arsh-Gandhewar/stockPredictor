@@ -170,13 +170,12 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
 
   describe('3. Mathematical Uncertainty Separation (Req #8, 9)', () => {
     it('should separate estimation uncertainty from asset return volatility', () => {
+      // With no empirical buckets loaded, it fails closed returning INSUFFICIENT_DATA
       const estimation = inferenceEngine.estimateExpectedReturn(0.60, '5d', 0.025);
 
-      expect(estimation.marketVolatility).toBeDefined();
-      expect(estimation.estimationUncertainty).toBeDefined();
-      expect(estimation.marketVolatility).toBeGreaterThan(0);
-      expect(estimation.confidenceInterval[0]).toBeLessThan(estimation.expectedValue);
-      expect(estimation.confidenceInterval[1]).toBeGreaterThan(estimation.expectedValue);
+      expect(estimation.method).toBe('INSUFFICIENT_DATA');
+      expect(estimation.expectedReturn).toBeNull();
+      expect(estimation.uncertainty).toBeNull();
     });
   });
 
@@ -345,8 +344,8 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
 
       try {
         const artifactData: Omit<ModelArtifact, 'checksum' | 'id'> = {
-          modelVersion: '4.0.0',
-          modelType: 'BASELINE_HEURISTIC',
+          modelVersion: '5.0.0',
+          modelType: 'LEARNED_LIGHTGBM',
           featureVersion: 'v4.0.0-multi-factor-25',
           trainingStart: '2025-08-22',
           trainingEnd: '2026-02-15',
@@ -398,7 +397,7 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
         expect(calibratedProb).toBeGreaterThan(0);
 
         const estimation = freshInferenceEngine.estimateExpectedReturn(calibratedProb, '5d', 0.02);
-        expect(estimation.method).not.toBe('FALLBACK_DIFFUSION');
+        expect(estimation.method).not.toBe('INSUFFICIENT_DATA');
         expect(estimation.sampleCount).toBeGreaterThan(0);
       } finally {
         if (originalContent) {

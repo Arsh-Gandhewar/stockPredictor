@@ -128,12 +128,15 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
     h_days = 1 if horizon_str == '1d' else (5 if horizon_str == '5d' else 20)
     net_return_col = f'future_net_ret_{h_days}d'
     
+    # Dynamic purge days: Must strictly exceed the forward label horizon to prevent leakage
+    dynamic_purge_days = max(20, int(h_days * 1.5) + 5)
+    
     req_cols = features + [target_col]
     clean_df = df_all.dropna(subset=req_cols).copy()
     clean_df.sort_index(inplace=True)
     
     dates = clean_df.index
-    folds_config, holdout_bounds = generate_walk_forward_folds(dates)
+    folds_config, holdout_bounds = generate_walk_forward_folds(dates, purge_days=dynamic_purge_days)
     
     fold_metrics = []
     oos_records: List[Dict[str, Any]] = []
@@ -175,7 +178,9 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             calib_preds_list.append({'prob': float(p), 'outcome': int(y), 'date': str(date)[:10]})
             all_val_predictions_for_prod_calib.append({'prob': float(p), 'outcome': int(y), 'date': str(date)[:10]})
             
-        fold_calib_res = fit_isotonic_calibrator(calib_preds_list)
+        fold_calib_res = fit_isotonic_calibrator(calib_preds_list, horizon_days=h_days)
+        if fold_calib_res['status'] in ['COLLAPSED_REJECTED', 'WORSENED_REJECTED']:
+            print(f"[{horizon_str} Fold {fold['fold']}] Calibration rejected: {fold_calib_res.get('rejectionReason', 'Unknown')}")
         fold_calibrator = fold_calib_res['calibrator']
         
         # 3. Predict on Test & Apply Fold Calibrator to Test
@@ -268,11 +273,10 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
         
     # 6. Fit Final Production Model on strictly partitioned pre-holdout data
     # Partition pre-holdout data into: Final Train -> (Purge) -> Final Calibration -> (Purge) -> Holdout
-    purge_days = 20
-    final_calib_end = holdout_bounds['start'] - pd.Timedelta(days=purge_days)
+    final_calib_end = holdout_bounds['start'] - pd.Timedelta(days=dynamic_purge_days)
     final_calib_start = final_calib_end - pd.DateOffset(months=6)
     
-    final_train_end = final_calib_start - pd.Timedelta(days=purge_days)
+    final_train_end = final_calib_start - pd.Timedelta(days=dynamic_purge_days)
     final_train_start = dates.min()
     
     final_train_mask = (clean_df.index >= final_train_start) & (clean_df.index < final_train_end)
@@ -290,7 +294,9 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
         {'prob': float(p), 'outcome': int(y), 'date': str(dt)[:10]}
         for p, y, dt in zip(final_calib_raw, prod_calib_df[target_col], prod_calib_df.index)
     ]
-    prod_calib_res = fit_isotonic_calibrator(final_calib_preds)
+    prod_calib_res = fit_isotonic_calibrator(final_calib_preds, horizon_days=h_days)
+    if prod_calib_res['status'] in ['COLLAPSED_REJECTED', 'WORSENED_REJECTED']:
+        print(f"[{horizon_str} Production] Calibration rejected: {prod_calib_res.get('rejectionReason', 'Unknown')}")
     prod_calibrator = prod_calib_res['calibrator']
     
     # 8. Evaluate Frozen Holdout Partition strictly on production model

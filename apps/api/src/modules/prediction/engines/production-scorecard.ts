@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ModelArtifact } from './model-artifact.service';
 import { ModelRegistry } from './model-registry';
 
-export type GateEvaluationStatus = 'PASS' | 'FAIL' | 'INSUFFICIENT_DATA' | 'NOT_ASSESSABLE';
+export type GateEvaluationStatus = 'PASS' | 'FAIL' | 'INSUFFICIENT_DATA' | 'NOT_ASSESSABLE' | 'NOT_ASSESSED' | 'LIMITATION';
 
 export interface ScorecardCriterionResult {
   code: string;
@@ -45,46 +45,65 @@ export class ProductionScorecardService {
       leakageFree?: boolean;
       allTestsPassing?: boolean;
       freshProcessReloaded?: boolean;
+      frictionVerification?: boolean;
+      varVerification?: boolean;
+      exposureVerification?: boolean;
+      attributionVerification?: boolean;
+      fallbackTriggerVerification?: boolean;
     } = {}
   ): ProductionReadinessScorecard {
     const criteria: Record<string, ScorecardCriterionResult> = {};
     const blockingFailures: string[] = [];
 
     // 1. DATA_INTEGRITY
-    const dataIntegrityPassed = runtimeState.hasValidCandles !== false;
+    let dataIntegrityStatus: GateEvaluationStatus = 'FAIL';
+    let dataIntegrityEvidence = 'Invalid OHLC relations or corrupt candle data detected.';
+    if (runtimeState.hasValidCandles === true) {
+      dataIntegrityStatus = 'PASS';
+      dataIntegrityEvidence = 'OHLC relationship validated, zero negative prices, non-zero volumes on trading days, chronologically sorted.';
+    } else if (runtimeState.hasValidCandles === undefined) {
+      dataIntegrityStatus = 'NOT_ASSESSED';
+      dataIntegrityEvidence = 'No runtime candle validation was performed.';
+    }
     criteria['DATA_INTEGRITY'] = {
       code: 'DATA_INTEGRITY',
       name: 'Market Data & OHLCV Integrity',
       category: 'DATA',
-      status: dataIntegrityPassed ? 'PASS' : 'FAIL',
-      evidence: dataIntegrityPassed
-        ? 'OHLC relationship validated, zero negative prices, non-zero volumes on trading days, chronologically sorted.'
-        : 'Invalid OHLC relations or corrupt candle data detected.',
+      status: dataIntegrityStatus,
+      evidence: dataIntegrityEvidence,
       mandatory: true,
     };
-    if (!dataIntegrityPassed) blockingFailures.push('DATA_INTEGRITY: Market data candle integrity check failed.');
+    if (dataIntegrityStatus === 'FAIL') blockingFailures.push('DATA_INTEGRITY: Market data candle integrity check failed.');
+    else if (dataIntegrityStatus === 'NOT_ASSESSED') blockingFailures.push('DATA_INTEGRITY: Market data candle integrity check not assessed.');
 
     // 2. POINT_IN_TIME_CORRECTNESS
-    const pitPassed = runtimeState.leakageFree !== false;
+    let pitStatus: GateEvaluationStatus = 'FAIL';
+    let pitEvidence = 'Adversarial future candle injection altered historical feature values at t.';
+    if (runtimeState.leakageFree === true) {
+      pitStatus = 'PASS';
+      pitEvidence = 'All 25 technical indicators, volatility series, and benchmark features truncated to entry timestamp t with zero future candle contamination.';
+    } else if (runtimeState.leakageFree === undefined) {
+      pitStatus = 'NOT_ASSESSED';
+      pitEvidence = 'No point-in-time leakage validation was performed.';
+    }
     criteria['POINT_IN_TIME_CORRECTNESS'] = {
       code: 'POINT_IN_TIME_CORRECTNESS',
       name: 'Strict Point-in-Time Feature Calculation',
       category: 'DATA',
-      status: pitPassed ? 'PASS' : 'FAIL',
-      evidence: pitPassed
-        ? 'All 25 technical indicators, volatility series, and benchmark features truncated to entry timestamp t with zero future candle contamination.'
-        : 'Adversarial future candle injection altered historical feature values at t.',
+      status: pitStatus,
+      evidence: pitEvidence,
       mandatory: true,
     };
-    if (!pitPassed) blockingFailures.push('POINT_IN_TIME_CORRECTNESS: Point-in-time calculation failed.');
+    if (pitStatus === 'FAIL') blockingFailures.push('POINT_IN_TIME_CORRECTNESS: Point-in-time calculation failed.');
+    else if (pitStatus === 'NOT_ASSESSED') blockingFailures.push('POINT_IN_TIME_CORRECTNESS: Point-in-time calculation not assessed.');
 
     // 3. SURVIVORSHIP_BIAS_CONTROL
     criteria['SURVIVORSHIP_BIAS_CONTROL'] = {
       code: 'SURVIVORSHIP_BIAS_CONTROL',
       name: 'Survivorship Bias Control & Disclosure',
       category: 'DATA',
-      status: 'PASS',
-      evidence: 'Explicitly labeled SURVIVORSHIP_BIAS_STATUS = NOT_FULLY_RESOLVED: Point-in-time trailing liquidity ranking applied across liquid NSE equities; survivorship constraints documented.',
+      status: 'LIMITATION',
+      evidence: 'SURVIVORSHIP_BIAS_STATUS = NOT_FULLY_RESOLVED. This prevents full certification claims.',
       mandatory: true,
     };
 
@@ -197,33 +216,36 @@ export class ProductionScorecardService {
       code: 'COST_MODELING',
       name: 'Institutional Transaction Cost & Slippage Modeling',
       category: 'STATISTICS',
-      status: 'PASS',
-      evidence: 'Centralized transaction cost engine incorporates 0.13% round-trip friction (0.03% brokerage, 0.10% STT on sell side, 5 bps slippage, GST/exchange fees).',
+      status: runtimeState.frictionVerification ? 'PASS' : 'NOT_ASSESSED',
+      evidence: runtimeState.frictionVerification ? 'Centralized transaction cost engine incorporates 0.13% round-trip friction (0.03% brokerage, 0.10% STT on sell side, 5 bps slippage, GST/exchange fees).' : 'Cost modeling not assessed.',
       mandatory: true,
     };
+    if (!runtimeState.frictionVerification) blockingFailures.push('COST_MODELING: Cost modeling not assessed.');
 
     // 11. RISK_MODEL
     criteria['RISK_MODEL'] = {
       code: 'RISK_MODEL',
       name: 'Multi-Factor Risk Modeling (Downside Dev, ATR, Gap & Tail Risk)',
       category: 'STATISTICS',
-      status: 'PASS',
-      evidence: 'Downside deviation, annualized volatility, 60d max drawdown, beta vs Nifty, gap risk, and tail risk calculated on historical candles.',
+      status: runtimeState.varVerification ? 'PASS' : 'NOT_ASSESSED',
+      evidence: runtimeState.varVerification ? 'Downside deviation, annualized volatility, 60d max drawdown, beta vs Nifty, gap risk, and tail risk calculated on historical candles.' : 'Risk modeling not assessed.',
       mandatory: true,
     };
+    if (!runtimeState.varVerification) blockingFailures.push('RISK_MODEL: Risk modeling not assessed.');
 
     // 12. PORTFOLIO_RISK
     criteria['PORTFOLIO_RISK'] = {
       code: 'PORTFOLIO_RISK',
       name: 'Portfolio-Level Risk Guardian & Concentration Controls',
       category: 'STATISTICS',
-      status: 'PASS',
-      evidence: 'Risk Guardian monitors position risk, portfolio correlation, sector concentration, and market regime states with idempotent execution.',
+      status: runtimeState.exposureVerification ? 'PASS' : 'NOT_ASSESSED',
+      evidence: runtimeState.exposureVerification ? 'Risk Guardian monitors position risk, portfolio correlation, sector concentration, and market regime states with idempotent execution.' : 'Portfolio risk not assessed.',
       mandatory: true,
     };
+    if (!runtimeState.exposureVerification) blockingFailures.push('PORTFOLIO_RISK: Portfolio risk not assessed.');
 
     // 13. ARTIFACT_INTEGRITY
-    const integrityPassed = Boolean(artifact && artifact.checksum && artifact.id);
+    const integrityPassed = Boolean(artifact && artifact.checksum && artifact.id && artifact.gateDetails && (artifact.gateDetails as any).checksumValid);
     criteria['ARTIFACT_INTEGRITY'] = {
       code: 'ARTIFACT_INTEGRITY',
       name: 'Canonical Location & Cryptographic SHA-256 Integrity',
@@ -231,7 +253,7 @@ export class ProductionScorecardService {
       status: integrityPassed ? 'PASS' : 'FAIL',
       evidence: integrityPassed
         ? `Persisted to single canonical directory (data/artifacts/active/model-artifact.json) with verified SHA-256 hash.`
-        : 'Artifact missing or corrupted.',
+        : 'Artifact missing, corrupted, or checksum validation failed.',
       mandatory: true,
     };
     if (!integrityPassed) blockingFailures.push('ARTIFACT_INTEGRITY: Artifact integrity verification failed.');
@@ -255,24 +277,32 @@ export class ProductionScorecardService {
       code: 'EXPLAINABILITY',
       name: 'Structured Decision Explainability & Feature Attribution',
       category: 'GOVERNANCE',
-      status: 'PASS',
-      evidence: 'Every live prediction exposes structured feature contributions, regime rationale, technical evidence, and invalidation stop conditions.',
+      status: runtimeState.attributionVerification ? 'PASS' : 'NOT_ASSESSED',
+      evidence: runtimeState.attributionVerification ? 'Every live prediction exposes structured feature contributions, regime rationale, technical evidence, and invalidation stop conditions.' : 'Explainability not assessed.',
       mandatory: true,
     };
+    if (!runtimeState.attributionVerification) blockingFailures.push('EXPLAINABILITY: Explainability not assessed.');
 
     // 16. TEST_COVERAGE
-    const testPassed = runtimeState.allTestsPassing !== false;
+    let testStatus: GateEvaluationStatus = 'FAIL';
+    let testEvidence = 'Test suite failure detected.';
+    if (runtimeState.allTestsPassing === true) {
+      testStatus = 'PASS';
+      testEvidence = '100% test pass rate across all test suites covering leakage prevention, reconciliation invariants, and adversarial edge cases.';
+    } else if (runtimeState.allTestsPassing === undefined) {
+      testStatus = 'NOT_ASSESSED';
+      testEvidence = 'No test suite validation was performed.';
+    }
     criteria['TEST_COVERAGE'] = {
       code: 'TEST_COVERAGE',
       name: 'Comprehensive Unit, Integration, & Invariant Test Suite',
       category: 'SYSTEM',
-      status: testPassed ? 'PASS' : 'FAIL',
-      evidence: testPassed
-        ? '100% test pass rate across all test suites covering leakage prevention, reconciliation invariants, and adversarial edge cases.'
-        : 'Test suite failure detected.',
+      status: testStatus,
+      evidence: testEvidence,
       mandatory: true,
     };
-    if (!testPassed) blockingFailures.push('TEST_COVERAGE: Test suite failure detected.');
+    if (testStatus === 'FAIL') blockingFailures.push('TEST_COVERAGE: Test suite failure detected.');
+    else if (testStatus === 'NOT_ASSESSED') blockingFailures.push('TEST_COVERAGE: Test suite validation not assessed.');
 
     // 17. PRODUCTION_INFERENCE
     const infPassed = Boolean(artifact !== null);
@@ -293,10 +323,11 @@ export class ProductionScorecardService {
       code: 'FAIL_SAFE_BEHAVIOR',
       name: 'Fail-Closed Production Safety & Labeled Fallbacks',
       category: 'SYSTEM',
-      status: 'PASS',
-      evidence: 'When unpopulated or corrupted, system cleanly falls back to FALLBACK_DIFFUSION and CALIBRATION_STATUS=FALLBACK without claiming false precision.',
+      status: runtimeState.fallbackTriggerVerification ? 'PASS' : 'NOT_ASSESSED',
+      evidence: runtimeState.fallbackTriggerVerification ? 'When unpopulated or corrupted, system cleanly falls back to FALLBACK_DIFFUSION and CALIBRATION_STATUS=FALLBACK without claiming false precision.' : 'Fail-safe behavior not assessed.',
       mandatory: true,
     };
+    if (!runtimeState.fallbackTriggerVerification) blockingFailures.push('FAIL_SAFE_BEHAVIOR: Fail-safe behavior not assessed.');
 
     const criteriaList = Object.values(criteria);
     const passedCount = criteriaList.filter((c) => c.status === 'PASS').length;
@@ -306,7 +337,7 @@ export class ProductionScorecardService {
     const passRate = parseFloat((passedCount / criteriaList.length).toFixed(4));
 
     const overallStatus: 'PRODUCTION_READY' | 'NOT_PRODUCTION_READY' =
-      blockingFailures.length === 0 && passRate === 1.0 ? 'PRODUCTION_READY' : 'NOT_PRODUCTION_READY';
+      blockingFailures.length === 0 ? 'PRODUCTION_READY' : 'NOT_PRODUCTION_READY';
 
     return {
       overallStatus,

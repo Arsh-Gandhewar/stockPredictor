@@ -14,7 +14,9 @@ export class DecisionEngine {
     risk: ExtendedRiskMetrics,
     regime: MarketRegime,
     dataQuality: DataQuality,
-    signalQuality: SignalQuality
+    signalQuality: SignalQuality,
+    expectedGain: number | null = null,
+    expectedLoss: number | null = null
   ): Decision {
     // ── Trade Safety Filters ──
     if (dataQuality === 'LOW' || risk.liquidityFlag || signalQuality === 'LOW') {
@@ -24,6 +26,11 @@ export class DecisionEngine {
     const isPanic = regime === 'PANIC';
     const isBear = regime === 'BEAR' || regime === 'BEAR_TREND';
     const isBull = regime === 'BULL' || regime === 'BULL_TREND';
+
+    let expectedValue: number | null = null;
+    if (expectedGain !== null && expectedLoss !== null) {
+      expectedValue = prob20d * expectedGain - (1 - prob20d) * expectedLoss;
+    }
 
     // ── 1. Bearish / Capital Preservation Branch ──
     // In Panic or Bear regimes, downside triggers are more defensive
@@ -56,10 +63,16 @@ export class DecisionEngine {
     const strongBuyProbHurdle = isBear ? 0.80 : MODEL_CONFIG.DECISION.PROBABILITY_THRESHOLDS.STRONG_BUY;
 
     if (prob20d >= strongBuyProbHurdle && risk.rewardRiskRatio >= MODEL_CONFIG.DECISION.REWARD_RISK_THRESHOLDS.STRONG_BUY) {
+      if (expectedValue !== null && expectedValue <= 0) {
+        return 'ACCUMULATE';
+      }
       return 'STRONG_BUY';
     }
 
     if (prob20d >= buyProbHurdle && risk.rewardRiskRatio >= MODEL_CONFIG.DECISION.REWARD_RISK_THRESHOLDS.BUY) {
+      if (expectedValue !== null && expectedValue <= 0) {
+        return 'HOLD';
+      }
       return 'BUY';
     }
 

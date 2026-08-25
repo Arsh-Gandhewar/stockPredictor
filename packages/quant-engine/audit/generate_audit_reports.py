@@ -4,6 +4,7 @@ Generate canonical audit-results.json and docs/QUANT_MODEL_FINAL_AUDIT.md.
 import os
 import sys
 import json
+from datetime import datetime
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from audit.independent_auditor import audit_manifest
@@ -18,7 +19,7 @@ def main():
     audit_res = audit_manifest(manifest_path)
     
     audit_report = {
-        'auditDate': '2026-08-24T12:16:30Z',
+        'auditDate': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
         'status': 'PASSED',
         'auditorVersion': 'v5.0.0-independent-quant-auditor',
         'artifact': {
@@ -35,7 +36,9 @@ def main():
             'holdout': f"{manifest.get('holdoutStart')} to {manifest.get('holdoutEnd')}",
         },
         'walkForwardBacktest': manifest.get('backtest', {}),
+        'horizonMetrics': manifest.get('horizons', {}),
         'calibrationMetrics': manifest.get('calibration', {}),
+        'calibrationRejections': manifest.get('calibrationRejections', []),
         'onnxBindings': manifest.get('onnxModels', {}),
         'auditChecks': audit_res.get('checks', []),
         'discrepancies': audit_res.get('discrepancies', []),
@@ -59,7 +62,7 @@ def main():
     md_content = f"""# QuantX Quantitative Model Final Certification & Audit Report
 
 **Audit Status:** PASSED  
-**Evaluated At:** 2026-08-24T12:35:40Z  
+**Evaluated At:** {datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}  
 **Authoritative Artifact ID:** `{manifest.get('id')}`  
 **Canonical Manifest Checksum:** `{manifest.get('checksum')}`  
 **Model Architecture:** LightGBM Purged Walk-Forward Multi-Factor Classifier (v5.0.0)  

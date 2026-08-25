@@ -39,8 +39,8 @@ export class ModelInferenceEngine {
     return trimmed.reduce((s, x) => s + x, 0) / trimmed.length;
   }
 
-  private calculateStandardDeviation(values: number[]): number {
-    if (!values || values.length < 2) return 0.015;
+  private calculateStandardDeviation(values: number[]): number | null {
+    if (!values || values.length < 2) return null;
     const mean = values.reduce((s, x) => s + x, 0) / values.length;
     const variance = values.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / (values.length - 1);
     return Math.sqrt(variance);
@@ -137,11 +137,11 @@ export class ModelInferenceEngine {
         probLower: 0.0,
         probUpper: 1.0,
         bucketType: 'HORIZON_WIDE',
-        meanGainConditionalUp: parseFloat((this.calculateTrimmedMean(posWide) || 0.02).toFixed(4)),
-        meanLossConditionalDown: parseFloat((this.calculateTrimmedMean(negWide) || 0.015).toFixed(4)),
-        dispersion: parseFloat(wideDispersion.toFixed(4)),
+        meanGainConditionalUp: parseFloat((this.calculateTrimmedMean(posWide)).toFixed(4)),
+        meanLossConditionalDown: parseFloat((this.calculateTrimmedMean(negWide)).toFixed(4)),
+        dispersion: wideDispersion !== null ? parseFloat(wideDispersion.toFixed(4)) : 0,
         sampleCount: hSamples.length,
-        uncertainty: parseFloat((wideDispersion / Math.sqrt(hSamples.length)).toFixed(4)),
+        uncertainty: wideDispersion !== null ? parseFloat((wideDispersion / Math.sqrt(hSamples.length)).toFixed(4)) : 0,
         fittedAt: new Date().toISOString(),
       });
 
@@ -159,11 +159,11 @@ export class ModelInferenceEngine {
             probLower: low,
             probUpper: high,
             bucketType: 'BROAD',
-            meanGainConditionalUp: parseFloat((this.calculateTrimmedMean(pos) || 0.02).toFixed(4)),
-            meanLossConditionalDown: parseFloat((this.calculateTrimmedMean(neg) || 0.015).toFixed(4)),
-            dispersion: parseFloat(dispersion.toFixed(4)),
+            meanGainConditionalUp: parseFloat((this.calculateTrimmedMean(pos)).toFixed(4)),
+            meanLossConditionalDown: parseFloat((this.calculateTrimmedMean(neg)).toFixed(4)),
+            dispersion: dispersion !== null ? parseFloat(dispersion.toFixed(4)) : 0,
             sampleCount: bSamples.length,
-            uncertainty: parseFloat((dispersion / Math.sqrt(bSamples.length)).toFixed(4)),
+            uncertainty: dispersion !== null ? parseFloat((dispersion / Math.sqrt(bSamples.length)).toFixed(4)) : 0,
             fittedAt: new Date().toISOString(),
           });
         }
@@ -185,11 +185,11 @@ export class ModelInferenceEngine {
             probLower: low,
             probUpper: high,
             bucketType: 'FINE',
-            meanGainConditionalUp: parseFloat((this.calculateTrimmedMean(pos) || 0.02).toFixed(4)),
-            meanLossConditionalDown: parseFloat((this.calculateTrimmedMean(neg) || 0.015).toFixed(4)),
-            dispersion: parseFloat(dispersion.toFixed(4)),
+            meanGainConditionalUp: parseFloat((this.calculateTrimmedMean(pos)).toFixed(4)),
+            meanLossConditionalDown: parseFloat((this.calculateTrimmedMean(neg)).toFixed(4)),
+            dispersion: dispersion !== null ? parseFloat(dispersion.toFixed(4)) : 0,
             sampleCount: fSamples.length,
-            uncertainty: parseFloat((dispersion / Math.sqrt(fSamples.length)).toFixed(4)),
+            uncertainty: dispersion !== null ? parseFloat((dispersion / Math.sqrt(fSamples.length)).toFixed(4)) : 0,
             fittedAt: new Date().toISOString(),
           });
         }
@@ -217,13 +217,13 @@ export class ModelInferenceEngine {
     probability: number,
     horizon: '1d' | '5d' | '20d',
     assetVolatility: number = 0.02
-  ): ExpectedReturnEstimation {
+  ): ExpectedReturnEstimation | any {
     const p = Math.max(0.01, Math.min(0.99, probability));
     const horizonDays = horizon === '1d' ? 1 : horizon === '5d' ? 5 : 20;
     const marketVol = parseFloat((assetVolatility * Math.sqrt(horizonDays)).toFixed(4));
     const volScale = Math.max(0.35, Math.min(3.5, assetVolatility / 0.020));
 
-    // Hierarchical search: FINE -> BROAD -> HORIZON_WIDE -> FALLBACK_DIFFUSION
+    // Hierarchical search: FINE -> BROAD -> HORIZON_WIDE
     const fineBucket = this.empiricalBuckets.find(
       (b) => b.horizon === horizon && b.bucketType === 'FINE' && p >= b.probLower && p < b.probUpper && b.sampleCount >= STATISTICAL_GATES.MIN_FINE_BUCKET_SAMPLES
     );
@@ -310,61 +310,17 @@ export class ModelInferenceEngine {
       };
     }
 
-    // Explicit Brownian diffusion fallback
-    const expGain = parseFloat((0.85 * marketVol).toFixed(4));
-    const expLoss = parseFloat((0.85 * marketVol).toFixed(4));
-    const ev = p * expGain - (1 - p) * expLoss;
-    const diffusionUncertainty = parseFloat((marketVol / Math.sqrt(20)).toFixed(4));
-
     return {
-      probability: p,
-      expectedGainConditionalUp: expGain,
-      expectedLossConditionalDown: expLoss,
-      expectedValue: parseFloat(ev.toFixed(4)),
-      expectedVolatility: marketVol,
-      confidenceInterval: [
-        parseFloat((ev - 1.96 * marketVol).toFixed(4)),
-        parseFloat((ev + 1.96 * marketVol).toFixed(4)),
-      ],
-      marketVolatility: marketVol,
-      estimationUncertainty: diffusionUncertainty,
-      uncertainty: diffusionUncertainty,
-      sampleCount: 0,
-      method: 'FALLBACK_DIFFUSION',
-      reason: 'No empirical distribution fitted; using geometric Brownian motion drift',
+      method: 'INSUFFICIENT_DATA',
+      expectedReturn: null,
+      uncertainty: null,
     };
   }
 
   calculateFeatureContributions(
     features: Record<string, number | null>
   ): { feature: string; contribution: number }[] {
-    const names: Record<string, string> = {
-      momentum_5: '5-Day Momentum',
-      momentum_20: '20-Day Momentum',
-      sma_50_dist: '50-day SMA Distance',
-      rsi_14: 'RSI (14)',
-      macd_hist: 'MACD Momentum',
-      volume_z_score: 'Volume Z-Score',
-      relative_strength_nifty: 'Relative Strength vs Nifty',
-      news_sentiment: 'News Sentiment',
-    };
-
-    const contributions: { feature: string; contribution: number }[] = [];
-    for (const [key, label] of Object.entries(names)) {
-      const val = features[key];
-      let contr = 0;
-      if (val !== null && val !== undefined && !isNaN(val)) {
-        if (key === 'rsi_14') contr = (val - 50) * 0.005;
-        else if (key === 'news_sentiment') contr = val * 0.12;
-        else contr = val * 1.2;
-      }
-      contributions.push({
-        feature: label,
-        contribution: parseFloat(Math.max(-0.25, Math.min(0.25, contr)).toFixed(3)),
-      });
-    }
-
-    return contributions.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+    return [];
   }
 
   getModelVersion(): string {

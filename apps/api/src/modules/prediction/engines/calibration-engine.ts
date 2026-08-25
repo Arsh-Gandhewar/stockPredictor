@@ -47,7 +47,7 @@ export class CalibrationEngine {
   private isFittedFromValidation: boolean = false;
   private lastFittedTimestamp?: string;
   private lastFittedSampleCount: number = 0;
-  private lastECE: number = 0.05;
+  private lastECE: number = NaN;
   private lastPopulatedBins: number = 0;
 
   /**
@@ -290,6 +290,20 @@ export class CalibrationEngine {
   setKnots(knots: [number, number][], isFitted: boolean = true, metrics?: CalibrationGateMetrics) {
     this.isotonicKnots = knots;
     this.isFittedFromValidation = isFitted;
+
+    if (knots && knots.length > 0) {
+      const yValues = knots.map(k => k[1]);
+      const min = Math.min(...yValues);
+      const max = Math.max(...yValues);
+      if (max - min < 0.10) {
+        this.isFittedFromValidation = false;
+        this.isotonicKnots = [
+          [0.05, 0.05], [0.1, 0.1], [0.5, 0.5], [0.9, 0.9], [0.95, 0.95]
+        ];
+        this.logger.warn(`Calibration rejected: Loaded knots collapsed to near constant value. Reverting to identity.`);
+      }
+    }
+
     if (metrics) {
       this.lastFittedSampleCount = metrics.sampleCount;
       this.lastECE = metrics.ece;
@@ -306,7 +320,7 @@ export class CalibrationEngine {
   }
 
   getCalibrationQuality(): 'HIGH' | 'MEDIUM' | 'POOR' | 'UNAVAILABLE' {
-    if (!this.isFittedFromValidation) return 'UNAVAILABLE';
+    if (!this.isFittedFromValidation || isNaN(this.lastECE)) return 'UNAVAILABLE';
     if (this.lastECE <= 0.06 && this.lastFittedSampleCount >= 50) return 'HIGH';
     if (this.lastECE <= 0.12 && this.lastFittedSampleCount >= 20) return 'MEDIUM';
     return 'POOR';

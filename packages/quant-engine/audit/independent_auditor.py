@@ -9,6 +9,7 @@ import json
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Tuple
+from datetime import datetime
 
 # Tolerances for numerical floating-point agreement
 TOLERANCES = {
@@ -116,6 +117,8 @@ def audit_manifest(manifest_path: str) -> Dict[str, Any]:
     audit_results: Dict[str, Any] = {
         'manifestId': manifest.get('id'),
         'modelVersion': manifest.get('modelVersion'),
+        'checksum': manifest.get('checksum'),
+        'auditDate': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
         'passed': True,
         'checks': [],
         'discrepancies': []

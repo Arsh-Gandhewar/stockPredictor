@@ -6,7 +6,7 @@ import { MODEL_CONFIG } from './model-config';
  * parameter lineage, calibration states, and model operational health.
  */
 
-export type ModelType = 'BASELINE_HEURISTIC' | 'EMPIRICAL_WALK_FORWARD' | 'GRADIENT_BOOSTED_TREES';
+export type ModelType = 'BASELINE_HEURISTIC' | 'EMPIRICAL_WALK_FORWARD' | 'GRADIENT_BOOSTED_TREES' | 'LEARNED_LIGHTGBM';
 
 export interface ModelMetadata {
   modelVersion: string;
@@ -28,7 +28,7 @@ export interface ModelMetadata {
 export class ModelRegistry {
   private static readonly ACTIVE_MODEL: ModelMetadata = {
     modelVersion: MODEL_CONFIG.VERSION,
-    modelType: 'LEARNED_BASELINE' as any,
+    modelType: 'LEARNED_LIGHTGBM',
     calibrationVersion: MODEL_CONFIG.CALIBRATION_VERSION,
     featureSchemaVersion: MODEL_CONFIG.FEATURE_SCHEMA_VERSION,
     status: 'ACTIVE',

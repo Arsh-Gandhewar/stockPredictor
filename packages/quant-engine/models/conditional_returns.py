@@ -71,6 +71,7 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
         'confidenceInterval': ci,
         'fittedStart': start_date,
         'fittedEnd': end_date,
+        'fitEndTimestamp': end_date,
         'method': method_name
     }
 
@@ -83,10 +84,20 @@ class ConditionalReturnEngine:
             '20d': {}
         }
         
-    def fit_from_oos_predictions(self, oos_df: pd.DataFrame):
+    def fit_from_oos_predictions(self, oos_data: Any):
         """
         Fits empirical conditional distributions from out-of-sample prediction and outcome ledger.
         """
+        if isinstance(oos_data, dict):
+            for h, df in oos_data.items():
+                if df.empty:
+                    continue
+                start_date = str(df['predictionTimestamp'].min())[:10] if 'predictionTimestamp' in df.columns else ""
+                end_date = str(df['predictionTimestamp'].max())[:10] if 'predictionTimestamp' in df.columns else ""
+                self._fit_horizon_data(df, h, start_date, end_date)
+            return
+
+        oos_df = oos_data
         if oos_df.empty:
             return
             
@@ -94,32 +105,35 @@ class ConditionalReturnEngine:
         end_date = str(oos_df['predictionTimestamp'].max())[:10] if 'predictionTimestamp' in oos_df.columns else ""
         
         for h in ['1d', '5d', '20d']:
-            h_days = 1 if h == '1d' else (5 if h == '5d' else 20)
-            ret_col = f'actual_net_return_{h}'
-            if ret_col not in oos_df.columns:
-                ret_col = f'future_net_ret_{h_days}d'
-            if ret_col not in oos_df.columns:
-                continue
-                
-            h_df = oos_df.dropna(subset=[ret_col, 'calibratedProbability']).copy()
-            if h_df.empty:
-                continue
-                
-            # 1. Horizon-Wide Fallback
-            h_returns = h_df[ret_col].values
-            self.tables[h]['HORIZON_WIDE'] = compute_distribution_metrics(h_returns, 'HORIZON_WIDE_FALLBACK', start_date, end_date)
+            self._fit_horizon_data(oos_df, h, start_date, end_date)
+
+    def _fit_horizon_data(self, df: pd.DataFrame, h: str, start_date: str, end_date: str):
+        h_days = 1 if h == '1d' else (5 if h == '5d' else 20)
+        ret_col = f'actual_net_return_{h}'
+        if ret_col not in df.columns:
+            ret_col = f'future_net_ret_{h_days}d'
+        if ret_col not in df.columns:
+            return
             
-            # 2. Probability Buckets
-            h_df['prob_bucket'] = h_df['calibratedProbability'].apply(get_bucket_name)
-            for bucket_name, group in h_df.groupby('prob_bucket'):
-                self.tables[h][f"PROB_{bucket_name}"] = compute_distribution_metrics(group[ret_col].values, 'PROBABILITY_BUCKET', start_date, end_date)
-                
-            # 3. Probability + Regime Buckets (if regime column available)
-            if 'regime' in h_df.columns:
-                for (b_name, reg), group in h_df.groupby(['prob_bucket', 'regime']):
-                    self.tables[h][f"PROB_REGIME_{b_name}_{reg}"] = compute_distribution_metrics(
-                        group[ret_col].values, 'PROBABILITY_REGIME_BUCKET', start_date, end_date
-                    )
+        h_df = df.dropna(subset=[ret_col, 'calibratedProbability']).copy()
+        if h_df.empty:
+            return
+            
+        # 1. Horizon-Wide Fallback
+        h_returns = h_df[ret_col].values
+        self.tables[h]['HORIZON_WIDE'] = compute_distribution_metrics(h_returns, 'HORIZON_WIDE_FALLBACK', start_date, end_date)
+        
+        # 2. Probability Buckets
+        h_df['prob_bucket'] = h_df['calibratedProbability'].apply(get_bucket_name)
+        for bucket_name, group in h_df.groupby('prob_bucket'):
+            self.tables[h][f"PROB_{bucket_name}"] = compute_distribution_metrics(group[ret_col].values, 'PROBABILITY_BUCKET', start_date, end_date)
+            
+        # 3. Probability + Regime Buckets (if regime column available)
+        if 'regime' in h_df.columns:
+            for (b_name, reg), group in h_df.groupby(['prob_bucket', 'regime']):
+                self.tables[h][f"PROB_REGIME_{b_name}_{reg}"] = compute_distribution_metrics(
+                    group[ret_col].values, 'PROBABILITY_REGIME_BUCKET', start_date, end_date
+                )
                     
     def get_distribution(self, horizon: str, prob: float, regime: str = 'SIDEWAYS') -> Dict[str, Any]:
         """
@@ -164,6 +178,7 @@ class ConditionalReturnEngine:
             'confidenceInterval': None,
             'fittedStart': "",
             'fittedEnd': "",
+            'fitEndTimestamp': "",
             'method': 'INSUFFICIENT_DATA'
         }
         

@@ -82,7 +82,11 @@ def run_full_pipeline():
         models_dict[h] = h_res['prod_model']
         oos_predictions_by_horizon[h] = h_res['oos_predictions_df']
         
-        # Calibration specification: knots, status, and test calibration metrics from fold 4 / aggregated
+        # Append all horizon fold metrics
+        for fm in h_res['fold_metrics']:
+            fm['horizon'] = h
+            walk_forward_folds.append(fm)
+            
         prod_knots = h_res['prod_calib_knots']
         last_fold = h_res['fold_metrics'][-1] if h_res['fold_metrics'] else {}
         calibration_dict[h] = {
@@ -102,15 +106,14 @@ def run_full_pipeline():
         }
         
         if h == '5d':
-            walk_forward_folds = h_res['fold_metrics']
             holdout_metrics = h_res['holdout_metrics']
             date_bounds = {
-                'trainingStart': walk_forward_folds[0]['trainStart'] if walk_forward_folds else '2021-08-23',
-                'trainingEnd': walk_forward_folds[0]['trainEnd'] if walk_forward_folds else '2023-08-13',
-                'validationStart': walk_forward_folds[0]['valStart'] if walk_forward_folds else '2023-08-14',
-                'validationEnd': walk_forward_folds[0]['valEnd'] if walk_forward_folds else '2024-02-13',
-                'testStart': walk_forward_folds[0]['testStart'] if walk_forward_folds else '2024-02-14',
-                'testEnd': walk_forward_folds[-1]['testEnd'] if walk_forward_folds else '2026-02-13',
+                'trainingStart': h_res['fold_metrics'][0]['trainStart'] if h_res['fold_metrics'] else '2021-08-23',
+                'trainingEnd': h_res['fold_metrics'][0]['trainEnd'] if h_res['fold_metrics'] else '2023-08-13',
+                'validationStart': h_res['fold_metrics'][0]['valStart'] if h_res['fold_metrics'] else '2023-08-14',
+                'validationEnd': h_res['fold_metrics'][0]['valEnd'] if h_res['fold_metrics'] else '2024-02-13',
+                'testStart': h_res['fold_metrics'][0]['testStart'] if h_res['fold_metrics'] else '2024-02-14',
+                'testEnd': h_res['fold_metrics'][-1]['testEnd'] if h_res['fold_metrics'] else '2026-02-13',
                 'holdoutStart': h_res['holdout_bounds']['start'],
                 'holdoutEnd': h_res['holdout_bounds']['end'],
             }
@@ -118,12 +121,12 @@ def run_full_pipeline():
     # 4. Fit Empirical Conditional Return Distributions strictly on OOS Predictions
     print("\n[4/7] Fitting Empirical Conditional Return Distributions on OOS Predictions...")
     cond_return_engine = ConditionalReturnEngine()
-    oos_5d_df = oos_predictions_by_horizon['5d']
-    cond_return_engine.fit_from_oos_predictions(oos_5d_df)
+    cond_return_engine.fit_from_oos_predictions(oos_predictions_by_horizon)
     empirical_quantiles = cond_return_engine.to_dict()
     
     # 5. Out-of-Sample Portfolio Backtest strictly consuming OOS predictions
     print("\n[5/7] Simulating Out-of-Sample Portfolio Daily Equity Curve (Consuming ONLY OOS Predictions)...")
+    oos_5d_df = oos_predictions_by_horizon['5d']
     print(f"Total OOS 5d predictions available: {len(oos_5d_df)}")
     
     backtest_res = run_portfolio_backtest(

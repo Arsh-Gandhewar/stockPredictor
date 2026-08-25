@@ -25,7 +25,7 @@ def download_data(period: str = "5y", force_refresh: bool = False):
             
         print(f"Fetching {ticker} ({period})...")
         try:
-            df = yf.download(ticker, period=period, progress=False, auto_adjust=False)
+            df = yf.download(ticker, period=period, progress=False, auto_adjust=True)
             if not df.empty and len(df) > 50:
                 # Handle multi-index columns from newer yfinance versions
                 if isinstance(df.columns, pd.MultiIndex):
@@ -34,7 +34,7 @@ def download_data(period: str = "5y", force_refresh: bool = False):
                 
                 # Ensure Datetime index and required numeric fields
                 df.index = pd.to_datetime(df.index)
-                for col in ['Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume']:
+                for col in ['Open', 'High', 'Low', 'Close', 'Volume']:
                     if col in df.columns:
                         df[col] = pd.to_numeric(df[col], errors='coerce')
                         

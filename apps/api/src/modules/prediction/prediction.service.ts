@@ -47,6 +47,9 @@ export class QuantPredictionService implements OnModuleInit {
   private cache = new Map<string, { data: StockPrediction; expiresAt: number }>();
   private isTrainingRunning: boolean = false;
   private activeArtifact: ModelArtifact | null = null;
+  private artifactChecksum: string = '';
+  private readonly calib1d = new CalibrationEngine();
+  private readonly calib20d = new CalibrationEngine();
   private governanceStatus: ProductionGovernanceStatus = {
     productionReady: false,
     modelStatus: 'FALLBACK',
@@ -135,14 +138,21 @@ export class QuantPredictionService implements OnModuleInit {
   }
 
   private applyModelArtifact(artifact: ModelArtifact) {
-    const calib5d = artifact.calibration?.['5d'];
-    if (calib5d && calib5d.knots && calib5d.knots.length >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS) {
-      this.calibrationEngine.setKnots(
-        calib5d.knots,
-        calib5d.status === 'FITTED_OUT_OF_SAMPLE',
-        calib5d.metrics
-      );
-    }
+    const applyKnots = (engine: CalibrationEngine, calibData: any) => {
+      if (calibData && calibData.knots && calibData.knots.length >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS) {
+        engine.setKnots(
+          calibData.knots,
+          calibData.status === 'FITTED_OUT_OF_SAMPLE',
+          calibData.metrics
+        );
+      }
+    };
+
+    applyKnots(this.calib1d, artifact.calibration?.['1d']);
+    applyKnots(this.calibrationEngine, artifact.calibration?.['5d']);
+    applyKnots(this.calib20d, artifact.calibration?.['20d']);
+
+    this.artifactChecksum = artifact.checksum || '';
     this.cache.clear();
   }
 
@@ -195,7 +205,8 @@ export class QuantPredictionService implements OnModuleInit {
   }
 
   async getPrediction(ticker: string): Promise<StockPrediction> {
-    const cached = this.cache.get(ticker);
+    const cacheKey = `${this.artifactChecksum}:${ticker}`;
+    const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) return cached.data;
 
     const [quote, candles, indices] = await Promise.all([
@@ -231,7 +242,7 @@ export class QuantPredictionService implements OnModuleInit {
       benchmarkCandles
     );
 
-    const dataQuality: DataQuality =
+    let dataQuality: DataQuality =
       candles.length >= 50 ? 'HIGH' : candles.length >= 20 ? 'MEDIUM' : 'LOW';
 
     // Multi-horizon raw predictions evaluated natively via ONNX Engine
@@ -240,13 +251,14 @@ export class QuantPredictionService implements OnModuleInit {
     const pred20d_raw = await this.onnxEngine.evaluate(features, '20d');
 
     // Isotonic probability calibration
-    const pred1d = this.calibrationEngine.apply(pred1d_raw);
+    const pred1d = this.calib1d.apply(pred1d_raw);
     const pred5d = this.calibrationEngine.apply(pred5d_raw);
-    const pred20d = this.calibrationEngine.apply(pred20d_raw);
+    const pred20d = this.calib20d.apply(pred20d_raw);
 
-    const assetVolatility = features['atr_percent']
-      ? features['atr_percent']
-      : Math.max(0.015, Math.abs(quote.changePercent / 100) * 1.4);
+    if (features['atr_percent'] == null) {
+      dataQuality = 'LOW';
+    }
+    const assetVolatility = features['atr_percent'] || 0; // The prompt said "remove volatility heuristic fallback", we will pass 0 or handled by LOW quality
 
     // Hierarchical Empirical Return Estimations with volatility scaling
     const est1d = this.inferenceEngine.estimateExpectedReturn(pred1d, '1d', assetVolatility);
@@ -281,30 +293,30 @@ export class QuantPredictionService implements OnModuleInit {
 
     // Scenario Analysis: Empirical conditional return quantiles (85th Bull, 50th Base, 15th Bear)
     const scenarioQuantiles = this.onnxEngine.estimateScenarioReturns('20d', pred20d, regime, assetVolatility);
-    const bullReturnPercent = parseFloat((scenarioQuantiles.bull85th * 100).toFixed(2));
-    const baseReturnPercent = parseFloat((scenarioQuantiles.base50th * 100).toFixed(2));
-    const bearReturnPercent = parseFloat((scenarioQuantiles.bear15th * 100).toFixed(2));
+    const bullReturnPercent = scenarioQuantiles.bull85th !== null ? parseFloat((scenarioQuantiles.bull85th * 100).toFixed(2)) : null;
+    const baseReturnPercent = scenarioQuantiles.base50th !== null ? parseFloat((scenarioQuantiles.base50th * 100).toFixed(2)) : null;
+    const bearReturnPercent = scenarioQuantiles.bear15th !== null ? parseFloat((scenarioQuantiles.bear15th * 100).toFixed(2)) : null;
 
     const scenarios = {
       bull: {
-        targetPrice: Money.round(quote.price * (1 + bullReturnPercent / 100)),
+        targetPrice: bullReturnPercent !== null ? Money.round(quote.price * (1 + bullReturnPercent / 100)) : null,
         expectedReturnPercent: bullReturnPercent,
         percentile: 85,
-        probability: pred20d,
+        probability: null,
         probabilityStatus: 'NOT_ESTIMATED' as const,
       },
       base: {
-        targetPrice: Money.round(quote.price * (1 + baseReturnPercent / 100)),
+        targetPrice: baseReturnPercent !== null ? Money.round(quote.price * (1 + baseReturnPercent / 100)) : null,
         expectedReturnPercent: baseReturnPercent,
         percentile: 50,
-        probability: 0.50,
+        probability: null,
         probabilityStatus: 'NOT_ESTIMATED' as const,
       },
       bear: {
-        targetPrice: Money.round(quote.price * (1 + bearReturnPercent / 100)),
+        targetPrice: bearReturnPercent !== null ? Money.round(quote.price * (1 + bearReturnPercent / 100)) : null,
         expectedReturnPercent: bearReturnPercent,
         percentile: 15,
-        probability: downsideProb,
+        probability: null,
         probabilityStatus: 'NOT_ESTIMATED' as const,
       },
       probabilityStatus: 'NOT_ESTIMATED' as const,
@@ -445,12 +457,13 @@ export class QuantPredictionService implements OnModuleInit {
       invalidationConditions,
     };
 
-    this.cache.set(ticker, { data: prediction, expiresAt: Date.now() + 45_000 });
+    this.cache.set(`${this.artifactChecksum}:${ticker}`, { data: prediction, expiresAt: Date.now() + 45_000 });
     return prediction;
   }
 
   async getUniversePredictions(): Promise<StockPrediction[]> {
-    const cached = this.cache.get('__universe_predictions__');
+    const universeCacheKey = `${this.artifactChecksum}:__universe_predictions__`;
+    const cached = this.cache.get(universeCacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.data as unknown as StockPrediction[];
     }
@@ -486,7 +499,7 @@ export class QuantPredictionService implements OnModuleInit {
       };
     });
 
-    this.cache.set('__universe_predictions__', {
+    this.cache.set(universeCacheKey, {
       data: predictions as unknown as StockPrediction,
       expiresAt: Date.now() + 45_000,
     });

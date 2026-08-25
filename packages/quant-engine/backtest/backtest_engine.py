@@ -116,6 +116,7 @@ def run_portfolio_backtest(
     """
     cost_engine = TransactionCostEngine(cost_regime)
     round_trip_cost = cost_engine.calculate_round_trip_cost_rate()
+    one_way_cost = round_trip_cost / 2.0
     
     if predictions_df.empty:
         return {
@@ -124,8 +125,8 @@ def run_portfolio_backtest(
             'cagr': 0.0,
             'annualizedReturn': 0.0,
             'annualizedVol': 0.0,
-            'sharpe': 0.0,
-            'sortino': 0.0,
+            'sharpe': 'NOT_MEANINGFUL',
+            'sortino': 'NOT_MEANINGFUL',
             'calmar': 0.0,
             'maxDrawdown': 0.0,
             'profitFactor': 'NOT_MEANINGFUL',
@@ -145,13 +146,24 @@ def run_portfolio_backtest(
         
     df.sort_values('date', inplace=True)
     
-    unique_dates = sorted(df['date'].unique())
-    if not unique_dates:
+    # Construct complete trading calendar from historical data if available
+    unique_dates_set = set(df['date'].unique())
+    if historical_candles_by_ticker:
+        for cdf in historical_candles_by_ticker.values():
+            unique_dates_set.update(cdf.index)
+            
+    unique_dates = sorted(list(unique_dates_set))
+    if df['date'].empty:
         return {'totalTrades': 0, 'winRate': 0.0, 'cagr': 0.0, 'sharpe': 0.0, 'maxDrawdown': 0.0}
+        
+    # Bound the calendar to the first and last prediction dates
+    min_date, max_date = df['date'].min(), df['date'].max()
+    unique_dates = [d for d in unique_dates if min_date <= d <= max_date]
         
     cash = float(initial_cash)
     open_positions: List[Dict[str, Any]] = []
     completed_trades: List[Dict[str, Any]] = []
+    pending_signals: List[pd.Series] = []
     rejected_signals_count = 0
     
     daily_equity_records: List[Dict[str, Any]] = []
@@ -161,6 +173,7 @@ def run_portfolio_backtest(
     RISK_BUDGET_PCT = 0.01          # 1.0% portfolio equity risk budget
     
     for current_date in unique_dates:
+        start_of_day_cash = cash
         date_str = str(current_date)[:10]
         
         # 1. Check / Update / Close Existing Open Positions
@@ -181,10 +194,10 @@ def run_portfolio_backtest(
                 }
             else:
                 today_candle = {
-                    'Open': pos['entryPrice'],
-                    'High': pos['entryPrice'],
-                    'Low': pos['entryPrice'],
-                    'Close': pos['entryPrice'],
+                    'Open': pos['currentPrice'],
+                    'High': pos['currentPrice'],
+                    'Low': pos['currentPrice'],
+                    'Close': pos['currentPrice'],
                 }
                 
             pos['daysHeld'] += 1
@@ -209,11 +222,14 @@ def run_portfolio_backtest(
                     exec_price = today_candle['Close']
                     reason = 'HORIZON_EXPIRY'
                     
-                gross_ret = (exec_price - pos['entryPrice']) / pos['entryPrice']
-                net_ret = gross_ret - round_trip_cost
-                pnl = pos['notional'] * net_ret
+                exec_value = pos['notional'] * (exec_price / pos['entryPrice'])
+                exit_friction = exec_value * one_way_cost
                 
-                cash += (pos['notional'] + pnl)
+                net_pnl = exec_value - pos['notional'] - exit_friction - pos['entryFriction']
+                gross_ret = (exec_price - pos['entryPrice']) / pos['entryPrice']
+                net_ret = net_pnl / pos['notional']
+                
+                cash += (exec_value - exit_friction)
                 
                 completed_trades.append({
                     'positionId': pos['id'],
@@ -225,40 +241,41 @@ def run_portfolio_backtest(
                     'notional': pos['notional'],
                     'grossReturn': float(gross_ret),
                     'netReturn': float(net_ret),
-                    'pnl': float(pnl),
+                    'pnl': float(net_pnl),
                     'exitReason': reason,
-                    'isWin': bool(net_ret > 0),
+                    'isWin': bool(net_pnl > 0),
                     'daysHeld': pos['daysHeld'],
                 })
             else:
                 # Position remains open, mark to market
                 pos['currentPrice'] = today_candle['Close']
-                pos['unrealizedPnl'] = pos['notional'] * ((today_candle['Close'] - pos['entryPrice']) / pos['entryPrice'])
+                current_value = pos['notional'] * (today_candle['Close'] / pos['entryPrice'])
+                pos['unrealizedPnl'] = current_value - pos['notional'] - pos['entryFriction']
                 surviving_positions.append(pos)
                 
         open_positions = surviving_positions
         
-        # 2. Process New Signals on Date t
-        day_signals = df[df['date'] == current_date]
-        active_signals = day_signals[day_signals['pred_prob'] >= prob_threshold]
-        
-        # Portfolio market value
-        market_value = sum(p['notional'] + p.get('unrealizedPnl', 0.0) for p in open_positions)
+        # 2. Process Pending Signals (Entry at Open(T+1))
+        market_value = sum(p['notional'] * (p['currentPrice'] / p['entryPrice']) for p in open_positions)
         total_equity = cash + market_value
         
-        for _, sig in active_signals.iterrows():
+        for sig in pending_signals:
             ticker = sig.get('ticker', 'UNKNOWN')
             
-            # Check concurrency cap
             if len(open_positions) >= MAX_CONCURRENT_POSITIONS:
                 rejected_signals_count += 1
                 continue
                 
-            # Check duplicate ticker position
             if any(p['ticker'] == ticker for p in open_positions):
                 continue
                 
-            entry_price = float(sig.get('Close', 100.0))
+            # Entry at Open
+            candles_df = historical_candles_by_ticker.get(ticker) if historical_candles_by_ticker else None
+            if candles_df is not None and current_date in candles_df.index:
+                entry_price = float(candles_df.loc[current_date]['Open'])
+            else:
+                entry_price = float(sig.get('Close', 100.0))
+                
             vol = float(sig.get('atr_percent', 0.02))
             
             stop_dist = max(0.01, 1.5 * vol)
@@ -273,12 +290,14 @@ def run_portfolio_backtest(
                 cash
             )
             
-            if sized_notional <= 0 or cash < sized_notional or (total_equity > 0 and sized_notional < (total_equity * 0.01)):
+            entry_friction = sized_notional * one_way_cost
+            
+            if sized_notional <= 0 or cash < (sized_notional + entry_friction) or (total_equity > 0 and sized_notional < (total_equity * 0.01)):
                 rejected_signals_count += 1
                 continue
                 
             # Open position
-            cash -= sized_notional
+            cash -= (sized_notional + entry_friction)
             pos_id = f"pos_{ticker}_{date_str}_{len(open_positions)+1}"
             open_positions.append({
                 'id': pos_id,
@@ -288,22 +307,28 @@ def run_portfolio_backtest(
                 'stopLossPrice': stop_loss_price,
                 'targetPrice': target_price,
                 'notional': float(sized_notional),
+                'entryFriction': entry_friction,
                 'daysHeld': 0,
                 'currentPrice': entry_price,
-                'unrealizedPnl': 0.0,
+                'unrealizedPnl': -entry_friction,
             })
             
-        # 3. Mark to Market & Record Daily Equity State
-        market_value = sum(p['notional'] + p.get('unrealizedPnl', 0.0) for p in open_positions)
+        # 3. Generate New Signals for tomorrow (Close(T))
+        day_signals = df[df['date'] == current_date]
+        active_signals = day_signals[day_signals['pred_prob'] >= prob_threshold]
+        pending_signals = [sig for _, sig in active_signals.iterrows()]
+            
+        # 4. Mark to Market & Record Daily Equity State
+        market_value = sum(p['notional'] * (p['currentPrice'] / p['entryPrice']) for p in open_positions)
         end_equity = cash + market_value
-        gross_exp = sum(p['notional'] for p in open_positions) / end_equity if end_equity > 0 else 0.0
+        gross_exp = market_value / end_equity if end_equity > 0 else 0.0
         
         prev_eq = daily_equity_records[-1]['portfolioValue'] if daily_equity_records else initial_cash
         daily_ret = (end_equity - prev_eq) / prev_eq if prev_eq > 0 else 0.0
         
         daily_equity_records.append({
             'date': date_str,
-            'startingCash': round(cash, 2),
+            'startingCash': round(start_of_day_cash, 2),
             'endingCash': round(cash, 2),
             'openPositions': len(open_positions),
             'grossExposure': round(gross_exp, 4),
@@ -329,15 +354,24 @@ def run_portfolio_backtest(
     rf_daily = 0.065 / 252.0
     excess_returns = daily_returns - rf_daily if len(daily_returns) > 0 else np.array([0.0])
     mean_excess = float(np.mean(excess_returns)) if len(excess_returns) > 0 else 0.0
-    std_ret = float(np.std(daily_returns, ddof=1)) if len(daily_returns) > 1 else 0.005
-    annualized_vol = std_ret * np.sqrt(252.0)
+    std_ret = float(np.std(daily_returns, ddof=1)) if len(daily_returns) > 1 else 0.0
+    
+    if std_ret > 1e-6 and len(daily_returns) > 1:
+        annualized_vol = std_ret * np.sqrt(252.0)
+        sharpe = (mean_excess * np.sqrt(252.0)) / std_ret
+    else:
+        annualized_vol = 0.0
+        sharpe = 'NOT_MEANINGFUL'
+        
     annualized_return = float(np.mean(daily_returns) * 252.0) if len(daily_returns) > 0 else 0.0
-    sharpe = (mean_excess * np.sqrt(252.0)) / std_ret if std_ret > 1e-6 else 0.0
     
     # 3. Sortino (vs 6.5% risk-free rate)
     downside_rets = daily_returns[daily_returns < rf_daily]
-    downside_dev = float(np.std(downside_rets, ddof=1) * np.sqrt(252.0)) if len(downside_rets) > 1 else 0.005
-    sortino = (mean_excess * np.sqrt(252.0)) / downside_dev if downside_dev > 1e-6 else 0.0
+    downside_dev = float(np.std(downside_rets, ddof=1) * np.sqrt(252.0)) if len(downside_rets) > 1 else 0.0
+    if downside_dev > 1e-6 and len(downside_rets) > 1:
+        sortino = (mean_excess * np.sqrt(252.0)) / downside_dev
+    else:
+        sortino = 'NOT_MEANINGFUL'
     
     # 4. Max Drawdown
     peak = equity_values[0] if len(equity_values) > 0 else 0.0
@@ -374,15 +408,15 @@ def run_portfolio_backtest(
         'cagr': round(float(cagr), 2),
         'annualizedReturn': round(float(annualized_return * 100.0), 2),
         'annualizedVol': round(float(annualized_vol * 100.0), 2),
-        'sharpe': round(float(sharpe), 2),
-        'sortino': round(float(sortino), 2),
+        'sharpe': round(float(sharpe), 2) if isinstance(sharpe, float) else sharpe,
+        'sortino': round(float(sortino), 2) if isinstance(sortino, float) else sortino,
         'calmar': round(float(calmar), 2),
         'maxDrawdown': round(float(max_dd * 100.0), 2),
         'profitFactor': profit_factor,
         'rejectedSignalsCount': rejected_signals_count,
         'frictionRateBps': round(round_trip_cost * 10000, 1),
         'costRegime': cost_regime,
-        'dailyEquitySeries': daily_equity_records[:100],  # Sample records
+        'dailyEquitySeries': daily_equity_records[:100],
         'equityCurve': [round(r['portfolioValue'] / initial_cash * 100.0, 2) if initial_cash > 0 else 0.0 for r in daily_equity_records],
         'trades': completed_trades[:50],
     }
