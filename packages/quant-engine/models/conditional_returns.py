@@ -5,7 +5,7 @@ import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from calibration.calibrate import MIN_RETURN_BUCKET_SAMPLE_COUNT, MIN_TAIL_SAMPLE_COUNT
+from quant_governance_config import MIN_RETURN_BUCKET_SAMPLE_COUNT, MIN_TAIL_SAMPLE_COUNT
 
 class LeakageError(Exception):
     """Raised when causal data lineage or point-in-time invariant is violated."""

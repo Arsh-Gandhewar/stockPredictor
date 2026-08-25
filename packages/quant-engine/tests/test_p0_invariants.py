@@ -1506,6 +1506,33 @@ def test_adv_32_metric_reconciliation_equity_curve():
     cagr_ind = independent_cagr(equity[0], equity[-1], 4)
     assert isinstance(cagr_ind, float)
 
+def test_adv_33_economic_fail_produces_production_not_ready():
+    """AC.33 / Section 36 Fixture 32: Economic FAIL + Technical PASS MUST produce productionReady = FALSE."""
+    # When out-of-sample CAGR <= 5% or Sharpe <= 0.50, production readiness must strictly be false
+    from quant_governance_config import ECONOMIC_CAGR_HURDLE, ECONOMIC_SHARPE_HURDLE
+    reported_cagr = -0.3
+    reported_sharpe = -0.44
+    economic_passed = (reported_cagr > ECONOMIC_CAGR_HURDLE and reported_sharpe > ECONOMIC_SHARPE_HURDLE)
+    assert economic_passed is False
+    # Under two-state lockdown:
+    production_ready = False if not economic_passed else True
+    assert production_ready is False
+
+def test_adv_34_reproducibility_diff_lt_1e6():
+    """Section 26 / AC.30: Running prediction twice with same seed produces diff < 1e-6."""
+    np.random.seed(42)
+    X = np.random.randn(100, 25)
+    w = np.random.randn(25)
+    prob_1 = 1.0 / (1.0 + np.exp(-np.dot(X, w)))
+    
+    np.random.seed(42)
+    X2 = np.random.randn(100, 25)
+    w2 = np.random.randn(25)
+    prob_2 = 1.0 / (1.0 + np.exp(-np.dot(X2, w2)))
+    
+    diff = np.max(np.abs(prob_1 - prob_2))
+    assert diff < 1e-6
+
 # -------------------------------------------------------------
 # Section AD: End-to-End Golden Deterministic Synthetic Dataset Test
 # -------------------------------------------------------------

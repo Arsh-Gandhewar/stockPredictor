@@ -13,7 +13,8 @@ from typing import Dict, List, Tuple, Any
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score, accuracy_score
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibration, MIN_RETURN_BUCKET_SAMPLE_COUNT
+from quant_governance_config import MIN_RETURN_BUCKET_SAMPLE_COUNT, MIN_TAIL_SAMPLE_COUNT
+from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibration
 from models.conditional_returns import ConditionalReturnEngine, verify_causal_invariance, LeakageError, HorizonMismatchError
 from universe import TICKER_SECTOR_MAP
 

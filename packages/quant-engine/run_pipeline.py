@@ -200,9 +200,11 @@ def run_full_pipeline():
             fit_res = prod_cond_engine.fit_horizon_causal(h, h_oos_df, fit_end_ts)
             empirical_quantiles[h] = prod_cond_engine.to_dict().get(h, {})
             production_distributions[h] = {
+                'usage': 'LIVE_INITIALIZATION',
                 'fitDataEnd': fit_res.get('actualFitEnd') or fit_end_ts,
                 'modelVersion': '5.0.0',
                 'calibrationVersion': 'v5.0.0-isotonic',
+                'distributionVersion': 'v5.0.0-empirical-quantiles',
                 'horizon': h,
                 'sampleCount': fit_res.get('sampleCount', len(h_oos_df)),
                 'tables': empirical_quantiles[h]

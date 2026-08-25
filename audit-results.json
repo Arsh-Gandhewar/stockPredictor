@@ -1,11 +1,11 @@
 {
-  "auditDate": "2026-08-25T10:21:17Z",
+  "auditDate": "2026-08-25T10:33:33Z",
   "status": "PASSED",
   "auditorVersion": "v5.0.0-independent-quant-auditor",
   "artifact": {
     "id": "art_lgbm_5_0_0",
     "version": "5.0.0",
-    "checksum": "232d3eecd303d7c90eeb6accd8d2f1f6e9d80dfe4941cf4b82d32f35f1d4c20c",
+    "checksum": "b658aa1bf45725e54021eb2bd55e71a447917f9876bd14e6d24bad85418a393f",
     "modelType": "LEARNED_LIGHTGBM",
     "featureVersion": "v5.0.0-multi-factor-25"
   },
@@ -12313,15 +12313,15 @@
   "onnxBindings": {
     "1d": {
       "filename": "model_1d.onnx",
-      "sha256": "c5ea3856ad40cb5390ed92ca6519b684334776284b9189697c4f670c4bfda353"
+      "sha256": "cfda59e9786f21a26901c2b8f072b1b6c8bc96e2708c8750adb744231d01445e"
     },
     "5d": {
       "filename": "model_5d.onnx",
-      "sha256": "49bfdf381f329bfde28e7edd854b183429ea3474e08537120c4cea3691717533"
+      "sha256": "09d08886fffceee1c0ae540b1e5861d2d77b6d010c6641a7b507dfae37c6e32e"
     },
     "20d": {
       "filename": "model_20d.onnx",
-      "sha256": "dfeee3c257fef30ad16cf8a71beaa5ced960f55531ac465c4f69ccb02fc71011"
+      "sha256": "dbb7cafb1726b9fba23dc148173434d3833417291d54f8d3a1598379effcda38"
     }
   },
   "auditChecks": [
@@ -12333,17 +12333,17 @@
     {
       "check": "onnx_hash_binding_1d",
       "passed": true,
-      "detail": "Expected c5ea3856ad40..., Got c5ea3856ad40..."
+      "detail": "Expected cfda59e9786f..., Got cfda59e9786f..."
     },
     {
       "check": "onnx_hash_binding_5d",
       "passed": true,
-      "detail": "Expected 49bfdf381f32..., Got 49bfdf381f32..."
+      "detail": "Expected 09d08886fffc..., Got 09d08886fffc..."
     },
     {
       "check": "onnx_hash_binding_20d",
       "passed": true,
-      "detail": "Expected dfeee3c257fe..., Got dfeee3c257fe..."
+      "detail": "Expected dbb7cafb1726..., Got dbb7cafb1726..."
     },
     {
       "check": "out_of_sample_metrics_plausibility",

@@ -209,7 +209,13 @@ export class ProductionScorecardService {
       btMetrics.dailyEquitySeries &&
       btMetrics.dailyEquitySeries.length > 0
     );
-    const economicPassed = Boolean(btMetrics && typeof btMetrics.cagr === 'number' && btMetrics.cagr > 5.0 && typeof btMetrics.sharpe === 'number' && btMetrics.sharpe > 0.5);
+    const economicPassed = Boolean(
+      btMetrics &&
+      typeof btMetrics.cagr === 'number' && btMetrics.cagr > 5.0 &&
+      typeof btMetrics.sharpe === 'number' && btMetrics.sharpe > 0.50 &&
+      (btMetrics.profitFactor === null || btMetrics.profitFactor === 'NOT_MEANINGFUL' || btMetrics.profitFactor > 1.20) &&
+      (typeof btMetrics.maxDrawdown === 'number' && btMetrics.maxDrawdown > -25.0)
+    );
     criteria['BACKTEST_VALIDITY'] = {
       code: 'BACKTEST_VALIDITY',
       name: 'Time-Aligned Daily Equity Curve Statistics & Strategy Viability',
@@ -352,7 +358,8 @@ export class ProductionScorecardService {
     const technicalMethodStatus: 'PASS' | 'FAIL' = criteriaList.every((c) => c.status === 'PASS' || c.status === 'LIMITATION') ? 'PASS' : 'FAIL';
     const economicStrategyStatus: 'PASS' | 'FAIL' = economicPassed ? 'PASS' : 'FAIL';
 
-    const productionReady = blockingFailures.length === 0;
+    // Section 0 & 21: Absolute two-state lockdown
+    const productionReady = (blockingFailures.length === 0 && economicStrategyStatus === 'PASS');
     const overallStatus: 'PRODUCTION_READY' | 'NOT_PRODUCTION_READY' = productionReady ? 'PRODUCTION_READY' : 'NOT_PRODUCTION_READY';
 
     return {

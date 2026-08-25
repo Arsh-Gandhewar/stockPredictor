@@ -9,9 +9,14 @@ import pandas as pd
 import numpy as np
 from typing import Dict, List, Any, Optional
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from costs import TransactionCostEngine
 from universe import TICKER_SECTOR_MAP
+from quant_governance_config import (
+    MAX_POSITION_WEIGHT,
+    MAX_SECTOR_WEIGHT,
+    MAX_GROSS_EXPOSURE,
+    RISK_PER_TRADE
+)
 
 def evaluate_trade_ohlc_path(
     entry_price: float,

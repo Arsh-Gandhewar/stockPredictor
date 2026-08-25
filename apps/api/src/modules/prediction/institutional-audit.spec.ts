@@ -572,7 +572,13 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
       expect(scorecard.criteria['FAIL_SAFE_BEHAVIOR']).toBeDefined();
 
       if (artifact && validation.isValid) {
-        expect(scorecard.overallStatus).toBe('PRODUCTION_READY');
+        if (scorecard.economicStrategyStatus === 'PASS') {
+          expect(scorecard.overallStatus).toBe('PRODUCTION_READY');
+          expect(scorecard.productionReady).toBe(true);
+        } else {
+          expect(scorecard.overallStatus).toBe('NOT_PRODUCTION_READY');
+          expect(scorecard.productionReady).toBe(false);
+        }
         expect(scorecard.passRate).toBeCloseTo(17 / 18, 4);
       }
     });

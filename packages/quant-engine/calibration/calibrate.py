@@ -255,9 +255,14 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
         }
     }
 
-MIN_TEST_CALIBRATION_SAMPLE_COUNT = 500
-MIN_RETURN_BUCKET_SAMPLE_COUNT = 100
-MIN_TAIL_SAMPLE_COUNT = 250
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from quant_governance_config import (
+    MIN_TEST_CALIBRATION_SAMPLE_COUNT,
+    MIN_RETURN_BUCKET_SAMPLE_COUNT,
+    MIN_TAIL_SAMPLE_COUNT
+)
 
 def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_probs: np.ndarray) -> Dict[str, Any]:
     """
