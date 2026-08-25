@@ -140,5 +140,21 @@ def export_artifacts(
     with open(version_manifest_path, 'w', encoding='utf-8') as f:
         json.dump(manifest, f, indent=2)
         
-    print(f"Canonical model artifact saved to {active_manifest_path} (Checksum: {checksum[:12]}...)")
+    # Section U: Reload active artifact and verify integrity
+    with open(active_manifest_path, 'r', encoding='utf-8') as f:
+        reloaded = json.load(f)
+    reloaded_checksum = compute_canonical_checksum(reloaded)
+    if reloaded_checksum != checksum:
+        raise ValueError(f"CRITICAL ARTIFACT CORRUPTION: Reloaded checksum {reloaded_checksum} != stored checksum {checksum}")
+        
+    for h, onnx_meta in manifest['onnxModels'].items():
+        o_path = os.path.join(active_dir, onnx_meta['filename'])
+        if not os.path.exists(o_path):
+            raise FileNotFoundError(f"Missing ONNX model file: {o_path}")
+        with open(o_path, 'rb') as f:
+            actual_onnx_sha = hashlib.sha256(f.read()).hexdigest()
+        if actual_onnx_sha != onnx_meta['sha256']:
+            raise ValueError(f"CRITICAL ONNX HASH MISMATCH for {h}: {actual_onnx_sha} != {onnx_meta['sha256']}")
+            
+    print(f"Canonical model artifact saved and verified at {active_manifest_path} (Checksum: {checksum[:12]}...)")
     return manifest

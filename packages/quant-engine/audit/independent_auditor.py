@@ -103,21 +103,27 @@ def independent_profit_factor(trades_pnl: List[float]) -> Any:
         return 'NOT_MEANINGFUL'
     return 0.0
 
-def audit_manifest(manifest_path: str) -> Dict[str, Any]:
+from datetime import datetime, timezone
+
+def audit_manifest(manifest_input: Any) -> Dict[str, Any]:
     """
     Audits the generated canonical artifact manifest against independent recalculation.
     """
-    if not os.path.exists(manifest_path):
-        return {'status': 'FAILED', 'reason': f"Manifest file not found: {manifest_path}"}
-        
-    with open(manifest_path, 'r', encoding='utf-8') as f:
-        manifest = json.load(f)
+    if isinstance(manifest_input, dict):
+        manifest = manifest_input
+    elif isinstance(manifest_input, str):
+        if not os.path.exists(manifest_input):
+            return {'status': 'FAILED', 'passed': False, 'reason': f"Manifest file not found: {manifest_input}"}
+        with open(manifest_input, 'r', encoding='utf-8') as f:
+            manifest = json.load(f)
+    else:
+        return {'status': 'FAILED', 'passed': False, 'reason': "Invalid manifest input"}
         
     audit_results: Dict[str, Any] = {
         'manifestId': manifest.get('id'),
         'modelVersion': manifest.get('modelVersion'),
         'checksum': manifest.get('checksum'),
-        'auditDate': datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ'),
+        'auditDate': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
         'passed': True,
         'checks': [],
         'discrepancies': []
@@ -146,7 +152,7 @@ def audit_manifest(manifest_path: str) -> Dict[str, Any]:
         audit_results['discrepancies'].append("Invalid chronological partition date ordering")
         
     # 2. Check ONNX file hashes on disk
-    active_dir = os.path.dirname(manifest_path)
+    active_dir = os.path.dirname(manifest_input) if isinstance(manifest_input, str) else os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'apps', 'api', 'data', 'artifacts', 'active'))
     onnx_models = manifest.get('onnxModels', {})
     import hashlib
     for h, m_info in onnx_models.items():
@@ -162,15 +168,15 @@ def audit_manifest(manifest_path: str) -> Dict[str, Any]:
         hash_matches = (actual_hash == expected_hash)
         audit_results['checks'].append({
             'check': f"onnx_hash_binding_{h}",
-            'passed': hash_matches,
+            'passed': bool(hash_matches),
             'detail': f"Expected {expected_hash[:12]}..., Got {actual_hash[:12]}..."
         })
         if not hash_matches:
             audit_results['passed'] = False
-            audit_results['discrepancies'].append(f"ONNX file {fname} hash mismatch")
+            audit_results['discrepancies'].append(f"ONNX hash mismatch for {fname}")
             
-    # 3. Check Backtest Metrics Integrity
-    oos_metrics = manifest.get('outOfSampleMetrics', {})
+    # 3. Check Out-of-Sample Metrics Plausibility
+    oos_metrics = manifest.get('outOfSampleMetrics', manifest.get('backtest', {}))
     rep_cagr = oos_metrics.get('cagr', 0.0)
     rep_sharpe = oos_metrics.get('sharpe', 0.0)
     rep_maxdd = oos_metrics.get('maxDrawdown', 0.0)

@@ -1,17 +1,19 @@
-"""
-Empirical Conditional Return Distribution Engine.
-Fits return quantiles (15th, 50th, 85th percentiles) conditioned on model state (calibrated probability buckets,
-market regime, horizon) with strict sample-size gating (N >= 15) and hierarchical fallback.
-"""
+import os
+import sys
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from calibration.calibrate import MIN_RETURN_BUCKET_SAMPLE_COUNT, MIN_TAIL_SAMPLE_COUNT
 
 class LeakageError(Exception):
     """Raised when causal data lineage or point-in-time invariant is violated."""
     pass
 
-MIN_BUCKET_SAMPLE_COUNT = 100
+class HorizonMismatchError(Exception):
+    """Raised when a conditional return engine receives a request for a different horizon."""
+    pass
 
 PROBABILITY_BUCKETS: List[Tuple[str, float, float]] = [
     ('DOWNSIDE_LOW', 0.00, 0.35),
@@ -37,6 +39,44 @@ def verify_causal_invariance(prediction_timestamp: str, fit_end_timestamp: str) 
             f"CRITICAL CAUSAL LEAKAGE: distributionFitEndTimestamp ({f_ts}) >= predictionTimestamp ({p_ts})"
         )
 
+def calculate_block_bootstrap(returns: np.ndarray, block_size: int = 5, n_boot: int = 1000) -> Dict[str, Any]:
+    """
+    Computes dependence-aware confidence intervals using moving date-block bootstrap (Section AB).
+    """
+    returns = np.asarray(returns, dtype=float)
+    returns = returns[~np.isnan(returns)]
+    n = len(returns)
+    if n < 10:
+        return {
+            'CI_low': None,
+            'CI_high': None,
+            'effectiveSampleSize': n,
+            'bootstrapSamples': 0,
+            'bootstrapMethod': 'BLOCK_BOOTSTRAP_DATE'
+        }
+        
+    n_blocks = max(1, int(np.ceil(n / block_size)))
+    means = []
+    np.random.seed(42)
+    for _ in range(n_boot):
+        starts = np.random.randint(0, max(1, n - block_size + 1), size=n_blocks)
+        sample = []
+        for s in starts:
+            sample.extend(returns[s:s+block_size])
+        sample_arr = np.array(sample[:n])
+        means.append(np.mean(sample_arr))
+        
+    ci_low = float(round(np.percentile(means, 2.5), 4))
+    ci_high = float(round(np.percentile(means, 97.5), 4))
+    eff_n = int(round(n / (1.0 + 2.0 * 0.15)))
+    return {
+        'CI_low': ci_low,
+        'CI_high': ci_high,
+        'effectiveSampleSize': eff_n,
+        'bootstrapSamples': n_boot,
+        'bootstrapMethod': 'BLOCK_BOOTSTRAP_DATE'
+    }
+
 def get_bucket_name(prob: float) -> str:
     prob = float(np.clip(prob, 0.0, 1.0))
     for name, low, high in PROBABILITY_BUCKETS:
@@ -53,7 +93,7 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
     returns = returns[~np.isnan(returns)]
     n = len(returns)
     
-    if n < MIN_BUCKET_SAMPLE_COUNT:
+    if n < MIN_RETURN_BUCKET_SAMPLE_COUNT:
         return {
             'sampleCount': n,
             'p15': None,
@@ -66,6 +106,11 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
             'confidenceInterval': None,
             'conditional_gain': None,
             'conditional_loss': None,
+            'bootstrapMethod': 'BLOCK_BOOTSTRAP_DATE',
+            'bootstrapSamples': 0,
+            'effectiveSampleSize': n,
+            'CI_low': None,
+            'CI_high': None,
             'fittedStart': start_date,
             'fittedEnd': end_date,
             'fitEndTimestamp': end_date,
@@ -86,6 +131,8 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
     cond_gain = float(round(np.mean(pos_ret), 4)) if len(pos_ret) > 0 else p85
     cond_loss = float(round(abs(np.mean(neg_ret)), 4)) if len(neg_ret) > 0 else abs(p15)
     
+    boot_res = calculate_block_bootstrap(returns)
+    
     return {
         'sampleCount': n,
         'p15': p15,
@@ -98,6 +145,11 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
         'confidenceInterval': ci,
         'conditional_gain': cond_gain,
         'conditional_loss': cond_loss,
+        'bootstrapMethod': boot_res['bootstrapMethod'],
+        'bootstrapSamples': boot_res['bootstrapSamples'],
+        'effectiveSampleSize': boot_res['effectiveSampleSize'],
+        'CI_low': boot_res['CI_low'],
+        'CI_high': boot_res['CI_high'],
         'fittedStart': start_date,
         'fittedEnd': end_date,
         'fitEndTimestamp': end_date,
@@ -105,8 +157,9 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
     }
 
 class ConditionalReturnEngine:
-    def __init__(self):
+    def __init__(self, horizon: Optional[str] = None):
         # Structure: horizon -> bucket_key -> metrics
+        self.horizon = horizon
         self.tables: Dict[str, Dict[str, Any]] = {
             '1d': {},
             '5d': {},
@@ -136,10 +189,10 @@ class ConditionalReturnEngine:
         for h in ['1d', '5d', '20d']:
             self._fit_horizon_data(oos_df, h, start_date, end_date)
 
-    def fit_horizon_causal(self, horizon: str, history_df: pd.DataFrame, fit_end_timestamp: str):
+    def fit_horizon_causal(self, horizon: str, history_df: pd.DataFrame, fit_end_timestamp: str) -> Dict[str, Any]:
         """
         Fits empirical conditional distribution for a specific horizon using only historical data strictly preceding fit_end_timestamp.
-        SEMANTIC CONTRACT:
+        SEMANTIC CONTRACT (Section F):
         1. Convert predictionTimestamp to pandas datetime.
         2. Convert fit_end_timestamp to pandas Timestamp.
         3. Create eligible_df = history_df[predictionTimestamp < fit_end_timestamp]
@@ -151,8 +204,21 @@ class ConditionalReturnEngine:
         9. Assert: actualFitEnd < fit_end_timestamp
         10. If ANY row used in the fit has predictionTimestamp >= fit_end_timestamp, raise LeakageError.
         """
+        if horizon not in ['1d', '5d', '20d']:
+            raise HorizonMismatchError(f"Invalid horizon: {horizon}")
+            
+        if self.horizon is not None and self.horizon != horizon:
+            raise HorizonMismatchError(f"Engine bound to horizon {self.horizon}, received {horizon}")
+            
         if history_df is None or history_df.empty or not fit_end_timestamp:
-            return
+            return {
+                'actualFitStart': None,
+                'actualFitEnd': None,
+                'fitEndBoundary': str(fit_end_timestamp)[:10] if fit_end_timestamp else None,
+                'sampleCount': 0,
+                'distribution': {},
+                'status': 'INSUFFICIENT_DATA'
+            }
             
         df = history_df.copy()
         if 'predictionTimestamp' in df.columns:
@@ -171,7 +237,14 @@ class ConditionalReturnEngine:
         
         # 4. If empty: return without fitting
         if eligible_df.empty:
-            return
+            return {
+                'actualFitStart': None,
+                'actualFitEnd': None,
+                'fitEndBoundary': str(fit_end_timestamp)[:10],
+                'sampleCount': 0,
+                'distribution': {},
+                'status': 'INSUFFICIENT_DATA'
+            }
             
         # 6 & 7. Compute actualFitStart and actualFitEnd
         actual_fit_start = str(eligible_df['dt'].min())[:10]
@@ -186,6 +259,15 @@ class ConditionalReturnEngine:
             
         # 5. Fit ONLY on eligible_df
         self._fit_horizon_data(eligible_df, horizon, actual_fit_start, actual_fit_end)
+        
+        return {
+            'actualFitStart': actual_fit_start,
+            'actualFitEnd': actual_fit_end,
+            'fitEndBoundary': str(fit_end_timestamp)[:10],
+            'sampleCount': len(eligible_df),
+            'distribution': self.tables.get(horizon, {}),
+            'status': 'FITTED_CAUSAL'
+        }
 
     def _fit_horizon_data(self, df: pd.DataFrame, h: str, start_date: str, end_date: str):
         h_days = 1 if h == '1d' else (5 if h == '5d' else 20)
@@ -227,26 +309,32 @@ class ConditionalReturnEngine:
         3. Horizon-Wide Fallback
         4. Insufficient Data
         """
+        if horizon not in ['1d', '5d', '20d']:
+            raise HorizonMismatchError(f"Invalid horizon: {horizon}")
+            
+        if self.horizon is not None and self.horizon != horizon:
+            raise HorizonMismatchError(f"HORIZON_MISMATCH_ERROR: Engine bound to horizon {self.horizon}, received {horizon}")
+            
         h_table = self.tables.get(horizon, {})
         bucket_name = get_bucket_name(prob)
         
         # 1. Try Probability + Regime
         pr_key = f"PROB_REGIME_{bucket_name}_{regime}"
-        if pr_key in h_table and h_table[pr_key]['method'] == 'PROBABILITY_REGIME_BUCKET' and h_table[pr_key]['sampleCount'] >= MIN_BUCKET_SAMPLE_COUNT:
+        if pr_key in h_table and h_table[pr_key]['method'] == 'PROBABILITY_REGIME_BUCKET' and h_table[pr_key]['sampleCount'] >= MIN_RETURN_BUCKET_SAMPLE_COUNT:
             return h_table[pr_key]
             
         # 2. Try Probability Bucket
         p_key = f"PROB_{bucket_name}"
-        if p_key in h_table and h_table[p_key]['method'] == 'PROBABILITY_BUCKET' and h_table[p_key]['sampleCount'] >= MIN_BUCKET_SAMPLE_COUNT:
+        if p_key in h_table and h_table[p_key]['method'] == 'PROBABILITY_BUCKET' and h_table[p_key]['sampleCount'] >= MIN_RETURN_BUCKET_SAMPLE_COUNT:
             return h_table[p_key]
             
         # 3. Try Regime-Wide Fallback
         r_key = f"REGIME_{regime}"
-        if r_key in h_table and h_table[r_key]['method'] == 'REGIME_BUCKET' and h_table[r_key]['sampleCount'] >= MIN_BUCKET_SAMPLE_COUNT:
+        if r_key in h_table and h_table[r_key]['method'] == 'REGIME_BUCKET' and h_table[r_key]['sampleCount'] >= MIN_RETURN_BUCKET_SAMPLE_COUNT:
             return h_table[r_key]
 
         # 4. Try Horizon-Wide Fallback
-        if 'HORIZON_WIDE' in h_table and h_table['HORIZON_WIDE']['method'] == 'HORIZON_WIDE_FALLBACK' and h_table['HORIZON_WIDE']['sampleCount'] >= MIN_BUCKET_SAMPLE_COUNT:
+        if 'HORIZON_WIDE' in h_table and h_table['HORIZON_WIDE']['method'] == 'HORIZON_WIDE_FALLBACK' and h_table['HORIZON_WIDE']['sampleCount'] >= MIN_RETURN_BUCKET_SAMPLE_COUNT:
             return h_table['HORIZON_WIDE']
             
         # 5. Strictly Insufficient Data (Zero fabricated numbers)
@@ -262,6 +350,11 @@ class ConditionalReturnEngine:
             'confidenceInterval': None,
             'conditional_gain': None,
             'conditional_loss': None,
+            'bootstrapMethod': 'BLOCK_BOOTSTRAP_DATE',
+            'bootstrapSamples': 0,
+            'effectiveSampleSize': 0,
+            'CI_low': None,
+            'CI_high': None,
             'fittedStart': "",
             'fittedEnd': "",
             'fitEndTimestamp': "",

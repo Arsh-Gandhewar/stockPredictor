@@ -1,9 +1,9 @@
 # QuantX Quantitative Model Final Certification & Audit Report
 
 **Audit Status:** PASSED  
-**Evaluated At:** 2026-08-25T09:59:08Z  
+**Evaluated At:** 2026-08-25T10:21:17Z  
 **Authoritative Artifact ID:** `art_lgbm_5_0_0`  
-**Canonical Manifest Checksum:** `a294116bd62db8700641286fbcb37884de553853da2e09525872405a3e9ec4c6`  
+**Canonical Manifest Checksum:** `232d3eecd303d7c90eeb6accd8d2f1f6e9d80dfe4941cf4b82d32f35f1d4c20c`  
 **Model Architecture:** LightGBM Purged Walk-Forward Multi-Factor Classifier (v5.0.0)  
 **Inference Engine:** ONNX Runtime (`onnxruntime-node`) with Raw Float Tensors  
 
@@ -73,10 +73,10 @@ The strategy simulation consumes **exclusively** the out-of-sample prediction le
 ## 6. Cryptographic Integrity & Model Governance
 
 - **Canonical Active Directory:** `apps/api/data/artifacts/active/`
-- **Manifest SHA-256 Checksum:** `a294116bd62db8700641286fbcb37884de553853da2e09525872405a3e9ec4c6`
-- **ONNX Model 1d SHA-256:** `19775ff14e6e252f4fe7023dae7341cf9fa187eaa65f423f679982818b9afc0f`
-- **ONNX Model 5d SHA-256:** `83cfcfacce02792e1662b6a78233f3675382c6449098878df578f4586caf7789`
-- **ONNX Model 20d SHA-256:** `a3612e9c3532825d1a4e143fd1c92c968183a27f41cdc482ce38a0e478f6a232`
+- **Manifest SHA-256 Checksum:** `232d3eecd303d7c90eeb6accd8d2f1f6e9d80dfe4941cf4b82d32f35f1d4c20c`
+- **ONNX Model 1d SHA-256:** `c5ea3856ad40cb5390ed92ca6519b684334776284b9189697c4f670c4bfda353`
+- **ONNX Model 5d SHA-256:** `49bfdf381f329bfde28e7edd854b183429ea3474e08537120c4cea3691717533`
+- **ONNX Model 20d SHA-256:** `dfeee3c257fef30ad16cf8a71beaa5ced960f55531ac465c4f69ccb02fc71011`
 - **Fail-Closed Guardrails:** Verified. If ONNX runtime or artifact verification fails, system rejects execution with `MODEL_UNAVAILABLE` and `productionReady = false` (zero silent heuristic fallback).
 
 ---

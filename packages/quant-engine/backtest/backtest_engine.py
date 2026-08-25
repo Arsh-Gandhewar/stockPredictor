@@ -396,6 +396,11 @@ def run_portfolio_backtest(
             vol = float(vol_val)
             
             if strategy_mode == 'PRODUCTION_EXPECTED_VALUE':
+                if sig.get('returnEstimateMethod') == 'INSUFFICIENT_DATA':
+                    rejected_signals_count += 1
+                    rejected_insufficient_quant_data += 1
+                    continue
+                    
                 e_gain_raw = sig.get('conditional_gain')
                 e_loss_raw = sig.get('conditional_loss')
                 
@@ -408,10 +413,15 @@ def run_portfolio_backtest(
                 e_gain = float(e_gain_raw)
                 e_loss = float(e_loss_raw)
                 
-                ev = (p_up * e_gain) - (p_down * e_loss) - round_trip_cost
-                risk_adj_ev = ev / vol
+                fit_end = sig.get('distributionFitEnd') or sig.get('distributionFitEndTimestamp')
+                if fit_end and str(fit_end)[:10] >= str(current_date)[:10]:
+                    raise ValueError(f"CRITICAL CAUSAL LEAKAGE in Backtest Trade: distributionFitEnd {fit_end} >= signalDate {current_date}")
                 
-                if ev > 0 and risk_adj_ev > 0:
+                ev_before_cost = (p_up * e_gain) - (p_down * e_loss)
+                ev_after_cost = ev_before_cost - round_trip_cost
+                risk_adj_ev = ev_after_cost / vol
+                
+                if ev_after_cost > 0 and risk_adj_ev > 0:
                     active_signals_list.append(sig)
             else:
                 # BASELINE_PROBABILITY_055
@@ -425,7 +435,7 @@ def run_portfolio_backtest(
         end_equity = cash + market_value
         gross_exp = market_value / end_equity if end_equity > 0 else 0.0
         
-        # Invariant Assertions (P0-10, P0-11)
+        # Invariant Assertions (P0-10, P0-11, Section Y)
         if cash < -1e-6:
             raise ValueError(f"CRITICAL ACCOUNTING VIOLATION: Negative cash {cash:.4f} INR on {date_str}")
         if gross_exp > MAX_GROSS_EXPOSURE:
@@ -536,8 +546,8 @@ def run_portfolio_backtest(
         'rejectedGrossExposureLimit': rejected_gross_exposure_limit,
         'frictionRateBps': round(round_trip_cost * 10000, 1),
         'costRegime': cost_regime,
-        'dailyEquitySeries': daily_equity_records[:100],
+        'dailyEquitySeries': daily_equity_records,
         'equityCurve': [round(r['portfolioValue'] / initial_cash * 100.0, 2) if initial_cash > 0 else 0.0 for r in daily_equity_records],
-        'trades': completed_trades[:50],
+        'trades': completed_trades,
     }
 

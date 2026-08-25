@@ -18,7 +18,7 @@ from features.feature_engine import calculate_features, FEATURE_NAMES
 from targets.target_definition import compute_targets
 from models.train_model import train_horizon_model
 from models.conditional_returns import ConditionalReturnEngine
-from calibration.calibrate import evaluate_test_calibration, MIN_TEST_CALIBRATION_SAMPLE_COUNT, IsotonicCalibrator
+from calibration.calibrate import evaluate_test_calibration, MIN_TEST_CALIBRATION_SAMPLE_COUNT, MIN_RETURN_BUCKET_SAMPLE_COUNT, IsotonicCalibrator
 from backtest.backtest_engine import run_portfolio_backtest
 from export.export_model import export_artifacts
 from costs import TransactionCostEngine
@@ -187,22 +187,39 @@ def run_full_pipeline():
                 'holdoutEnd': h_res['holdout_bounds']['end'],
             }
             
-    # 4. Fit Empirical Conditional Return Distributions for Production Inference (P0-4, P0-5, P0-6, P0-7)
-    print("\n[4/7] Fitting Empirical Conditional Return Distributions for Production Artifact...")
-    cond_return_engine = ConditionalReturnEngine()
+    # 4. Build Production Empirical Conditional Return Distributions from Causal OOS Ledger (Section C, D, S)
+    print("\n[4/7] Building Production Empirical Conditional Return Distributions from Causal OOS Ledger...")
+    production_distributions = {}
+    empirical_quantiles = {}
     for h in ['1d', '5d', '20d']:
-        h_model = models_dict[h]
-        knots = calibration_dict[h].get('knots', [])
-        iso_cal = IsotonicCalibrator(knots)
-        h_history_df = combined_df[combined_df.index < pd.Timestamp(date_bounds['validationEnd'])].copy()
-        if not h_history_df.empty:
-            raw_p = h_model.predict_proba(h_history_df[FEATURE_NAMES])[:, 1]
-            h_history_df['rawProbability'] = raw_p
-            h_history_df['calibratedProbability'] = iso_cal.transform(raw_p)
-            h_history_df['pred_prob'] = h_history_df['calibratedProbability']
-            h_history_df['predictionTimestamp'] = [str(d)[:10] for d in h_history_df.index]
-            cond_return_engine.fit_horizon_causal(h, h_history_df, date_bounds['validationEnd'])
-    empirical_quantiles = cond_return_engine.to_dict()
+        h_oos_df = oos_predictions_by_horizon.get(h, pd.DataFrame())
+        if not h_oos_df.empty:
+            prod_cond_engine = ConditionalReturnEngine(horizon=h)
+            # Use testEnd as fit boundary (strictly before holdout)
+            fit_end_ts = date_bounds.get('holdoutStart', str(h_oos_df['predictionTimestamp'].max())[:10])
+            fit_res = prod_cond_engine.fit_horizon_causal(h, h_oos_df, fit_end_ts)
+            empirical_quantiles[h] = prod_cond_engine.to_dict().get(h, {})
+            production_distributions[h] = {
+                'fitDataEnd': fit_res.get('actualFitEnd') or fit_end_ts,
+                'modelVersion': '5.0.0',
+                'calibrationVersion': 'v5.0.0-isotonic',
+                'horizon': h,
+                'sampleCount': fit_res.get('sampleCount', len(h_oos_df)),
+                'tables': empirical_quantiles[h]
+            }
+        else:
+            empirical_quantiles[h] = {}
+            
+    # Section M: Validate all empirical distribution records before export
+    for h, h_table in empirical_quantiles.items():
+        for bucket_name, b_metrics in h_table.items():
+            if b_metrics.get('sampleCount', 0) > 0 and b_metrics.get('method') != 'INSUFFICIENT_DATA':
+                if b_metrics.get('sampleCount', 0) < MIN_RETURN_BUCKET_SAMPLE_COUNT:
+                    raise ValueError(f"CRITICAL GOVERNANCE VIOLATION: Bucket {h}/{bucket_name} has N={b_metrics['sampleCount']} < {MIN_RETURN_BUCKET_SAMPLE_COUNT}")
+                if b_metrics.get('conditional_gain') is None or b_metrics.get('conditional_loss') is None:
+                    raise ValueError(f"CRITICAL GOVERNANCE VIOLATION: Bucket {h}/{bucket_name} has missing conditional gain/loss")
+                if not b_metrics.get('fitEndTimestamp'):
+                    raise ValueError(f"CRITICAL GOVERNANCE VIOLATION: Bucket {h}/{bucket_name} missing fitEndTimestamp")
     
     # 5. Out-of-Sample Portfolio Backtest: Compare BASELINE vs PRODUCTION EXPECTED VALUE (P0-3, P0-5, P0-8)
     print("\n[5/7] Simulating Out-of-Sample Portfolio Daily Equity Curve (Consuming Fold-Causal Predictions)...")

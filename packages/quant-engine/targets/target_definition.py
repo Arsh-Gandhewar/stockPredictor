@@ -39,6 +39,7 @@ def compute_targets(df: pd.DataFrame, cost_engine: TransactionCostEngine = None)
         
         df[f'future_gross_ret_{h}d'] = gross_ret
         df[f'future_net_ret_{h}d'] = net_ret
+        df[f'label_end_{h}d'] = df.index.to_series().shift(-h)
         
         # Binary directional target: 1 if profitable net of costs, 0 otherwise
         target_series = (net_ret > 0.0).astype(float)

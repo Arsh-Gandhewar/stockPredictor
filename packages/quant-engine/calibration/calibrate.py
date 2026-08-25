@@ -256,6 +256,8 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
     }
 
 MIN_TEST_CALIBRATION_SAMPLE_COUNT = 500
+MIN_RETURN_BUCKET_SAMPLE_COUNT = 100
+MIN_TAIL_SAMPLE_COUNT = 250
 
 def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_probs: np.ndarray) -> Dict[str, Any]:
     """
@@ -315,15 +317,19 @@ def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_pro
     except Exception:
         raw_auc = cal_auc = 0.50
         
+    raw_std = float(np.std(raw_probs))
+    cal_std = float(np.std(cal_probs))
+    
     if n_samples < MIN_TEST_CALIBRATION_SAMPLE_COUNT:
         status = 'INSUFFICIENT_DATA'
     else:
-        # Acceptance Gate on unseen TEST:
+        # Acceptance Gate on unseen TEST (Section N):
         is_accepted = (
             cal_brier <= raw_brier and
             (cal_ll is None or raw_ll is None or cal_ll <= raw_ll) and
             cal_ece <= raw_ece and
-            cal_auc >= raw_auc - 0.01
+            cal_auc >= raw_auc - 0.01 and
+            (raw_std <= 1e-4 or cal_std >= 0.10 * raw_std)
         )
         status = 'VERIFIED_TEST' if is_accepted else 'REJECTED'
         

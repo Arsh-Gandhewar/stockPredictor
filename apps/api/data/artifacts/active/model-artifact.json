@@ -182,7 +182,7 @@
       "dispersion": 0.0268,
       "sampleCount": 25,
       "uncertainty": 0.0054,
-      "fittedAt": "2026-08-25T09:59:36.323Z"
+      "fittedAt": "2026-08-25T10:22:30.178Z"
     },
     {
       "horizon": "5d",
@@ -194,7 +194,7 @@
       "dispersion": 0.0195,
       "sampleCount": 6,
       "uncertainty": 0.008,
-      "fittedAt": "2026-08-25T09:59:36.323Z"
+      "fittedAt": "2026-08-25T10:22:30.178Z"
     },
     {
       "horizon": "5d",
@@ -206,7 +206,7 @@
       "dispersion": 0.0158,
       "sampleCount": 7,
       "uncertainty": 0.006,
-      "fittedAt": "2026-08-25T09:59:36.323Z"
+      "fittedAt": "2026-08-25T10:22:30.178Z"
     },
     {
       "horizon": "5d",
@@ -218,7 +218,7 @@
       "dispersion": 0.0168,
       "sampleCount": 14,
       "uncertainty": 0.0045,
-      "fittedAt": "2026-08-25T09:59:36.323Z"
+      "fittedAt": "2026-08-25T10:22:30.178Z"
     }
   ],
   "empiricalQuantiles": {
@@ -259,7 +259,7 @@
     "versionCompatibility": true,
     "dateRangeIntegrity": true
   },
-  "createdAt": "2026-08-25T09:59:36.325Z",
-  "id": "art_1787651976326_4809d634",
-  "checksum": "04cd0fe6bd7cb132674072518393b9e4ed55f9c83a479b8bb23da2c35254d03b"
+  "createdAt": "2026-08-25T10:22:30.180Z",
+  "id": "art_1787653350181_c35d1ece",
+  "checksum": "4230c258e5e65048aaa94f9b35595a7b1d1e2d1b25d6aa237145ace0f03bfc02"
 }

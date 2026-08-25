@@ -13,8 +13,8 @@ from typing import Dict, List, Tuple, Any
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score, accuracy_score
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibration
-from models.conditional_returns import ConditionalReturnEngine, verify_causal_invariance, LeakageError
+from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibration, MIN_RETURN_BUCKET_SAMPLE_COUNT
+from models.conditional_returns import ConditionalReturnEngine, verify_causal_invariance, LeakageError, HorizonMismatchError
 from universe import TICKER_SECTOR_MAP
 
 LIGHTGBM_PARAMS = {
@@ -233,14 +233,19 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
         t_end_test_str = str(fold['test_end'])[:10]
         
         prior_history_df = clean_df[clean_df.index < fold['test_start']].copy()
-        fold_cond_engine = ConditionalReturnEngine()
+        label_col = f'label_end_{h_days}d'
+        if label_col in prior_history_df.columns:
+            prior_history_df = prior_history_df[prior_history_df[label_col] < pd.Timestamp(fold['test_start'])].copy()
+            
+        fold_cond_engine = ConditionalReturnEngine(horizon=horizon_str)
+        fit_res = {'actualFitStart': None, 'actualFitEnd': None, 'sampleCount': 0}
         if not prior_history_df.empty:
             prior_raw = fold_model.predict_proba(prior_history_df[features])[:, 1]
             prior_history_df['rawProbability'] = prior_raw
             prior_history_df['calibratedProbability'] = fold_calibrator.transform(prior_raw)
             prior_history_df['pred_prob'] = prior_history_df['calibratedProbability']
             prior_history_df['predictionTimestamp'] = [str(d)[:10] for d in prior_history_df.index]
-            fold_cond_engine.fit_horizon_causal(horizon_str, prior_history_df, t_start_str)
+            fit_res = fold_cond_engine.fit_horizon_causal(horizon_str, prior_history_df, t_start_str)
         
         # 6. Populate OOS Prediction Ledger with Provenance and Attached Conditional Return Estimates
         for idx, (dt, raw_p, cal_p, y_val_actual) in enumerate(zip(test_df.index, test_raw_prob, test_cal_prob, y_test)):
@@ -255,7 +260,7 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             reg = row.get('regime', 'SIDEWAYS') if 'regime' in row else 'SIDEWAYS'
             dist = fold_cond_engine.get_distribution(horizon_str, cal_p, reg)
             
-            if dist['method'] != 'INSUFFICIENT_DATA' and dist['sampleCount'] >= 100:
+            if dist['method'] != 'INSUFFICIENT_DATA' and dist['sampleCount'] >= MIN_RETURN_BUCKET_SAMPLE_COUNT:
                 p15 = dist['p15']
                 p50 = dist['p50']
                 p85 = dist['p85']
@@ -263,7 +268,8 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
                 cond_loss = dist['conditional_loss'] if dist.get('conditional_loss') is not None else (abs(p15) if p15 is not None else None)
                 ret_method = dist['method']
                 ret_samples = dist['sampleCount']
-                fit_end_ts = dist.get('fitEndTimestamp') or dist.get('fittedEnd')
+                fit_start_ts = dist.get('fittedStart') or fit_res.get('actualFitStart')
+                fit_end_ts = dist.get('fitEndTimestamp') or dist.get('fittedEnd') or fit_res.get('actualFitEnd')
             else:
                 p15 = None
                 p50 = None
@@ -272,9 +278,10 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
                 cond_loss = None
                 ret_method = 'INSUFFICIENT_DATA'
                 ret_samples = dist.get('sampleCount', 0)
+                fit_start_ts = None
                 fit_end_ts = None
                 
-            # Verify point-in-time causal invariance
+            # Verify point-in-time causal invariance (Section G)
             if fit_end_ts:
                 verify_causal_invariance(dt_str, fit_end_ts)
                 
@@ -298,12 +305,18 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
                 'atr_percent': float(row['atr_percent']) if 'atr_percent' in row and not pd.isna(row['atr_percent']) and float(row['atr_percent']) > 0 else None,
                 'conditional_gain': cond_gain,
                 'conditional_loss': cond_loss,
+                'p15': p15,
+                'p50': p50,
+                'p85': p85,
                 'return_p15': p15,
                 'return_p50': p50,
                 'return_p85': p85,
                 'returnEstimateMethod': ret_method,
                 'returnEstimateSampleCount': ret_samples,
+                'distributionFitStart': fit_start_ts,
+                'distributionFitEnd': fit_end_ts,
                 'distributionFitEndTimestamp': fit_end_ts,
+                'distributionVersion': 'v5.0.0-fold-causal',
                 'modelVersion': '5.0.0',
                 'foldId': int(fold['fold']),
                 'trainEnd': t_end_str,
