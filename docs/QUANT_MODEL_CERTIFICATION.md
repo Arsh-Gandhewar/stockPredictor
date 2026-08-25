@@ -1,9 +1,9 @@
 # QuantX Quantitative Model Final Certification & Audit Report
 
 **Audit Status:** PASSED  
-**Evaluated At:** 2026-08-25T08:20:09Z  
+**Evaluated At:** 2026-08-25T09:41:57Z  
 **Authoritative Artifact ID:** `art_lgbm_5_0_0`  
-**Canonical Manifest Checksum:** `8dafc459aff235f1e254fcec3a45c54ea45b0b2cdf6e58b3bbb610cca7312c46`  
+**Canonical Manifest Checksum:** `da9e180e17db67e350abc864c1cbadec2d9a9fcd49c4dc1a6012cbb39f930106`  
 **Model Architecture:** LightGBM Purged Walk-Forward Multi-Factor Classifier (v5.0.0)  
 **Inference Engine:** ONNX Runtime (`onnxruntime-node`) with Raw Float Tensors  
 
@@ -36,7 +36,7 @@ A comprehensive quantitative integrity rebuild was executed on the QuantX platfo
 ## 3. Probability Calibration Quality (PAV Monotonic Isotonic Regression)
 
 - **Validation Calibration Status:** `FITTED_OUT_OF_SAMPLE`
-- **Validation Sample Count:** 2999
+- **Validation Sample Count:** 11903
 - **Monotonicity Enforced:** YES (Pool Adjacent Violators Algorithm)
 - **Tail Shrinkage:** Empirical-Bayes shrinkage toward base rate on extreme deciles
 - **Test ECE (Expected Calibration Error):** 0.0000
@@ -58,13 +58,13 @@ Scenario projections are derived from empirical return quantiles conditioned on 
 
 The strategy simulation consumes **exclusively** the out-of-sample prediction ledger generated across the 4-fold walk-forward validation:
 
-- **Total OOS Trades Evaluated:** 331
-- **Win Rate:** 50.45%
-- **Compound Annual Growth Rate (CAGR):** 4.43%
-- **Annualized Sharpe Ratio (vs 6.5% Rf):** 0.1
-- **Sortino Ratio (Downside Risk):** 0.01
-- **Maximum Peak-to-Trough Drawdown:** -7.22%
-- **Profit Factor:** 1.16
+- **Total OOS Trades Evaluated:** 988
+- **Win Rate:** 46.46%
+- **Compound Annual Growth Rate (CAGR):** -10.28%
+- **Annualized Sharpe Ratio (vs 6.5% Rf):** -0.92
+- **Sortino Ratio (Downside Risk):** -0.08
+- **Maximum Peak-to-Trough Drawdown:** -38.42%
+- **Profit Factor:** 0.88
 - **Institutional Round-Trip Friction:** 0.13% (0.03% brokerage + 0.10% STT on sell side + 5 bps slippage + SEBI/GST fees)
 - **Same-Candle Collision Rule:** Conservative (Stop loss triggers before target if both levels are touched in the same daily candle)
 
@@ -73,10 +73,10 @@ The strategy simulation consumes **exclusively** the out-of-sample prediction le
 ## 6. Cryptographic Integrity & Model Governance
 
 - **Canonical Active Directory:** `apps/api/data/artifacts/active/`
-- **Manifest SHA-256 Checksum:** `8dafc459aff235f1e254fcec3a45c54ea45b0b2cdf6e58b3bbb610cca7312c46`
-- **ONNX Model 1d SHA-256:** `3e8e3db922def542ab6fe7f1a1b4667dadc095829b723641e8c425aed553e93f`
-- **ONNX Model 5d SHA-256:** `37ffa9f94c4a10037937057255bd6486820b3e09e16afec4d140b59a56b9f6e3`
-- **ONNX Model 20d SHA-256:** `83997a8f5b8bb6ea64b159f4f13509f98ec1bacfed5c5399ea056fabb4375343`
+- **Manifest SHA-256 Checksum:** `da9e180e17db67e350abc864c1cbadec2d9a9fcd49c4dc1a6012cbb39f930106`
+- **ONNX Model 1d SHA-256:** `8f3fbe9e29825c68eecda7cc62b0c346cc6510781a246690de2dee4a1acbae6a`
+- **ONNX Model 5d SHA-256:** `20911f5315330c92a6ab585a08f81bc4e9c2c26ac01d4071863c8799365092f1`
+- **ONNX Model 20d SHA-256:** `0fb64784af2fb856ff4b20ce7687302c594a5112bf42b13d04466b2654a22829`
 - **Fail-Closed Guardrails:** Verified. If ONNX runtime or artifact verification fails, system rejects execution with `MODEL_UNAVAILABLE` and `productionReady = false` (zero silent heuristic fallback).
 
 ---

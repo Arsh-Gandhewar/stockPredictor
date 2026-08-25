@@ -7,6 +7,10 @@ import numpy as np
 import pandas as pd
 from typing import Dict, List, Any, Optional, Tuple
 
+class LeakageError(Exception):
+    """Raised when causal data lineage or point-in-time invariant is violated."""
+    pass
+
 MIN_BUCKET_SAMPLE_COUNT = 100
 
 PROBABILITY_BUCKETS: List[Tuple[str, float, float]] = [
@@ -18,6 +22,20 @@ PROBABILITY_BUCKETS: List[Tuple[str, float, float]] = [
     ('STRONG_BULL', 0.65, 0.75),
     ('HIGH_CONVICTION_BULL', 0.75, 1.01),
 ]
+
+def verify_causal_invariance(prediction_timestamp: str, fit_end_timestamp: str) -> None:
+    """
+    Enforces distributionFitEndTimestamp < predictionTimestamp.
+    Raises LeakageError if any future return data contaminated the prediction.
+    """
+    if not fit_end_timestamp or not prediction_timestamp:
+        return
+    p_ts = str(prediction_timestamp)[:10]
+    f_ts = str(fit_end_timestamp)[:10]
+    if f_ts >= p_ts:
+        raise LeakageError(
+            f"CRITICAL CAUSAL LEAKAGE: distributionFitEndTimestamp ({f_ts}) >= predictionTimestamp ({p_ts})"
+        )
 
 def get_bucket_name(prob: float) -> str:
     prob = float(np.clip(prob, 0.0, 1.0))
@@ -106,6 +124,16 @@ class ConditionalReturnEngine:
         
         for h in ['1d', '5d', '20d']:
             self._fit_horizon_data(oos_df, h, start_date, end_date)
+
+    def fit_horizon_causal(self, horizon: str, history_df: pd.DataFrame, fit_end_timestamp: str):
+        """
+        Fits empirical conditional distribution for a specific horizon using only historical data up to fit_end_timestamp.
+        """
+        if history_df.empty:
+            return
+        start_date = str(history_df['predictionTimestamp'].min())[:10] if 'predictionTimestamp' in history_df.columns else ""
+        end_date = str(fit_end_timestamp)[:10]
+        self._fit_horizon_data(history_df, horizon, start_date, end_date)
 
     def _fit_horizon_data(self, df: pd.DataFrame, h: str, start_date: str, end_date: str):
         h_days = 1 if h == '1d' else (5 if h == '5d' else 20)

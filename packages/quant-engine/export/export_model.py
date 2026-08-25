@@ -8,7 +8,7 @@ import json
 import hashlib
 import onnxmltools
 from onnxmltools.convert.common.data_types import FloatTensorType
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 def canonicalize_json_dict(data: Any) -> Any:
     """
@@ -43,7 +43,8 @@ def export_artifacts(
     date_bounds: Dict[str, str],
     base_export_dir: str,
     model_version: str = "5.0.0",
-    feature_version: str = "v5.0.0-multi-factor-25"
+    feature_version: str = "v5.0.0-multi-factor-25",
+    baseline_backtest_metrics: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     """
     Exports ONNX models and canonical metadata manifest to base_export_dir.
@@ -99,13 +100,14 @@ def export_artifacts(
         "holdoutMetrics": holdout_metrics,
         "outOfSampleMetrics": backtest_metrics,
         "backtest": backtest_metrics,
+        "baselineBacktest": baseline_backtest_metrics or {},
         "survivorshipStatus": "NOT_FULLY_RESOLVED",
         "survivorshipDisclosure": (
             "Historical constituent tracking is limited to liquid NSE equities. "
             "Survivorship bias status is marked NOT_FULLY_RESOLVED due to absence of historical delisted equity data."
         ),
         "codeVersion": "quantx-v5.0.0-lgbm",
-        "createdAt": "2026-08-22T08:00:00.000Z",
+        "createdAt": "2026-08-25T12:00:00.000Z",
     }
     
     # Compute recursive canonical checksum

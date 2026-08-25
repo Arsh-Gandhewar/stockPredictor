@@ -80,7 +80,8 @@ def run_full_pipeline():
         print(f"--- Training Horizon {h} ---")
         h_res = train_horizon_model(combined_df, FEATURE_NAMES, h)
         models_dict[h] = h_res['prod_model']
-        oos_predictions_by_horizon[h] = h_res['oos_predictions_df']
+        oos_df = h_res['oos_predictions_df']
+        oos_predictions_by_horizon[h] = oos_df
         
         # Append all horizon fold metrics
         for fm in h_res['fold_metrics']:
@@ -88,18 +89,74 @@ def run_full_pipeline():
             walk_forward_folds.append(fm)
             
         prod_knots = h_res['prod_calib_knots']
-        last_fold = h_res['fold_metrics'][-1] if h_res['fold_metrics'] else {}
+        
+        # P0-1, P0-2, P0-3: Multi-Fold Aggregate Out-Of-Sample Test Calibration
+        if not oos_df.empty:
+            y_true_all = oos_df['target_outcome'].values
+            raw_p_all = oos_df['rawProbability'].values
+            cal_p_all = oos_df['calibratedProbability'].values
+            
+            test_calib_eval = evaluate_test_calibration(y_true_all, raw_p_all, cal_p_all)
+            agg_raw_brier = test_calib_eval.get('rawBrier')
+            agg_cal_brier = test_calib_eval.get('calibratedBrier')
+            agg_raw_ece = test_calib_eval.get('rawECE')
+            agg_cal_ece = test_calib_eval.get('calibratedECE')
+            agg_raw_mce = test_calib_eval.get('rawMCE')
+            agg_cal_mce = test_calib_eval.get('calibratedMCE')
+            agg_raw_logloss = test_calib_eval.get('rawLogLoss')
+            agg_cal_logloss = test_calib_eval.get('calibratedLogLoss')
+            agg_test_sample_count = len(oos_df)
+        else:
+            agg_raw_brier = agg_cal_brier = agg_raw_ece = agg_cal_ece = None
+            agg_raw_mce = agg_cal_mce = agg_raw_logloss = agg_cal_logloss = None
+            agg_test_sample_count = 0
+            
+        fold_briers = [fm.get('calibratedBrierTest') for fm in h_res['fold_metrics'] if fm.get('calibratedBrierTest') is not None]
+        if fold_briers:
+            best_fold = min(h_res['fold_metrics'], key=lambda fm: fm.get('calibratedBrierTest', 999.0))['fold']
+            worst_fold = max(h_res['fold_metrics'], key=lambda fm: fm.get('calibratedBrierTest', -999.0))['fold']
+            median_brier = float(round(np.median(fold_briers), 4))
+            fold_metric_std = float(round(np.std(fold_briers, ddof=1) if len(fold_briers) > 1 else 0.0, 4))
+        else:
+            best_fold = worst_fold = median_brier = fold_metric_std = None
+            
+        calib_status = h_res['prod_calib_status']
+        if agg_cal_brier is None or agg_test_sample_count < 50:
+            calib_status = 'INSUFFICIENT_DATA'
+            
+        val_sample_count = len(h_res['val_predictions'])
+        holdout_cnt = h_res['holdout_metrics'].get('sampleCount', 0) if h == '5d' else 0
+        
         calibration_dict[h] = {
-            'status': h_res['prod_calib_status'],
+            'status': calib_status,
             'knots': prod_knots,
+            'foldMetrics': h_res['fold_metrics'],
+            'validationCalibrationSampleCount': val_sample_count,
+            'testCalibrationSampleCount': agg_test_sample_count,
+            'holdoutCalibrationSampleCount': holdout_cnt,
+            'aggregateMetrics': {
+                'rawBrier': agg_raw_brier,
+                'calibratedBrier': agg_cal_brier,
+                'rawECE': agg_raw_ece,
+                'calibratedECE': agg_cal_ece,
+                'rawMCE': agg_raw_mce,
+                'calibratedMCE': agg_cal_mce,
+                'rawLogLoss': agg_raw_logloss,
+                'calibratedLogLoss': agg_cal_logloss,
+                'testSampleCount': agg_test_sample_count,
+                'bestFold': best_fold,
+                'worstFold': worst_fold,
+                'medianBrier': median_brier,
+                'foldMetricStd': fold_metric_std
+            },
             'metrics': {
-                'brierScore': last_fold.get('calibratedBrierTest', 0.22),
-                'rawBrier': last_fold.get('rawBrierTest', 0.25),
-                'ece': last_fold.get('calibratedECETest', 0.05),
-                'rawECE': last_fold.get('rawECETest', 0.08),
-                'mce': last_fold.get('calibratedMCE', 0.10),
-                'logLoss': last_fold.get('calibratedLogLoss', 0.65),
-                'sampleCount': len(h_res['val_predictions']),
+                'brierScore': agg_cal_brier,
+                'rawBrier': agg_raw_brier,
+                'ece': agg_cal_ece,
+                'rawECE': agg_raw_ece,
+                'mce': agg_cal_mce,
+                'logLoss': agg_cal_logloss,
+                'sampleCount': agg_test_sample_count,
                 'populatedBins': 8,
                 'isMonotonic': True
             }
@@ -118,26 +175,43 @@ def run_full_pipeline():
                 'holdoutEnd': h_res['holdout_bounds']['end'],
             }
             
-    # 4. Fit Empirical Conditional Return Distributions strictly on OOS Predictions
+    # 4. Fit Empirical Conditional Return Distributions strictly causally on OOS Predictions (P0-4, P0-5)
     print("\n[4/7] Fitting Empirical Conditional Return Distributions on OOS Predictions...")
     cond_return_engine = ConditionalReturnEngine()
-    cond_return_engine.fit_from_oos_predictions(oos_predictions_by_horizon)
+    for h in ['1d', '5d', '20d']:
+        h_oos_df = oos_predictions_by_horizon.get(h, pd.DataFrame())
+        if not h_oos_df.empty:
+            final_fit_end = date_bounds['validationEnd']
+            cond_return_engine.fit_horizon_causal(h, h_oos_df, final_fit_end)
     empirical_quantiles = cond_return_engine.to_dict()
     
-    # 5. Out-of-Sample Portfolio Backtest strictly consuming OOS predictions
+    # 5. Out-of-Sample Portfolio Backtest: Compare BASELINE vs PRODUCTION EXPECTED VALUE (P0-8)
     print("\n[5/7] Simulating Out-of-Sample Portfolio Daily Equity Curve (Consuming ONLY OOS Predictions)...")
     oos_5d_df = oos_predictions_by_horizon['5d']
     print(f"Total OOS 5d predictions available: {len(oos_5d_df)}")
     
-    backtest_res = run_portfolio_backtest(
+    # Production Strategy: Expected Value
+    prod_backtest_res = run_portfolio_backtest(
+        predictions_df=oos_5d_df,
+        historical_candles_by_ticker=historical_candles_by_ticker,
+        horizon_days=5,
+        initial_cash=1_000_000.0,
+        cost_regime='BASE_COST',
+        strategy_mode='PRODUCTION_EXPECTED_VALUE'
+    )
+    print(f"Production EV Backtest: Win Rate={prod_backtest_res['winRate']}%, CAGR={prod_backtest_res['cagr']}%, Sharpe={prod_backtest_res['sharpe']}, MaxDD={prod_backtest_res['maxDrawdown']}%, Trades={prod_backtest_res['totalTrades']}")
+    
+    # Baseline Strategy: Probability >= 0.55
+    baseline_backtest_res = run_portfolio_backtest(
         predictions_df=oos_5d_df,
         historical_candles_by_ticker=historical_candles_by_ticker,
         horizon_days=5,
         prob_threshold=0.55,
         initial_cash=1_000_000.0,
-        cost_regime='BASE_COST'
+        cost_regime='BASE_COST',
+        strategy_mode='BASELINE_PROBABILITY_055'
     )
-    print(f"Backtest: Win Rate={backtest_res['winRate']}%, CAGR={backtest_res['cagr']}%, Sharpe={backtest_res['sharpe']}, MaxDD={backtest_res['maxDrawdown']}%, Trades={backtest_res['totalTrades']}")
+    print(f"Baseline 0.55 Backtest: Win Rate={baseline_backtest_res['winRate']}%, CAGR={baseline_backtest_res['cagr']}%, Sharpe={baseline_backtest_res['sharpe']}, MaxDD={baseline_backtest_res['maxDrawdown']}%, Trades={baseline_backtest_res['totalTrades']}")
     
     # 6. Export Canonical Artifact & ONNX Graphs
     print("\n[6/7] Exporting ONNX Models and Canonical Metadata Manifest...")
@@ -149,7 +223,8 @@ def run_full_pipeline():
         empirical_quantiles_dict=empirical_quantiles,
         walk_forward_folds=walk_forward_folds,
         holdout_metrics=holdout_metrics,
-        backtest_metrics=backtest_res,
+        backtest_metrics=prod_backtest_res,
+        baseline_backtest_metrics=baseline_backtest_res,
         feature_schema=FEATURE_NAMES,
         date_bounds=date_bounds,
         base_export_dir=base_export_dir,

@@ -122,11 +122,11 @@ export class ProductionScorecardService {
     if (!lookaheadPassed) blockingFailures.push('LOOKAHEAD_BIAS_CONTROL: Overlapping chronological partitions.');
 
     // 5. WALK_FORWARD_VALIDITY
+    const wfFolds = artifact?.walkForwardFolds || [];
     const wfPassed = Boolean(
       artifact &&
-      ((artifact.walkForwardFolds && artifact.walkForwardFolds.length >= 1) ||
-       (artifact.outOfSampleMetrics && (artifact.outOfSampleMetrics.winRate > 0 || artifact.outOfSampleMetrics.totalTrades > 0)) ||
-       artifact.testStart)
+      wfFolds.length >= 4 &&
+      wfFolds.every((f: any) => f.testSamples > 0 && f.trainStart < f.trainEnd && f.trainEnd <= f.valStart && f.valEnd <= f.testStart)
     );
     criteria['WALK_FORWARD_VALIDITY'] = {
       code: 'WALK_FORWARD_VALIDITY',
@@ -134,11 +134,11 @@ export class ProductionScorecardService {
       category: 'METHODOLOGY',
       status: wfPassed ? 'PASS' : 'FAIL',
       evidence: wfPassed
-        ? `Rolling walk-forward cross-validation verified on out-of-sample test partition.`
-        : 'No valid rolling walk-forward folds found in active artifact.',
+        ? `Rolling walk-forward cross-validation verified across ${wfFolds.length} non-overlapping folds with active test evaluation.`
+        : 'Walk-forward validation invalid: requires at least 4 non-overlapping folds with positive test samples.',
       mandatory: true,
     };
-    if (!wfPassed) blockingFailures.push('WALK_FORWARD_VALIDITY: Walk-forward validation missing.');
+    if (!wfPassed) blockingFailures.push('WALK_FORWARD_VALIDITY: Walk-forward validation missing or invalid.');
 
     // 6. MODEL_REPRODUCIBILITY
     const reproPassed = Boolean(artifact && artifact.checksum && artifact.id);
@@ -158,10 +158,14 @@ export class ProductionScorecardService {
     const calib5d = artifact?.calibration?.['5d'];
     const calibSampleCount = calib5d?.metrics?.sampleCount || artifact?.calibrationMetrics?.sampleCount || 0;
     const calibStatus = calib5d?.status || artifact?.calibrationStatus || 'UNFITTED';
+    const calibBrier = calib5d?.metrics?.brierScore;
+    const calibECE = calib5d?.metrics?.ece;
     const calibPassed = Boolean(
       artifact &&
       calibStatus === 'FITTED_OUT_OF_SAMPLE' &&
-      calibSampleCount >= 20
+      calibSampleCount >= 50 &&
+      calibBrier !== null && calibBrier !== undefined &&
+      calibECE !== null && calibECE !== undefined
     );
     criteria['PROBABILITY_CALIBRATION'] = {
       code: 'PROBABILITY_CALIBRATION',
@@ -169,7 +173,7 @@ export class ProductionScorecardService {
       category: 'STATISTICS',
       status: calibPassed ? 'PASS' : 'FAIL',
       evidence: calibPassed
-        ? `PAV isotonic calibration fitted on ${calibSampleCount} validation observations (Monotonic: YES, Tail shrinkage: YES).`
+        ? `PAV isotonic calibration fitted on ${calibSampleCount} test/validation observations (Brier: ${calibBrier}, ECE: ${calibECE}).`
         : `Calibration failed quality gate (Status: ${calibStatus}, SampleCount: ${calibSampleCount}).`,
       mandatory: true,
     };
@@ -178,8 +182,8 @@ export class ProductionScorecardService {
     // 8. EXPECTED_RETURN_VALIDITY
     const returnValPassed = Boolean(
       artifact &&
-      ((artifact.empiricalQuantiles && artifact.empiricalQuantiles['5d']) ||
-       (artifact.empiricalDistributions && artifact.empiricalDistributions.length > 0))
+      ((artifact.empiricalQuantiles && (artifact.empiricalQuantiles['5d'] || artifact.empiricalQuantiles['1d'])) ||
+       (artifact.conditionalReturns && (artifact.conditionalReturns['5d'] || artifact.conditionalReturns['1d'])))
     );
     criteria['EXPECTED_RETURN_VALIDITY'] = {
       code: 'EXPECTED_RETURN_VALIDITY',
@@ -187,17 +191,20 @@ export class ProductionScorecardService {
       category: 'STATISTICS',
       status: returnValPassed ? 'PASS' : 'FAIL',
       evidence: returnValPassed
-        ? `Empirical return distributions derived from historical validation returns (85th Bull, 50th Base, 15th Bear).`
+        ? `Empirical conditional return distributions derived causally from out-of-sample prediction history.`
         : 'Empirical return distribution quantiles missing.',
       mandatory: true,
     };
     if (!returnValPassed) blockingFailures.push('EXPECTED_RETURN_VALIDITY: Empirical conditional return quantiles missing.');
 
     // 9. BACKTEST_VALIDITY
+    const btMetrics = artifact?.backtest || artifact?.outOfSampleMetrics;
     const btPassed = Boolean(
       artifact &&
-      ((artifact.outOfSampleMetrics && (artifact.outOfSampleMetrics.totalTrades > 0 || artifact.outOfSampleMetrics.winRate > 0)) ||
-       artifact.testStart)
+      btMetrics &&
+      btMetrics.totalTrades > 0 &&
+      btMetrics.dailyEquitySeries &&
+      btMetrics.dailyEquitySeries.length > 0
     );
     criteria['BACKTEST_VALIDITY'] = {
       code: 'BACKTEST_VALIDITY',
@@ -205,7 +212,7 @@ export class ProductionScorecardService {
       category: 'STATISTICS',
       status: btPassed ? 'PASS' : 'FAIL',
       evidence: btPassed
-        ? `Backtest statistics derived directly from daily return series with centralized institutional frictions.`
+        ? `Authoritative daily equity series verified (${btMetrics?.dailyEquitySeries?.length} trading days, ${btMetrics?.totalTrades} completed trades).`
         : 'Backtest metrics invalid or uncalculated.',
       mandatory: true,
     };
@@ -259,7 +266,7 @@ export class ProductionScorecardService {
     if (!integrityPassed) blockingFailures.push('ARTIFACT_INTEGRITY: Artifact integrity verification failed.');
 
     // 14. MODEL_VERSIONING
-    const versionPassed = Boolean(artifact && (artifact.modelVersion === '5.0.0' || artifact.modelVersion === '4.0.0') && artifact.modelType);
+    const versionPassed = Boolean(artifact && artifact.modelVersion === '5.0.0' && artifact.modelType === 'LEARNED_LIGHTGBM');
     criteria['MODEL_VERSIONING'] = {
       code: 'MODEL_VERSIONING',
       name: 'Model Identity & Semantic Versioning',
