@@ -14,6 +14,8 @@ from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score, accuracy_
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibration
+from models.conditional_returns import ConditionalReturnEngine, verify_causal_invariance, LeakageError
+from universe import TICKER_SECTOR_MAP
 
 LIGHTGBM_PARAMS = {
     '1d': {
@@ -224,23 +226,62 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             'winRate': round(float((y_test == test_pred).mean() * 100), 2)
         })
         
-        # 5. Populate OOS Prediction Ledger with Provenance
+        # 5. Fit Causal Conditional Return Engine strictly on prior history (Train + Tune + Calib)
         t_end_str = str(fold['train_end'])[:10]
         v_end_str = str(fold['calib_end'])[:10]
         t_start_str = str(fold['test_start'])[:10]
         t_end_test_str = str(fold['test_end'])[:10]
         
+        prior_history_df = clean_df[clean_df.index < fold['test_start']].copy()
+        fold_cond_engine = ConditionalReturnEngine()
+        if not prior_history_df.empty:
+            prior_raw = fold_model.predict_proba(prior_history_df[features])[:, 1]
+            prior_history_df['rawProbability'] = prior_raw
+            prior_history_df['calibratedProbability'] = fold_calibrator.transform(prior_raw)
+            prior_history_df['pred_prob'] = prior_history_df['calibratedProbability']
+            prior_history_df['predictionTimestamp'] = [str(d)[:10] for d in prior_history_df.index]
+            fold_cond_engine.fit_horizon_causal(horizon_str, prior_history_df, t_start_str)
+        
+        # 6. Populate OOS Prediction Ledger with Provenance and Attached Conditional Return Estimates
         for idx, (dt, raw_p, cal_p, y_val_actual) in enumerate(zip(test_df.index, test_raw_prob, test_cal_prob, y_test)):
             row = test_df.iloc[idx]
             dt_str = str(dt)[:10]
+            ticker_sym = row.get('ticker', 'UNKNOWN')
             
             # Mandatory invariant verification: predictionTimestamp > trainEnd
             if dt_str <= t_end_str:
-                raise ValueError(f"CRITICAL LEAKAGE: predictionTimestamp {dt_str} <= trainEnd {t_end_str} in Fold {fold['fold']}")
+                raise LeakageError(f"CRITICAL LEAKAGE: predictionTimestamp {dt_str} <= trainEnd {t_end_str} in Fold {fold['fold']}")
+                
+            reg = row.get('regime', 'SIDEWAYS') if 'regime' in row else 'SIDEWAYS'
+            dist = fold_cond_engine.get_distribution(horizon_str, cal_p, reg)
+            
+            if dist['method'] != 'INSUFFICIENT_DATA' and dist['sampleCount'] >= 100:
+                p15 = dist['p15']
+                p50 = dist['p50']
+                p85 = dist['p85']
+                cond_gain = dist['conditional_gain'] if dist.get('conditional_gain') is not None else p85
+                cond_loss = dist['conditional_loss'] if dist.get('conditional_loss') is not None else (abs(p15) if p15 is not None else None)
+                ret_method = dist['method']
+                ret_samples = dist['sampleCount']
+                fit_end_ts = dist.get('fitEndTimestamp') or dist.get('fittedEnd')
+            else:
+                p15 = None
+                p50 = None
+                p85 = None
+                cond_gain = None
+                cond_loss = None
+                ret_method = 'INSUFFICIENT_DATA'
+                ret_samples = dist.get('sampleCount', 0)
+                fit_end_ts = None
+                
+            # Verify point-in-time causal invariance
+            if fit_end_ts:
+                verify_causal_invariance(dt_str, fit_end_ts)
                 
             rec = {
                 'predictionTimestamp': dt_str,
-                'ticker': row.get('ticker', 'UNKNOWN'),
+                'ticker': ticker_sym,
+                'sector': row.get('sector', TICKER_SECTOR_MAP.get(ticker_sym, 'UNKNOWN')),
                 'horizon': horizon_str,
                 'rawProbability': float(round(raw_p, 4)),
                 'calibratedProbability': float(round(cal_p, 4)),
@@ -249,12 +290,20 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
                 'actual_net_return': float(round(row.get(net_return_col, 0.0), 5)),
                 'future_net_ret_5d': float(round(row.get('future_net_ret_5d', 0.0), 5)),
                 'future_gross_ret_5d': float(round(row.get('future_gross_ret_5d', 0.0), 5)),
-                'Close': float(row.get('Close', 0.0)),
-                'Open': float(row.get('Open', 0.0)),
-                'High': float(row.get('High', 0.0)),
-                'Low': float(row.get('Low', 0.0)),
-                'Volume': float(row.get('Volume', 0.0)),
-                'atr_percent': float(row.get('atr_percent', 0.02)),
+                'Close': float(row['Close']) if 'Close' in row and not pd.isna(row['Close']) else None,
+                'Open': float(row['Open']) if 'Open' in row and not pd.isna(row['Open']) else None,
+                'High': float(row['High']) if 'High' in row and not pd.isna(row['High']) else None,
+                'Low': float(row['Low']) if 'Low' in row and not pd.isna(row['Low']) else None,
+                'Volume': float(row['Volume']) if 'Volume' in row and not pd.isna(row['Volume']) else None,
+                'atr_percent': float(row['atr_percent']) if 'atr_percent' in row and not pd.isna(row['atr_percent']) and float(row['atr_percent']) > 0 else None,
+                'conditional_gain': cond_gain,
+                'conditional_loss': cond_loss,
+                'return_p15': p15,
+                'return_p50': p50,
+                'return_p85': p85,
+                'returnEstimateMethod': ret_method,
+                'returnEstimateSampleCount': ret_samples,
+                'distributionFitEndTimestamp': fit_end_ts,
                 'modelVersion': '5.0.0',
                 'foldId': int(fold['fold']),
                 'trainEnd': t_end_str,

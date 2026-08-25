@@ -1,9 +1,9 @@
 # QuantX Quantitative Model Final Certification & Audit Report
 
 **Audit Status:** PASSED  
-**Evaluated At:** 2026-08-25T09:41:57Z  
+**Evaluated At:** 2026-08-25T09:59:08Z  
 **Authoritative Artifact ID:** `art_lgbm_5_0_0`  
-**Canonical Manifest Checksum:** `da9e180e17db67e350abc864c1cbadec2d9a9fcd49c4dc1a6012cbb39f930106`  
+**Canonical Manifest Checksum:** `a294116bd62db8700641286fbcb37884de553853da2e09525872405a3e9ec4c6`  
 **Model Architecture:** LightGBM Purged Walk-Forward Multi-Factor Classifier (v5.0.0)  
 **Inference Engine:** ONNX Runtime (`onnxruntime-node`) with Raw Float Tensors  
 
@@ -58,13 +58,13 @@ Scenario projections are derived from empirical return quantiles conditioned on 
 
 The strategy simulation consumes **exclusively** the out-of-sample prediction ledger generated across the 4-fold walk-forward validation:
 
-- **Total OOS Trades Evaluated:** 988
-- **Win Rate:** 46.46%
-- **Compound Annual Growth Rate (CAGR):** -10.28%
-- **Annualized Sharpe Ratio (vs 6.5% Rf):** -0.92
-- **Sortino Ratio (Downside Risk):** -0.08
-- **Maximum Peak-to-Trough Drawdown:** -38.42%
-- **Profit Factor:** 0.88
+- **Total OOS Trades Evaluated:** 357
+- **Win Rate:** 47.62%
+- **Compound Annual Growth Rate (CAGR):** -0.3%
+- **Annualized Sharpe Ratio (vs 6.5% Rf):** -0.44
+- **Sortino Ratio (Downside Risk):** -0.04
+- **Maximum Peak-to-Trough Drawdown:** -9.11%
+- **Profit Factor:** 0.99
 - **Institutional Round-Trip Friction:** 0.13% (0.03% brokerage + 0.10% STT on sell side + 5 bps slippage + SEBI/GST fees)
 - **Same-Candle Collision Rule:** Conservative (Stop loss triggers before target if both levels are touched in the same daily candle)
 
@@ -73,10 +73,10 @@ The strategy simulation consumes **exclusively** the out-of-sample prediction le
 ## 6. Cryptographic Integrity & Model Governance
 
 - **Canonical Active Directory:** `apps/api/data/artifacts/active/`
-- **Manifest SHA-256 Checksum:** `da9e180e17db67e350abc864c1cbadec2d9a9fcd49c4dc1a6012cbb39f930106`
-- **ONNX Model 1d SHA-256:** `8f3fbe9e29825c68eecda7cc62b0c346cc6510781a246690de2dee4a1acbae6a`
-- **ONNX Model 5d SHA-256:** `20911f5315330c92a6ab585a08f81bc4e9c2c26ac01d4071863c8799365092f1`
-- **ONNX Model 20d SHA-256:** `0fb64784af2fb856ff4b20ce7687302c594a5112bf42b13d04466b2654a22829`
+- **Manifest SHA-256 Checksum:** `a294116bd62db8700641286fbcb37884de553853da2e09525872405a3e9ec4c6`
+- **ONNX Model 1d SHA-256:** `19775ff14e6e252f4fe7023dae7341cf9fa187eaa65f423f679982818b9afc0f`
+- **ONNX Model 5d SHA-256:** `83cfcfacce02792e1662b6a78233f3675382c6449098878df578f4586caf7789`
+- **ONNX Model 20d SHA-256:** `a3612e9c3532825d1a4e143fd1c92c968183a27f41cdc482ce38a0e478f6a232`
 - **Fail-Closed Guardrails:** Verified. If ONNX runtime or artifact verification fails, system rejects execution with `MODEL_UNAVAILABLE` and `productionReady = false` (zero silent heuristic fallback).
 
 ---

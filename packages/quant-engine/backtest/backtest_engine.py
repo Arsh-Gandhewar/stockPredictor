@@ -11,6 +11,7 @@ from typing import Dict, List, Any, Optional
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from costs import TransactionCostEngine
+from universe import TICKER_SECTOR_MAP
 
 def evaluate_trade_ohlc_path(
     entry_price: float,
@@ -187,14 +188,19 @@ def run_portfolio_backtest(
     open_positions: List[Dict[str, Any]] = []
     completed_trades: List[Dict[str, Any]] = []
     pending_signals: List[pd.Series] = []
+    
     rejected_signals_count = 0
+    rejected_insufficient_quant_data = 0
+    rejected_missing_execution_price = 0
+    rejected_sector_exposure_limit = 0
+    rejected_gross_exposure_limit = 0
     
     daily_equity_records: List[Dict[str, Any]] = []
     
     MAX_CONCURRENT_POSITIONS = 10
     MAX_GROSS_EXPOSURE = 1.000001
-    MAX_POSITION_WEIGHT = 0.10      # Max 10% allocation per stock (P0-12)
-    MAX_SECTOR_WEIGHT = 0.25        # Max 25% allocation per sector (P0-12)
+    MAX_POSITION_WEIGHT = 0.10      # Max 10% allocation per stock
+    MAX_SECTOR_WEIGHT = 0.25        # Max 25% allocation per sector
     RISK_BUDGET_PCT = 0.005         # 0.50% portfolio equity risk budget
     
     for current_date in unique_dates:
@@ -258,6 +264,7 @@ def run_portfolio_backtest(
                 completed_trades.append({
                     'positionId': pos['id'],
                     'ticker': ticker,
+                    'sector': pos.get('sector', 'UNKNOWN'),
                     'entryDate': pos['entryDate'],
                     'exitDate': date_str,
                     'entryPrice': pos['entryPrice'],
@@ -280,11 +287,13 @@ def run_portfolio_backtest(
         open_positions = surviving_positions
         
         # 2. Process Pending Signals Sequentially (Entry at Open(T+1))
-        market_value = sum(p['notional'] * (p['currentPrice'] / p['entryPrice']) for p in open_positions)
-        total_equity = cash + market_value
-        
         for sig in pending_signals:
             ticker = sig.get('ticker', 'UNKNOWN')
+            sector = sig.get('sector') or TICKER_SECTOR_MAP.get(ticker, 'UNKNOWN')
+            
+            # Recalculate intra-day portfolio state before processing each order
+            market_value = sum(p['notional'] * (p['currentPrice'] / p['entryPrice']) for p in open_positions)
+            total_equity = cash + market_value
             
             if len(open_positions) >= MAX_CONCURRENT_POSITIONS:
                 rejected_signals_count += 1
@@ -293,14 +302,24 @@ def run_portfolio_backtest(
             if any(p['ticker'] == ticker for p in open_positions):
                 continue
                 
-            # Entry at Open
+            # Entry at Open (No 100.0 default fallback)
             candles_df = historical_candles_by_ticker.get(ticker) if historical_candles_by_ticker else None
-            if candles_df is not None and current_date in candles_df.index:
+            if candles_df is not None and current_date in candles_df.index and not pd.isna(candles_df.loc[current_date]['Open']):
                 entry_price = float(candles_df.loc[current_date]['Open'])
+            elif 'Open' in sig and sig['Open'] is not None and not pd.isna(sig['Open']) and float(sig['Open']) > 0:
+                entry_price = float(sig['Open'])
             else:
-                entry_price = float(sig.get('Close', 100.0))
+                rejected_signals_count += 1
+                rejected_missing_execution_price += 1
+                continue
                 
-            vol = float(sig.get('atr_percent', 0.02))
+            # Volatility from real ATR (No 0.02 default fallback)
+            vol_raw = sig.get('atr_percent')
+            if vol_raw is None or pd.isna(vol_raw) or float(vol_raw) <= 0:
+                rejected_signals_count += 1
+                rejected_insufficient_quant_data += 1
+                continue
+            vol = float(vol_raw)
             
             stop_dist = max(0.01, 1.5 * vol)
             stop_loss_price = entry_price * (1.0 - stop_dist)
@@ -319,19 +338,32 @@ def run_portfolio_backtest(
                 rejected_signals_count += 1
                 continue
                 
-            # Check post-trade gross exposure
+            # Check post-trade gross exposure (MAX_GROSS_EXPOSURE = 1.000001)
             projected_market_value = market_value + sized_notional
             if (projected_market_value / total_equity) > MAX_GROSS_EXPOSURE:
                 rejected_signals_count += 1
+                rejected_gross_exposure_limit += 1
+                continue
+                
+            # Check post-trade sector exposure (MAX_SECTOR_WEIGHT = 0.25)
+            current_sector_notional = sum(
+                p['notional'] * (p['currentPrice'] / p['entryPrice'])
+                for p in open_positions
+                if p.get('sector', TICKER_SECTOR_MAP.get(p['ticker'], 'UNKNOWN')) == sector
+            )
+            projected_sector_notional = current_sector_notional + sized_notional
+            if (projected_sector_notional / total_equity) > MAX_SECTOR_WEIGHT:
+                rejected_signals_count += 1
+                rejected_sector_exposure_limit += 1
                 continue
                 
             # Open position
             cash -= (sized_notional + entry_friction)
-            market_value += sized_notional
             pos_id = f"pos_{ticker}_{date_str}_{len(open_positions)+1}"
             open_positions.append({
                 'id': pos_id,
                 'ticker': ticker,
+                'sector': sector,
                 'entryDate': date_str,
                 'entryPrice': entry_price,
                 'stopLossPrice': stop_loss_price,
@@ -348,15 +380,38 @@ def run_portfolio_backtest(
         active_signals_list = []
         
         for _, sig in day_signals.iterrows():
-            p_up = float(sig.get('pred_prob', 0.50))
-            vol = float(sig.get('atr_percent', 0.02))
+            prob_val = sig.get('calibratedProbability', sig.get('pred_prob'))
+            if prob_val is None or pd.isna(prob_val):
+                rejected_signals_count += 1
+                rejected_insufficient_quant_data += 1
+                continue
+            p_up = float(prob_val)
+            p_down = 1.0 - p_up
+            
+            vol_val = sig.get('atr_percent')
+            if vol_val is None or pd.isna(vol_val) or float(vol_val) <= 0:
+                rejected_signals_count += 1
+                rejected_insufficient_quant_data += 1
+                continue
+            vol = float(vol_val)
             
             if strategy_mode == 'PRODUCTION_EXPECTED_VALUE':
-                e_gain = float(sig.get('conditional_gain', 2.25 * vol))
-                e_loss = float(sig.get('conditional_loss', 1.5 * vol))
-                ev = (p_up * e_gain) - ((1.0 - p_up) * e_loss) - round_trip_cost
-                risk_adj_ev = ev / max(0.01, vol)
-                if ev > 0 and risk_adj_ev > 0 and p_up >= 0.50:
+                e_gain_raw = sig.get('conditional_gain')
+                e_loss_raw = sig.get('conditional_loss')
+                
+                # Zero synthetic fallback: require real estimates
+                if e_gain_raw is None or pd.isna(e_gain_raw) or e_loss_raw is None or pd.isna(e_loss_raw):
+                    rejected_signals_count += 1
+                    rejected_insufficient_quant_data += 1
+                    continue
+                    
+                e_gain = float(e_gain_raw)
+                e_loss = float(e_loss_raw)
+                
+                ev = (p_up * e_gain) - (p_down * e_loss) - round_trip_cost
+                risk_adj_ev = ev / vol
+                
+                if ev > 0 and risk_adj_ev > 0:
                     active_signals_list.append(sig)
             else:
                 # BASELINE_PROBABILITY_055
@@ -475,6 +530,10 @@ def run_portfolio_backtest(
         'profitFactor': profit_factor,
         'profitFactorStatus': profit_factor_status,
         'rejectedSignalsCount': rejected_signals_count,
+        'rejectedInsufficientQuantData': rejected_insufficient_quant_data,
+        'rejectedMissingExecutionPrice': rejected_missing_execution_price,
+        'rejectedSectorExposureLimit': rejected_sector_exposure_limit,
+        'rejectedGrossExposureLimit': rejected_gross_exposure_limit,
         'frictionRateBps': round(round_trip_cost * 10000, 1),
         'costRegime': cost_regime,
         'dailyEquitySeries': daily_equity_records[:100],

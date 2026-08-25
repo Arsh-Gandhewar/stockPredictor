@@ -47,6 +47,7 @@ def get_bucket_name(prob: float) -> str:
 def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_date: str = "", end_date: str = "") -> Dict[str, Any]:
     """
     Computes empirical quantiles and statistical parameters for a sample of forward returns.
+    Enforces sampleCount >= 100. Returns None and INSUFFICIENT_DATA for all fields when sampleCount < 100.
     """
     returns = np.asarray(returns, dtype=float)
     returns = returns[~np.isnan(returns)]
@@ -63,8 +64,11 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
             'std': None,
             'standardError': None,
             'confidenceInterval': None,
+            'conditional_gain': None,
+            'conditional_loss': None,
             'fittedStart': start_date,
             'fittedEnd': end_date,
+            'fitEndTimestamp': end_date,
             'method': 'INSUFFICIENT_DATA'
         }
         
@@ -77,6 +81,11 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
     se_val = float(round(std_val / np.sqrt(n), 4)) if n > 0 else 0.0
     ci = [float(round(mean_val - 1.96 * se_val, 4)), float(round(mean_val + 1.96 * se_val, 4))]
     
+    pos_ret = returns[returns > 0]
+    neg_ret = returns[returns < 0]
+    cond_gain = float(round(np.mean(pos_ret), 4)) if len(pos_ret) > 0 else p85
+    cond_loss = float(round(abs(np.mean(neg_ret)), 4)) if len(neg_ret) > 0 else abs(p15)
+    
     return {
         'sampleCount': n,
         'p15': p15,
@@ -87,6 +96,8 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
         'std': std_val,
         'standardError': se_val,
         'confidenceInterval': ci,
+        'conditional_gain': cond_gain,
+        'conditional_loss': cond_loss,
         'fittedStart': start_date,
         'fittedEnd': end_date,
         'fitEndTimestamp': end_date,
@@ -127,13 +138,54 @@ class ConditionalReturnEngine:
 
     def fit_horizon_causal(self, horizon: str, history_df: pd.DataFrame, fit_end_timestamp: str):
         """
-        Fits empirical conditional distribution for a specific horizon using only historical data up to fit_end_timestamp.
+        Fits empirical conditional distribution for a specific horizon using only historical data strictly preceding fit_end_timestamp.
+        SEMANTIC CONTRACT:
+        1. Convert predictionTimestamp to pandas datetime.
+        2. Convert fit_end_timestamp to pandas Timestamp.
+        3. Create eligible_df = history_df[predictionTimestamp < fit_end_timestamp]
+        4. If eligible_df is empty: return without fitting.
+        5. FIT ONLY on eligible_df.
+        6. Compute actualFitStart = min(predictionTimestamp of eligible_df)
+        7. Compute actualFitEnd = max(predictionTimestamp of eligible_df)
+        8. Store: fittedStart = actualFitStart, fittedEnd = actualFitEnd, fitEndTimestamp = actualFitEnd
+        9. Assert: actualFitEnd < fit_end_timestamp
+        10. If ANY row used in the fit has predictionTimestamp >= fit_end_timestamp, raise LeakageError.
         """
-        if history_df.empty:
+        if history_df is None or history_df.empty or not fit_end_timestamp:
             return
-        start_date = str(history_df['predictionTimestamp'].min())[:10] if 'predictionTimestamp' in history_df.columns else ""
-        end_date = str(fit_end_timestamp)[:10]
-        self._fit_horizon_data(history_df, horizon, start_date, end_date)
+            
+        df = history_df.copy()
+        if 'predictionTimestamp' in df.columns:
+            df['dt'] = pd.to_datetime(df['predictionTimestamp'])
+        elif isinstance(df.index, pd.DatetimeIndex):
+            df['dt'] = df.index
+        elif 'date' in df.columns:
+            df['dt'] = pd.to_datetime(df['date'])
+        else:
+            df['dt'] = pd.to_datetime(df.index)
+            
+        fit_end_ts = pd.Timestamp(str(fit_end_timestamp)[:10])
+        
+        # 3. Create eligible_df strictly before fit_end_timestamp
+        eligible_df = df[df['dt'] < fit_end_ts].copy()
+        
+        # 4. If empty: return without fitting
+        if eligible_df.empty:
+            return
+            
+        # 6 & 7. Compute actualFitStart and actualFitEnd
+        actual_fit_start = str(eligible_df['dt'].min())[:10]
+        actual_fit_end = str(eligible_df['dt'].max())[:10]
+        
+        # 9 & 10. Causal Invariant Assertions
+        if pd.Timestamp(actual_fit_end) >= fit_end_ts:
+            raise LeakageError(f"CRITICAL CAUSAL LEAKAGE: actualFitEnd ({actual_fit_end}) >= fit_end_timestamp ({fit_end_timestamp})")
+            
+        if (eligible_df['dt'] >= fit_end_ts).any():
+            raise LeakageError(f"CRITICAL CAUSAL LEAKAGE: eligible_df contains rows on/after fit_end_timestamp ({fit_end_timestamp})")
+            
+        # 5. Fit ONLY on eligible_df
+        self._fit_horizon_data(eligible_df, horizon, actual_fit_start, actual_fit_end)
 
     def _fit_horizon_data(self, df: pd.DataFrame, h: str, start_date: str, end_date: str):
         h_days = 1 if h == '1d' else (5 if h == '5d' else 20)
@@ -143,25 +195,29 @@ class ConditionalReturnEngine:
         if ret_col not in df.columns:
             return
             
-        h_df = df.dropna(subset=[ret_col, 'calibratedProbability']).copy()
+        h_df = df.dropna(subset=[ret_col]).copy()
         if h_df.empty:
             return
             
-        # 1. Horizon-Wide Fallback
+        # 1. Horizon-Wide Fallback (Only requires return column)
         h_returns = h_df[ret_col].values
         self.tables[h]['HORIZON_WIDE'] = compute_distribution_metrics(h_returns, 'HORIZON_WIDE_FALLBACK', start_date, end_date)
         
-        # 2. Probability Buckets
-        h_df['prob_bucket'] = h_df['calibratedProbability'].apply(get_bucket_name)
-        for bucket_name, group in h_df.groupby('prob_bucket'):
-            self.tables[h][f"PROB_{bucket_name}"] = compute_distribution_metrics(group[ret_col].values, 'PROBABILITY_BUCKET', start_date, end_date)
-            
-        # 3. Probability + Regime Buckets (if regime column available)
-        if 'regime' in h_df.columns:
-            for (b_name, reg), group in h_df.groupby(['prob_bucket', 'regime']):
-                self.tables[h][f"PROB_REGIME_{b_name}_{reg}"] = compute_distribution_metrics(
-                    group[ret_col].values, 'PROBABILITY_REGIME_BUCKET', start_date, end_date
-                )
+        # 2. Probability Buckets (if probability column available)
+        prob_col = 'calibratedProbability' if 'calibratedProbability' in h_df.columns else ('pred_prob' if 'pred_prob' in h_df.columns else None)
+        if prob_col:
+            h_df_prob = h_df.dropna(subset=[prob_col]).copy()
+            if not h_df_prob.empty:
+                h_df_prob['prob_bucket'] = h_df_prob[prob_col].apply(get_bucket_name)
+                for bucket_name, group in h_df_prob.groupby('prob_bucket'):
+                    self.tables[h][f"PROB_{bucket_name}"] = compute_distribution_metrics(group[ret_col].values, 'PROBABILITY_BUCKET', start_date, end_date)
+                    
+                # 3. Probability + Regime Buckets (if regime column available)
+                if 'regime' in h_df_prob.columns:
+                    for (b_name, reg), group in h_df_prob.groupby(['prob_bucket', 'regime']):
+                        self.tables[h][f"PROB_REGIME_{b_name}_{reg}"] = compute_distribution_metrics(
+                            group[ret_col].values, 'PROBABILITY_REGIME_BUCKET', start_date, end_date
+                        )
                     
     def get_distribution(self, horizon: str, prob: float, regime: str = 'SIDEWAYS') -> Dict[str, Any]:
         """
@@ -176,21 +232,21 @@ class ConditionalReturnEngine:
         
         # 1. Try Probability + Regime
         pr_key = f"PROB_REGIME_{bucket_name}_{regime}"
-        if pr_key in h_table and h_table[pr_key]['method'] == 'PROBABILITY_REGIME_BUCKET':
+        if pr_key in h_table and h_table[pr_key]['method'] == 'PROBABILITY_REGIME_BUCKET' and h_table[pr_key]['sampleCount'] >= MIN_BUCKET_SAMPLE_COUNT:
             return h_table[pr_key]
             
         # 2. Try Probability Bucket
         p_key = f"PROB_{bucket_name}"
-        if p_key in h_table and h_table[p_key]['method'] == 'PROBABILITY_BUCKET':
+        if p_key in h_table and h_table[p_key]['method'] == 'PROBABILITY_BUCKET' and h_table[p_key]['sampleCount'] >= MIN_BUCKET_SAMPLE_COUNT:
             return h_table[p_key]
             
         # 3. Try Regime-Wide Fallback
         r_key = f"REGIME_{regime}"
-        if r_key in h_table and h_table[r_key]['method'] == 'REGIME_BUCKET':
+        if r_key in h_table and h_table[r_key]['method'] == 'REGIME_BUCKET' and h_table[r_key]['sampleCount'] >= MIN_BUCKET_SAMPLE_COUNT:
             return h_table[r_key]
 
         # 4. Try Horizon-Wide Fallback
-        if 'HORIZON_WIDE' in h_table and h_table['HORIZON_WIDE']['method'] == 'HORIZON_WIDE_FALLBACK':
+        if 'HORIZON_WIDE' in h_table and h_table['HORIZON_WIDE']['method'] == 'HORIZON_WIDE_FALLBACK' and h_table['HORIZON_WIDE']['sampleCount'] >= MIN_BUCKET_SAMPLE_COUNT:
             return h_table['HORIZON_WIDE']
             
         # 5. Strictly Insufficient Data (Zero fabricated numbers)
@@ -204,6 +260,8 @@ class ConditionalReturnEngine:
             'std': None,
             'standardError': None,
             'confidenceInterval': None,
+            'conditional_gain': None,
+            'conditional_loss': None,
             'fittedStart': "",
             'fittedEnd': "",
             'fitEndTimestamp': "",

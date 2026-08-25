@@ -205,9 +205,6 @@ def test_deliberate_corruption_detection() -> bool:
         if not caught:
             all_caught = False
             print(f"FAILED to catch corruption: {case['name']}")
-        else:
-            print(f"PASSED: Caught deliberate corruption [{case['name']}]")
-            
     return all_caught
 
 if __name__ == "__main__":

@@ -18,15 +18,26 @@ from features.feature_engine import calculate_features, FEATURE_NAMES
 from targets.target_definition import compute_targets
 from models.train_model import train_horizon_model
 from models.conditional_returns import ConditionalReturnEngine
-from calibration.calibrate import evaluate_test_calibration
+from calibration.calibrate import evaluate_test_calibration, MIN_TEST_CALIBRATION_SAMPLE_COUNT, IsotonicCalibrator
 from backtest.backtest_engine import run_portfolio_backtest
 from export.export_model import export_artifacts
 from costs import TransactionCostEngine
+from models.conditional_returns import LeakageError, verify_causal_invariance
 
 def run_full_pipeline():
     print("=" * 60)
     print("QUANTX AUTHORITATIVE RESEARCH PIPELINE EXECUTION")
     print("=" * 60)
+    
+    # 0. Quarantine / Clean Stale Active Artifacts before training starts (P0-14)
+    base_export_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'apps', 'api', 'data', 'artifacts'))
+    active_dir = os.path.join(base_export_dir, 'active')
+    if os.path.exists(active_dir):
+        for f in glob.glob(os.path.join(active_dir, "*")):
+            try:
+                os.remove(f)
+            except Exception:
+                pass
     
     # 1. Download / Load Data
     print("\n[1/7] Ingesting Historical Market Data...")
@@ -90,7 +101,7 @@ def run_full_pipeline():
             
         prod_knots = h_res['prod_calib_knots']
         
-        # P0-1, P0-2, P0-3: Multi-Fold Aggregate Out-Of-Sample Test Calibration
+        # P0-1, P0-2, P0-3, P0-9, P0-11: Multi-Fold Aggregate Out-Of-Sample Test Calibration
         if not oos_df.empty:
             y_true_all = oos_df['target_outcome'].values
             raw_p_all = oos_df['rawProbability'].values
@@ -106,10 +117,12 @@ def run_full_pipeline():
             agg_raw_logloss = test_calib_eval.get('rawLogLoss')
             agg_cal_logloss = test_calib_eval.get('calibratedLogLoss')
             agg_test_sample_count = len(oos_df)
+            calib_status = test_calib_eval.get('status', 'INSUFFICIENT_DATA')
         else:
             agg_raw_brier = agg_cal_brier = agg_raw_ece = agg_cal_ece = None
             agg_raw_mce = agg_cal_mce = agg_raw_logloss = agg_cal_logloss = None
             agg_test_sample_count = 0
+            calib_status = 'INSUFFICIENT_DATA'
             
         fold_briers = [fm.get('calibratedBrierTest') for fm in h_res['fold_metrics'] if fm.get('calibratedBrierTest') is not None]
         if fold_briers:
@@ -120,8 +133,7 @@ def run_full_pipeline():
         else:
             best_fold = worst_fold = median_brier = fold_metric_std = None
             
-        calib_status = h_res['prod_calib_status']
-        if agg_cal_brier is None or agg_test_sample_count < 50:
+        if agg_test_sample_count < MIN_TEST_CALIBRATION_SAMPLE_COUNT or agg_cal_brier is None:
             calib_status = 'INSUFFICIENT_DATA'
             
         val_sample_count = len(h_res['val_predictions'])
@@ -175,18 +187,25 @@ def run_full_pipeline():
                 'holdoutEnd': h_res['holdout_bounds']['end'],
             }
             
-    # 4. Fit Empirical Conditional Return Distributions strictly causally on OOS Predictions (P0-4, P0-5)
-    print("\n[4/7] Fitting Empirical Conditional Return Distributions on OOS Predictions...")
+    # 4. Fit Empirical Conditional Return Distributions for Production Inference (P0-4, P0-5, P0-6, P0-7)
+    print("\n[4/7] Fitting Empirical Conditional Return Distributions for Production Artifact...")
     cond_return_engine = ConditionalReturnEngine()
     for h in ['1d', '5d', '20d']:
-        h_oos_df = oos_predictions_by_horizon.get(h, pd.DataFrame())
-        if not h_oos_df.empty:
-            final_fit_end = date_bounds['validationEnd']
-            cond_return_engine.fit_horizon_causal(h, h_oos_df, final_fit_end)
+        h_model = models_dict[h]
+        knots = calibration_dict[h].get('knots', [])
+        iso_cal = IsotonicCalibrator(knots)
+        h_history_df = combined_df[combined_df.index < pd.Timestamp(date_bounds['validationEnd'])].copy()
+        if not h_history_df.empty:
+            raw_p = h_model.predict_proba(h_history_df[FEATURE_NAMES])[:, 1]
+            h_history_df['rawProbability'] = raw_p
+            h_history_df['calibratedProbability'] = iso_cal.transform(raw_p)
+            h_history_df['pred_prob'] = h_history_df['calibratedProbability']
+            h_history_df['predictionTimestamp'] = [str(d)[:10] for d in h_history_df.index]
+            cond_return_engine.fit_horizon_causal(h, h_history_df, date_bounds['validationEnd'])
     empirical_quantiles = cond_return_engine.to_dict()
     
-    # 5. Out-of-Sample Portfolio Backtest: Compare BASELINE vs PRODUCTION EXPECTED VALUE (P0-8)
-    print("\n[5/7] Simulating Out-of-Sample Portfolio Daily Equity Curve (Consuming ONLY OOS Predictions)...")
+    # 5. Out-of-Sample Portfolio Backtest: Compare BASELINE vs PRODUCTION EXPECTED VALUE (P0-3, P0-5, P0-8)
+    print("\n[5/7] Simulating Out-of-Sample Portfolio Daily Equity Curve (Consuming Fold-Causal Predictions)...")
     oos_5d_df = oos_predictions_by_horizon['5d']
     print(f"Total OOS 5d predictions available: {len(oos_5d_df)}")
     
@@ -215,7 +234,6 @@ def run_full_pipeline():
     
     # 6. Export Canonical Artifact & ONNX Graphs
     print("\n[6/7] Exporting ONNX Models and Canonical Metadata Manifest...")
-    base_export_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'apps', 'api', 'data', 'artifacts'))
     
     manifest = export_artifacts(
         models_dict=models_dict,

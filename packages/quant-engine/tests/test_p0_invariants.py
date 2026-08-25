@@ -16,7 +16,7 @@ from features.feature_engine import calculate_features, FEATURE_NAMES
 from targets.target_definition import compute_targets
 from models.train_model import generate_walk_forward_folds, train_horizon_model
 from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibration, IsotonicCalibrator
-from models.conditional_returns import ConditionalReturnEngine, compute_distribution_metrics, MIN_BUCKET_SAMPLE_COUNT
+from models.conditional_returns import ConditionalReturnEngine, compute_distribution_metrics, MIN_BUCKET_SAMPLE_COUNT, LeakageError, verify_causal_invariance
 from backtest.backtest_engine import evaluate_trade_ohlc_path, run_portfolio_backtest
 from costs import TransactionCostEngine
 from export.export_model import compute_canonical_checksum
@@ -84,9 +84,9 @@ def test_05_calibration_train_test_separation():
     calib_res = fit_isotonic_calibrator(val_preds, horizon_days=5)
     assert calib_res['status'] == 'FITTED_OUT_OF_SAMPLE'
     
-    # Test evaluation
-    test_y = np.array([0, 1, 1, 0, 1])
-    test_raw = np.array([0.2, 0.8, 0.7, 0.3, 0.9])
+    # Test evaluation with >= 500 samples
+    test_raw = np.linspace(0.1, 0.9, 600)
+    test_y = (test_raw > 0.5).astype(int)
     calibrator = calib_res['calibrator']
     test_cal = calibrator.transform(test_raw)
     eval_res = evaluate_test_calibration(test_y, test_raw, test_cal)
@@ -962,10 +962,191 @@ def test_p0_29_stale_model_cache():
     k2 = "chk2:TCS.NS"
     assert k1 != k2
 
-def test_p0_30_holdout_tuning_attempt():
-    """P0-30: Holdout window is strictly isolated and frozen."""
-    holdout_locked = True
-    assert holdout_locked is True
+def test_causality_1_future_test_return_added():
+    """Section 20.1: Future test return added to dataset -> current test decision unchanged."""
+    dates = pd.date_range('2024-01-01', periods=120, freq='D')
+    df1 = pd.DataFrame({
+        'predictionTimestamp': [str(d)[:10] for d in dates],
+        'calibratedProbability': np.full(120, 0.65),
+        'actual_net_return_5d': np.full(120, 0.03),
+    }, index=dates)
+    
+    eng1 = ConditionalReturnEngine()
+    eng1.fit_horizon_causal('5d', df1, '2024-04-01')
+    d1 = eng1.get_distribution('5d', 0.65)
+    
+    # Add future dates
+    dates_ext = pd.date_range('2024-01-01', periods=150, freq='D')
+    df2 = pd.DataFrame({
+        'predictionTimestamp': [str(d)[:10] for d in dates_ext],
+        'calibratedProbability': np.full(150, 0.65),
+        'actual_net_return_5d': np.array([0.03]*120 + [0.99]*30),
+    }, index=dates_ext)
+    
+    eng2 = ConditionalReturnEngine()
+    eng2.fit_horizon_causal('5d', df2, '2024-04-01')
+    d2 = eng2.get_distribution('5d', 0.65)
+    
+    assert d1['p50'] == d2['p50']
+    assert d1['sampleCount'] == d2['sampleCount']
+
+def test_causality_2_future_fold_return_added():
+    """Section 20.2: Future fold return added -> earlier fold decision distribution unchanged."""
+    dates = pd.date_range('2024-01-01', periods=150, freq='D')
+    df = pd.DataFrame({
+        'predictionTimestamp': [str(d)[:10] for d in dates],
+        'calibratedProbability': np.full(150, 0.70),
+        'actual_net_return_5d': np.full(150, 0.04),
+    }, index=dates)
+    
+    eng = ConditionalReturnEngine()
+    eng.fit_horizon_causal('5d', df, '2024-03-01')
+    res = eng.get_distribution('5d', 0.70)
+    assert res['fittedEnd'] < '2024-03-01'
+
+def test_causality_3_fit_end_timestamp_excludes_subsequent_rows():
+    """Section 20.3: fit_end_timestamp = 2026-01-01 strictly excludes 2026-01-02 row."""
+    dates = pd.to_datetime(['2025-12-30', '2025-12-31', '2026-01-01', '2026-01-02'])
+    df = pd.DataFrame({
+        'predictionTimestamp': [str(d)[:10] for d in dates],
+        'calibratedProbability': [0.6, 0.6, 0.6, 0.6],
+        'actual_net_return_5d': [0.01, 0.02, 0.03, 0.50],
+    }, index=dates)
+    
+    eng = ConditionalReturnEngine()
+    # Test that fit_horizon_causal filters out >= 2026-01-01
+    eng.fit_horizon_causal('5d', df, '2026-01-01')
+    # eligible_df only contains 2025-12-30 and 2025-12-31
+    assert eng.tables['5d'] == {} or eng.tables['5d'].get('HORIZON_WIDE', {}).get('fittedEnd', '') < '2026-01-01'
+
+def test_causality_4_leakage_error_raised_if_fit_end_ge_pred_ts():
+    """Section 20.4: distributionFitEndTimestamp >= predictionTimestamp raises LeakageError."""
+    with pytest.raises(LeakageError):
+        verify_causal_invariance('2025-06-01', '2025-06-01')
+        
+    with pytest.raises(LeakageError):
+        verify_causal_invariance('2025-06-01', '2025-06-02')
+
+def test_causality_5_ev_rejects_missing_conditional_gain():
+    """Section 20.5: Missing conditional_gain in PRODUCTION_EXPECTED_VALUE rejects signal."""
+    dates = pd.to_datetime(['2025-01-01', '2025-01-02'])
+    df = pd.DataFrame({
+        'date': dates,
+        'ticker': ['TCS.NS', 'TCS.NS'],
+        'calibratedProbability': [0.75, 0.75],
+        'pred_prob': [0.75, 0.75],
+        'atr_percent': [0.02, 0.02],
+        'conditional_gain': [None, None],
+        'conditional_loss': [0.02, 0.02],
+        'Open': [100.0, 100.0],
+        'Close': [101.0, 101.0],
+        'High': [102.0, 102.0],
+        'Low': [99.0, 99.0],
+    })
+    res = run_portfolio_backtest(df, horizon_days=5, strategy_mode='PRODUCTION_EXPECTED_VALUE')
+    assert res['rejectedInsufficientQuantData'] > 0
+    assert res['totalTrades'] == 0
+
+def test_causality_6_ev_rejects_missing_conditional_loss():
+    """Section 20.6: Missing conditional_loss in PRODUCTION_EXPECTED_VALUE rejects signal."""
+    dates = pd.to_datetime(['2025-01-01', '2025-01-02'])
+    df = pd.DataFrame({
+        'date': dates,
+        'ticker': ['TCS.NS', 'TCS.NS'],
+        'calibratedProbability': [0.75, 0.75],
+        'pred_prob': [0.75, 0.75],
+        'atr_percent': [0.02, 0.02],
+        'conditional_gain': [0.05, 0.05],
+        'conditional_loss': [None, None],
+        'Open': [100.0, 100.0],
+        'Close': [101.0, 101.0],
+        'High': [102.0, 102.0],
+        'Low': [99.0, 99.0],
+    })
+    res = run_portfolio_backtest(df, horizon_days=5, strategy_mode='PRODUCTION_EXPECTED_VALUE')
+    assert res['rejectedInsufficientQuantData'] > 0
+    assert res['totalTrades'] == 0
+
+def test_causality_7_rejects_missing_atr():
+    """Section 20.7: Missing ATR in backtest rejects trade."""
+    dates = pd.to_datetime(['2025-01-01', '2025-01-02'])
+    df = pd.DataFrame({
+        'date': dates,
+        'ticker': ['TCS.NS', 'TCS.NS'],
+        'calibratedProbability': [0.75, 0.75],
+        'pred_prob': [0.75, 0.75],
+        'atr_percent': [None, None],
+        'conditional_gain': [0.05, 0.05],
+        'conditional_loss': [0.02, 0.02],
+        'Open': [100.0, 100.0],
+        'Close': [101.0, 101.0],
+        'High': [102.0, 102.0],
+        'Low': [99.0, 99.0],
+    })
+    res = run_portfolio_backtest(df, horizon_days=5, strategy_mode='PRODUCTION_EXPECTED_VALUE')
+    assert res['rejectedInsufficientQuantData'] > 0
+    assert res['totalTrades'] == 0
+
+def test_causality_8_rejects_missing_execution_open():
+    """Section 20.8: Missing Open execution price rejects trade."""
+    dates = pd.to_datetime(['2025-01-01', '2025-01-02'])
+    df = pd.DataFrame({
+        'date': dates,
+        'ticker': ['TCS.NS', 'TCS.NS'],
+        'calibratedProbability': [0.75, 0.75],
+        'pred_prob': [0.75, 0.75],
+        'atr_percent': [0.02, 0.02],
+        'conditional_gain': [0.05, 0.05],
+        'conditional_loss': [0.02, 0.02],
+        'Open': [None, None],
+        'Close': [101.0, 101.0],
+        'High': [102.0, 102.0],
+        'Low': [99.0, 99.0],
+    })
+    res = run_portfolio_backtest(df, horizon_days=5, strategy_mode='PRODUCTION_EXPECTED_VALUE')
+    assert res['rejectedMissingExecutionPrice'] > 0
+    assert res['totalTrades'] == 0
+
+def test_causality_9_rejects_sector_exposure_over_25_pct():
+    """Section 20.9: Sector exposure cap at 25% rejects additional same-sector positions."""
+    dates = pd.to_datetime(['2025-01-01', '2025-01-02', '2025-01-03', '2025-01-04'])
+    # 4 financial stocks
+    df = pd.DataFrame({
+        'date': [dates[0], dates[0], dates[0], dates[0], dates[1], dates[1], dates[1], dates[1]],
+        'ticker': ['HDFCBANK.NS', 'ICICIBANK.NS', 'SBIN.NS', 'KOTAKBANK.NS', 'HDFCBANK.NS', 'ICICIBANK.NS', 'SBIN.NS', 'KOTAKBANK.NS'],
+        'sector': ['Financials', 'Financials', 'Financials', 'Financials', 'Financials', 'Financials', 'Financials', 'Financials'],
+        'calibratedProbability': [0.80]*8,
+        'pred_prob': [0.80]*8,
+        'atr_percent': [0.01]*8,  # tight stop -> larger sizing up to 10%
+        'conditional_gain': [0.05]*8,
+        'conditional_loss': [0.01]*8,
+        'Open': [100.0]*8,
+        'Close': [100.0]*8,
+        'High': [101.0]*8,
+        'Low': [99.5]*8,
+    })
+    res = run_portfolio_backtest(df, horizon_days=5, strategy_mode='PRODUCTION_EXPECTED_VALUE')
+    assert res['rejectedSectorExposureLimit'] > 0
+
+def test_causality_10_rejects_gross_exposure_over_100_pct():
+    """Section 20.10: Gross exposure > 1.000001 is prevented at every step."""
+    dates = pd.to_datetime(['2025-01-01', '2025-01-02'])
+    df = pd.DataFrame({
+        'date': [dates[0], dates[1]],
+        'ticker': ['TCS.NS', 'TCS.NS'],
+        'calibratedProbability': [0.80, 0.80],
+        'pred_prob': [0.80, 0.80],
+        'atr_percent': [0.02, 0.02],
+        'conditional_gain': [0.05, 0.05],
+        'conditional_loss': [0.02, 0.02],
+        'Open': [100.0, 100.0],
+        'Close': [100.0, 100.0],
+        'High': [101.0, 101.0],
+        'Low': [99.0, 99.0],
+    })
+    res = run_portfolio_backtest(df, horizon_days=5, initial_cash=10000.0, strategy_mode='PRODUCTION_EXPECTED_VALUE')
+    for rec in res['dailyEquitySeries']:
+        assert rec['grossExposure'] <= 1.000001
 
 if __name__ == '__main__':
     tests = [v for k, v in sorted(globals().items()) if k.startswith('test_') and callable(v)]

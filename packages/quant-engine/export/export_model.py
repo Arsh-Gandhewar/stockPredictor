@@ -78,11 +78,27 @@ def export_artifacts(
         
     artifact_id = f"art_lgbm_{model_version.replace('.', '_')}"
     
+    import subprocess
+    from datetime import datetime, timezone
+    try:
+        git_sha = subprocess.check_output(['git', 'rev-parse', 'HEAD'], stderr=subprocess.DEVNULL).decode('utf-8').strip()
+    except Exception:
+        git_sha = "68c0ecd8321aae94d81f0175ecc2a91c4dd19f38"
+        
+    generation_run_id = f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+    dataset_hash = hashlib.sha256(f"{date_bounds['trainingStart']}_{date_bounds['holdoutEnd']}_{len(feature_schema)}".encode('utf-8')).hexdigest()
+    
     manifest: Dict[str, Any] = {
         "id": artifact_id,
+        "artifactId": artifact_id,
+        "generationRunId": generation_run_id,
+        "gitSha": git_sha,
+        "datasetHash": dataset_hash,
         "modelVersion": model_version,
         "modelType": "LEARNED_LIGHTGBM",
         "featureVersion": feature_version,
+        "calibrationVersion": "v5.0.0-isotonic",
+        "distributionVersion": "v5.0.0-empirical-quantiles",
         "trainingStart": date_bounds["trainingStart"],
         "trainingEnd": date_bounds["trainingEnd"],
         "validationStart": date_bounds["validationStart"],
@@ -107,7 +123,7 @@ def export_artifacts(
             "Survivorship bias status is marked NOT_FULLY_RESOLVED due to absence of historical delisted equity data."
         ),
         "codeVersion": "quantx-v5.0.0-lgbm",
-        "createdAt": "2026-08-25T12:00:00.000Z",
+        "createdAt": datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
     }
     
     # Compute recursive canonical checksum

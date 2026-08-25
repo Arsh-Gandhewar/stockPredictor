@@ -40,6 +40,8 @@ INDICES = {
     "VIX": "^INDIAVIX"
 }
 
+TICKER_SECTOR_MAP: Dict[str, str] = {s["ticker"]: s["sector"] for s in NSE_UNIVERSE}
+
 # Explicit survivorship bias limitation disclosure
 SURVIVORSHIP_BIAS_STATUS = "NOT_FULLY_RESOLVED"
 SURVIVORSHIP_BIAS_DISCLOSURE = (

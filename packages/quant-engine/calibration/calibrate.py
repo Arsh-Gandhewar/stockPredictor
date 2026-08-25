@@ -255,30 +255,43 @@ def fit_isotonic_calibrator(val_predictions: List[Dict[str, Any]], horizon_days:
         }
     }
 
+MIN_TEST_CALIBRATION_SAMPLE_COUNT = 500
+
 def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_probs: np.ndarray) -> Dict[str, Any]:
     """
     Evaluates out-of-sample calibration metrics on unseen TEST or HOLDOUT partitions.
+    Centralizes MIN_TEST_CALIBRATION_SAMPLE_COUNT = 500.
+    When sampleCount == 0, returns nulls and status = 'INSUFFICIENT_DATA' without fake numeric constants.
+    Accepts calibration strictly if test metrics improve or match raw metrics on unseen TEST data.
     """
     y_true = np.asarray(y_true, dtype=int)
-    raw_probs = np.clip(np.asarray(raw_probs, dtype=float), 0.001, 0.999)
-    cal_probs = np.clip(np.asarray(cal_probs, dtype=float), 0.001, 0.999)
-    
     n_samples = len(y_true)
+    
     if n_samples == 0:
         return {
             'sampleCount': 0,
-            'rawBrier': 0.25,
-            'calibratedBrier': 0.25,
-            'rawECE': 0.0,
-            'calibratedECE': 0.0,
-            'rawMCE': 0.0,
-            'calibratedMCE': 0.0,
-            'rawLogLoss': 0.693,
-            'calibratedLogLoss': 0.693,
+            'rawBrier': None,
+            'calibratedBrier': None,
+            'brierScore': None,
+            'rawECE': None,
+            'calibratedECE': None,
+            'ece': None,
+            'rawMCE': None,
+            'calibratedMCE': None,
+            'mce': None,
+            'rawLogLoss': None,
+            'calibratedLogLoss': None,
+            'logLoss': None,
+            'rawAUC': None,
+            'calibratedAUC': None,
+            'populatedBins': 0,
             'isMonotonic': True,
             'status': 'INSUFFICIENT_DATA'
         }
         
+    raw_probs = np.clip(np.asarray(raw_probs, dtype=float), 0.001, 0.999)
+    cal_probs = np.clip(np.asarray(cal_probs, dtype=float), 0.001, 0.999)
+    
     raw_brier = float(round(brier_score_loss(y_true, raw_probs), 4))
     cal_brier = float(round(brier_score_loss(y_true, cal_probs), 4))
     
@@ -288,12 +301,31 @@ def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_pro
     try:
         raw_ll = float(round(log_loss(y_true, raw_probs), 4))
     except Exception:
-        raw_ll = 0.6931
+        raw_ll = None
         
     try:
         cal_ll = float(round(log_loss(y_true, cal_probs), 4))
     except Exception:
-        cal_ll = 0.6931
+        cal_ll = None
+        
+    try:
+        from sklearn.metrics import roc_auc_score
+        raw_auc = float(round(roc_auc_score(y_true, raw_probs), 4)) if len(np.unique(y_true)) > 1 else 0.50
+        cal_auc = float(round(roc_auc_score(y_true, cal_probs), 4)) if len(np.unique(y_true)) > 1 else 0.50
+    except Exception:
+        raw_auc = cal_auc = 0.50
+        
+    if n_samples < MIN_TEST_CALIBRATION_SAMPLE_COUNT:
+        status = 'INSUFFICIENT_DATA'
+    else:
+        # Acceptance Gate on unseen TEST:
+        is_accepted = (
+            cal_brier <= raw_brier and
+            (cal_ll is None or raw_ll is None or cal_ll <= raw_ll) and
+            cal_ece <= raw_ece and
+            cal_auc >= raw_auc - 0.01
+        )
+        status = 'VERIFIED_TEST' if is_accepted else 'REJECTED'
         
     return {
         'sampleCount': n_samples,
@@ -309,9 +341,11 @@ def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_pro
         'rawLogLoss': raw_ll,
         'calibratedLogLoss': cal_ll,
         'logLoss': cal_ll,
+        'rawAUC': raw_auc,
+        'calibratedAUC': cal_auc,
         'populatedBins': cal_bins,
         'isMonotonic': True,
-        'status': 'VERIFIED_TEST'
+        'status': status
     }
 
 def calibrate_probabilities(val_predictions: List[Dict[str, Any]]) -> Dict[str, Any]:
