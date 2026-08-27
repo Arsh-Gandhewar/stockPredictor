@@ -9,6 +9,11 @@
   "scripts": {
     "dev": "npm run dev --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
-    "lint": "npm run lint --workspaces --if-present"
+    "lint": "npm run lint --workspaces --if-present",
+    "mcp:start": "npm run start --prefix apps/mcp-server",
+    "mcp:start:prod": "npm run start:prod --prefix apps/mcp-server",
+    "mcp:dev": "npm run dev --prefix apps/mcp-server",
+    "mcp:build": "npm run build --prefix apps/mcp-server",
+    "mcp:test": "npm run test --prefix apps/mcp-server"
   }
 }
