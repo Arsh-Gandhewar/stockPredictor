@@ -35,6 +35,13 @@ from models.cross_sectional_ranker import (
 )
 from models.regime_engine import MarketRegimeEngine, RegimeLookaheadError, MIN_REGIME_SAMPLE_COUNT
 from models.regime_policy import RegimePolicyConfig, RegimePolicy, build_baseline_policy
+from models.execution_cost_engine import (
+    ExecutionCostEngine,
+    ExecutionCostConfig,
+    ExecutionCostLeakageError,
+    LiquidityCapExceededError,
+    COST_REGIME_CONFIGS
+)
 
 def evaluate_trade_ohlc_path(
     entry_price: float,
@@ -147,6 +154,9 @@ def run_portfolio_backtest(
     exit_policy_version: str = 'v4.0.0-dynamic-exit',
     regime_policy_config: Optional[Any] = None,
     market_regime_engine: Optional[Any] = None,
+    execution_cost_config: Optional[Any] = None,
+    cost_buffer: float = 0.0,
+    enforce_liquidity_cap: bool = False,
     partition: Optional[str] = None
 ) -> Dict[str, Any]:
     """
@@ -159,6 +169,8 @@ def run_portfolio_backtest(
             raise OptimizationLeakageError(f"CRITICAL LEAKAGE: Exit policy optimization attempted on {partition} partition!")
         if regime_policy_config is not None and getattr(regime_policy_config, 'policyId', '') != 'POLICY_A_BASELINE_NO_REGIME':
             raise OptimizationLeakageError(f"CRITICAL LEAKAGE: Regime policy optimization attempted on {partition} partition!")
+        if cost_regime != 'BASE_COST' or execution_cost_config is not None or cost_buffer > 0.0:
+            raise OptimizationLeakageError(f"CRITICAL LEAKAGE: Execution cost optimization attempted on {partition} partition!")
 
     # Section 21 & 46: Lookahead penetration guard on input candles
     if historical_candles_by_ticker:
@@ -173,9 +185,8 @@ def run_portfolio_backtest(
             bad_h = mismatched.iloc[0]['horizon']
             raise ValueError(f"HORIZON_POLICY_MISMATCH: Input prediction horizon '{bad_h}' does not match backtest horizon '{horizon_days}d'")
 
-    cost_engine = TransactionCostEngine(cost_regime)
-    round_trip_cost = cost_engine.calculate_round_trip_cost_rate()
-    one_way_cost = round_trip_cost / 2.0
+    cost_engine = ExecutionCostEngine(regime=cost_regime, custom_config=execution_cost_config)
+    round_trip_cost = cost_engine.estimate_round_trip_cost_rate(notional=100000.0)
     
     if initial_cash <= 0:
         return {
@@ -364,17 +375,58 @@ def run_portfolio_backtest(
                     exec_price = today_candle['Close']
                     reason = 'HORIZON_EXPIRY'
                     
-                exec_value = pos['notional'] * (exec_price / pos['entryPrice'])
-                exit_friction = exec_value * one_way_cost
+                exit_ref_price = float(exec_price)
+                pos_shares = float(pos['shares'])
+                pos_adv = None
+                if candles_df is not None:
+                    pos_adv = cost_engine.compute_rolling_adv(candles_df, current_date)
+                    
+                # Section 2 & 4: Calculate side-aware SELL transaction cost
+                sell_res = cost_engine.calculate_transaction_cost(
+                    side='SELL',
+                    reference_price=exit_ref_price,
+                    quantity=pos_shares,
+                    notional=pos_shares * exit_ref_price,
+                    ticker=ticker,
+                    timestamp=date_str,
+                    adv=pos_adv,
+                    volatility=pos.get('volatility', 0.015),
+                    market_regime=active_regime
+                )
+                actual_exit_price = sell_res['executionPrice']
+                exit_fees = sell_res['fees']
+                exit_slippage = sell_res['slippage']
+                exit_impact = sell_res['marketImpact']
                 
-                net_pnl = exec_value - pos['notional'] - exit_friction - pos['entryFriction']
-                gross_ret = (exec_price - pos['entryPrice']) / pos['entryPrice']
-                net_ret = net_pnl / pos['notional']
-                
-                cash += (exec_value - exit_friction)
+                # Cash proceeds received: shares * actual_exit_price - fees
+                actual_exit_proceeds = (pos_shares * actual_exit_price) - exit_fees
+                cash += actual_exit_proceeds
                 
                 market_val_now = sum(p['notional'] * (p['currentPrice'] / p['entryPrice']) for p in open_positions)
                 total_eq_now = cash + market_val_now
+                
+                entry_ref_price = float(pos.get('entryReferencePrice', pos['entryPrice']))
+                entry_exec_price = float(pos.get('entryExecutionPrice', pos['entryPrice']))
+                
+                gross_pnl = (pos_shares * exit_ref_price) - (pos_shares * entry_ref_price)
+                gross_ret = (exit_ref_price - entry_ref_price) / entry_ref_price if entry_ref_price > 0 else 0.0
+                
+                entry_fees = float(pos.get('entryFees', pos.get('entryFriction', 0.0)))
+                entry_slippage = float(pos.get('entrySlippage', 0.0))
+                entry_impact = float(pos.get('entryMarketImpact', 0.0))
+                
+                total_fees = entry_fees + exit_fees
+                total_slippage = entry_slippage + exit_slippage
+                total_impact = entry_impact + exit_impact
+                total_trade_cost = total_fees + total_slippage + total_impact
+                
+                net_pnl = gross_pnl - total_trade_cost
+                net_ret = net_pnl / pos['notional'] if pos['notional'] > 0 else 0.0
+                
+                # Section 26: Cost Double-Counting Invariant Assertion
+                cost_diff = abs(net_pnl - (gross_pnl - total_fees - total_slippage - total_impact))
+                if cost_diff > 1e-6 * max(1.0, abs(gross_pnl)):
+                    raise ValueError(f"CRITICAL RECONCILIATION ERROR: Cost double-counting detected! Diff={cost_diff}")
                 
                 # Excursion Metrics
                 mfe = (pos['maxHigh'] - pos['entryPrice']) / pos['entryPrice']
@@ -393,8 +445,28 @@ def run_portfolio_backtest(
                     'entryDate': pos['entryDate'],
                     'exitTimestamp': date_str,
                     'exitDate': date_str,
-                    'entryPrice': pos['entryPrice'],
-                    'exitPrice': float(exec_price),
+                    # Section 25: Per-Trade Cost Ledger
+                    'entryReferencePrice': round(entry_ref_price, 4),
+                    'entryExecutionPrice': round(entry_exec_price, 4),
+                    'exitReferencePrice': round(exit_ref_price, 4),
+                    'exitExecutionPrice': round(actual_exit_price, 4),
+                    'entryPrice': round(entry_ref_price, 4),
+                    'exitPrice': round(actual_exit_price, 4),
+                    'entryFees': round(entry_fees, 2),
+                    'exitFees': round(exit_fees, 2),
+                    'entrySlippage': round(entry_slippage, 2),
+                    'exitSlippage': round(exit_slippage, 2),
+                    'entryMarketImpact': round(entry_impact, 2),
+                    'exitMarketImpact': round(exit_impact, 2),
+                    'fees': round(total_fees, 2),
+                    'slippage': round(total_slippage, 2),
+                    'marketImpact': round(total_impact, 2),
+                    'totalExecutionCost': round(total_trade_cost, 2),
+                    'totalTradeCost': round(total_trade_cost, 2),
+                    'costDrag': round(total_trade_cost, 2),
+                    'effectiveCostBps': round(sell_res['effectiveCostBps'], 2),
+                    'participationRate': float(pos.get('participationRate', 0.0)),
+                    'adv': float(pos.get('adv', 0.0)) if pos.get('adv') else None,
                     'stopLossPrice': pos['stopLossPrice'],
                     'targetPrice': pos['targetPrice'],
                     'targetReturn': pos.get('targetReturn'),
@@ -407,11 +479,9 @@ def run_portfolio_backtest(
                     'selectionReason': pos.get('selectionReason', 'QUALIFYING_SIGNAL'),
                     'grossReturn': float(gross_ret),
                     'netReturn': float(net_ret),
-                    'grossPnL': float(pos['notional'] * gross_ret),
-                    'fees': float(pos['entryFriction'] + exit_friction),
-                    'slippage': float(pos['notional'] * 0.0005),
-                    'pnl': float(net_pnl),
-                    'netPnL': float(net_pnl),
+                    'grossPnL': float(round(gross_pnl, 2)),
+                    'pnl': float(round(net_pnl, 2)),
+                    'netPnL': float(round(net_pnl, 2)),
                     'exitReason': reason,
                     'isWin': bool(net_pnl > 0),
                     'daysHeld': pos['daysHeld'],
@@ -425,6 +495,7 @@ def run_portfolio_backtest(
                     'expectedEVAtExit': (pos.get('EV') or 0.0) * max(0.0, 1.0 - (pos['daysHeld'] / planned_h)),
                     'expectedReturnAtEntry': pos.get('expectedGain'),
                     'exitPolicyVersion': exit_policy_version,
+                    'costModelVersion': cost_engine.version,
                     # Section 44: Complete Trade Regime Provenance
                     'regime': pos.get('regime', 'SIDEWAYS'),
                     'regimeVersion': pos.get('regimeVersion', 'v5.0.0-default'),
@@ -497,13 +568,54 @@ def run_portfolio_backtest(
                         if w_candles is not None and current_date in w_candles.index and not pd.isna(w_candles.loc[current_date]['Open']):
                             close_price = float(w_candles.loc[current_date]['Open'])
                             
-                        exec_val = worst_pos['notional'] * (close_price / worst_pos['entryPrice'])
-                        exit_frict = exec_val * one_way_cost
-                        close_pnl = exec_val - worst_pos['notional'] - exit_frict - worst_pos['entryFriction']
-                        cash += (exec_val - exit_frict)
+                        pos_shares = float(worst_pos['shares'])
+                        exit_ref_price = float(close_price)
+                        pos_adv = None
+                        if w_candles is not None:
+                            pos_adv = cost_engine.compute_rolling_adv(w_candles, current_date)
+                            
+                        sell_cost = cost_engine.calculate_transaction_cost(
+                            side='SELL',
+                            reference_price=exit_ref_price,
+                            quantity=pos_shares,
+                            notional=pos_shares * exit_ref_price,
+                            ticker=close_ticker,
+                            timestamp=date_str,
+                            adv=pos_adv,
+                            volatility=worst_pos.get('volatility', 0.015),
+                            market_regime=active_regime
+                        )
+                        actual_exit_price = sell_cost['executionPrice']
+                        exit_fees = sell_cost['fees']
+                        exit_slippage = sell_cost['slippage']
+                        exit_impact = sell_cost['marketImpact']
                         
-                        gross_ret = (close_price - worst_pos['entryPrice']) / worst_pos['entryPrice']
-                        net_ret = close_pnl / worst_pos['notional']
+                        actual_exit_proceeds = (pos_shares * actual_exit_price) - exit_fees
+                        cash += actual_exit_proceeds
+                        
+                        entry_ref_price = float(worst_pos.get('entryReferencePrice', worst_pos['entryPrice']))
+                        entry_exec_price = float(worst_pos.get('entryExecutionPrice', worst_pos['entryPrice']))
+                        
+                        gross_pnl = (pos_shares * exit_ref_price) - (pos_shares * entry_ref_price)
+                        gross_ret = (exit_ref_price - entry_ref_price) / entry_ref_price if entry_ref_price > 0 else 0.0
+                        
+                        entry_fees = float(worst_pos.get('entryFees', worst_pos.get('entryFriction', 0.0)))
+                        entry_slippage = float(worst_pos.get('entrySlippage', 0.0))
+                        entry_impact = float(worst_pos.get('entryMarketImpact', 0.0))
+                        
+                        total_fees = entry_fees + exit_fees
+                        total_slippage = entry_slippage + exit_slippage
+                        total_impact = entry_impact + exit_impact
+                        total_trade_cost = total_fees + total_slippage + total_impact
+                        
+                        close_pnl = gross_pnl - total_trade_cost
+                        net_ret = close_pnl / worst_pos['notional'] if worst_pos['notional'] > 0 else 0.0
+                        
+                        # Section 26: Cost Double-Counting Invariant Assertion
+                        cost_diff = abs(close_pnl - (gross_pnl - total_fees - total_slippage - total_impact))
+                        if cost_diff > 1e-6 * max(1.0, abs(gross_pnl)):
+                            raise ValueError(f"CRITICAL RECONCILIATION ERROR: Cost double-counting detected! Diff={cost_diff}")
+                        
                         mfe = (worst_pos.get('maxHigh', close_price) - worst_pos['entryPrice']) / worst_pos['entryPrice']
                         mae = (worst_pos.get('minLow', close_price) - worst_pos['entryPrice']) / worst_pos['entryPrice']
                         
@@ -517,8 +629,28 @@ def run_portfolio_backtest(
                             'entryDate': worst_pos['entryDate'],
                             'exitTimestamp': date_str,
                             'exitDate': date_str,
-                            'entryPrice': worst_pos['entryPrice'],
-                            'exitPrice': float(close_price),
+                            # Section 25: Per-Trade Cost Ledger
+                            'entryReferencePrice': round(entry_ref_price, 4),
+                            'entryExecutionPrice': round(entry_exec_price, 4),
+                            'exitReferencePrice': round(exit_ref_price, 4),
+                            'exitExecutionPrice': round(actual_exit_price, 4),
+                            'entryPrice': round(entry_ref_price, 4),
+                            'exitPrice': round(actual_exit_price, 4),
+                            'entryFees': round(entry_fees, 2),
+                            'exitFees': round(exit_fees, 2),
+                            'entrySlippage': round(entry_slippage, 2),
+                            'exitSlippage': round(exit_slippage, 2),
+                            'entryMarketImpact': round(entry_impact, 2),
+                            'exitMarketImpact': round(exit_impact, 2),
+                            'fees': round(total_fees, 2),
+                            'slippage': round(total_slippage, 2),
+                            'marketImpact': round(total_impact, 2),
+                            'totalExecutionCost': round(total_trade_cost, 2),
+                            'totalTradeCost': round(total_trade_cost, 2),
+                            'costDrag': round(total_trade_cost, 2),
+                            'effectiveCostBps': round(sell_cost['effectiveCostBps'], 2),
+                            'participationRate': float(worst_pos.get('participationRate', 0.0)),
+                            'adv': float(worst_pos.get('adv', 0.0)) if worst_pos.get('adv') else None,
                             'stopLossPrice': worst_pos['stopLossPrice'],
                             'targetPrice': worst_pos['targetPrice'],
                             'targetReturn': worst_pos.get('targetReturn'),
@@ -531,11 +663,11 @@ def run_portfolio_backtest(
                             'selectionReason': 'OPPORTUNITY_COST_SWITCH',
                             'grossReturn': float(gross_ret),
                             'netReturn': float(net_ret),
-                            'grossPnL': float(worst_pos['notional'] * gross_ret),
-                            'fees': float(worst_pos['entryFriction'] + exit_frict),
-                            'slippage': float(worst_pos['notional'] * 0.0005),
-                            'pnl': float(close_pnl),
-                            'netPnL': float(close_pnl),
+                            'grossPnL': float(round(gross_pnl, 2)),
+                            'fees': round(total_fees, 2),
+                            'slippage': round(total_slippage, 2),
+                            'pnl': float(round(close_pnl, 2)),
+                            'netPnL': float(round(close_pnl, 2)),
                             'exitReason': 'OPPORTUNITY_COST',
                             'isWin': bool(close_pnl > 0),
                             'daysHeld': worst_pos['daysHeld'],
@@ -550,6 +682,7 @@ def run_portfolio_backtest(
                             'expectedReturnAtEntry': worst_pos.get('expectedGain'),
                             'expectedReturnAtExit': float(net_ret),
                             'exitPolicyVersion': exit_policy_version,
+                            'costModelVersion': cost_engine.version,
                             # Section 44: Complete Trade Regime Provenance
                             'regime': worst_pos.get('regime', 'SIDEWAYS'),
                             'regimeVersion': worst_pos.get('regimeVersion', 'v5.0.0-default'),
@@ -626,6 +759,7 @@ def run_portfolio_backtest(
                     
                 target_return = payoff_profile.targetReturn
                 stop_return = payoff_profile.stopReturn
+                vol = float(sig.get('atr_percent', 0.015) or 0.015)
                 
                 # Section 6 & 7: Execution Price Conversion
                 target_price = entry_price * (1.0 + target_return)
@@ -653,9 +787,59 @@ def run_portfolio_backtest(
             available_cash_limit = max(0.0, cash)
             
             sized_notional = min(max_from_risk, max_from_pos_cap, available_cash_limit)
-            entry_friction = sized_notional * one_way_cost
+            if sized_notional <= 0 or (total_equity > 0 and sized_notional < (total_equity * 0.01)):
+                rejected_signals_count += 1
+                continue
+                
+            # Point-in-Time ADV calculation (Section 15, 16, 17)
+            adv = None
+            if candles_df is not None:
+                adv = cost_engine.compute_rolling_adv(candles_df, current_date, lookback=20)
+                
+            if adv is None and enforce_liquidity_cap:
+                rejected_signals_count += 1
+                rejected_insufficient_quant_data += 1
+                continue
+                
+            # Check participation against 5% cap (Section 13)
+            participation_rate = (sized_notional / adv) if (adv is not None and adv > 0) else 0.0
+            if enforce_liquidity_cap and participation_rate > cost_engine.config.max_participation_rate:
+                rejected_signals_count += 1
+                continue
+                
+            prob_val = sig.get('calibratedProbability', sig.get('pred_prob', 0.5))
+            p_up = float(prob_val) if (prob_val is not None and not pd.isna(prob_val)) else 0.5
+            p_down = 1.0 - p_up
             
-            if sized_notional <= 0 or cash < (sized_notional + entry_friction) or (total_equity > 0 and sized_notional < (total_equity * 0.01)):
+            # Pre-Trade Net EV Decision Gating (Section 39, 40, 50, 51)
+            estimated_cost_rate = cost_engine.estimate_round_trip_cost_rate(notional=sized_notional, adv=adv, volatility=vol)
+            ev_gross = (p_up * target_return) - (p_down * abs(stop_return))
+            ev_net = ev_gross - estimated_cost_rate
+            
+            if is_production_payoff:
+                if ev_gross <= 0 or ev_net <= 0 or ev_net < cost_buffer:
+                    rejected_signals_count += 1
+                    continue
+                    
+            # Calculate side-specific BUY transaction cost
+            buy_res = cost_engine.calculate_transaction_cost(
+                side='BUY',
+                reference_price=entry_price,
+                quantity=sized_notional / entry_price,
+                notional=sized_notional,
+                ticker=ticker,
+                timestamp=date_str,
+                adv=adv,
+                volatility=vol,
+                market_regime=active_regime
+            )
+            effective_entry_price = buy_res['executionPrice']
+            entry_fees = buy_res['fees']
+            entry_slippage = buy_res['slippage']
+            entry_impact = buy_res['marketImpact']
+            
+            cash_outflow = ((sized_notional / entry_price) * effective_entry_price) + entry_fees
+            if cash < cash_outflow:
                 rejected_signals_count += 1
                 continue
                 
@@ -691,28 +875,30 @@ def run_portfolio_backtest(
                 continue
                 
             # Open position
-            cash -= (sized_notional + entry_friction)
+            cash -= cash_outflow
             pos_id = f"pos_{ticker}_{date_str}_{len(open_positions)+1}"
-            
-            prob_val = sig.get('calibratedProbability', sig.get('pred_prob', 0.5))
-            p_up = float(prob_val) if (prob_val is not None and not pd.isna(prob_val)) else 0.5
-            p_down = 1.0 - p_up
             
             pos_record = {
                 'id': pos_id,
                 'ticker': ticker,
                 'sector': sector,
                 'entryDate': date_str,
-                'entryPrice': entry_price,
+                'entryReferencePrice': float(entry_price),
+                'entryExecutionPrice': float(effective_entry_price),
+                'entryPrice': float(entry_price),
                 'stopLossPrice': float(stop_loss_price),
                 'targetPrice': float(target_price),
                 'targetReturn': float(target_return),
                 'stopReturn': float(stop_return),
                 'notional': float(sized_notional),
-                'entryFriction': entry_friction,
+                'shares': float(sized_notional / entry_price),
+                'entryFees': float(entry_fees),
+                'entrySlippage': float(entry_slippage),
+                'entryMarketImpact': float(entry_impact),
+                'entryFriction': float(entry_fees + entry_slippage + entry_impact),
                 'daysHeld': 0,
                 'currentPrice': entry_price,
-                'unrealizedPnl': -entry_friction,
+                'unrealizedPnl': -float(entry_fees + entry_slippage + entry_impact),
                 'p_up': p_up,
                 'p_down': p_down,
                 'alphaRank': sig.get('alphaRank'),
@@ -723,6 +909,11 @@ def run_portfolio_backtest(
                 'riskAdjustedEV': sig.get('riskAdjustedExpectedValue'),
                 'maxHigh': float(entry_price),
                 'minLow': float(entry_price),
+                'adv': float(adv) if adv else None,
+                'participationRate': float(participation_rate),
+                'estimatedCostRate': float(estimated_cost_rate),
+                'expectedNetEV': float(ev_net),
+                'costModelVersion': cost_engine.version,
                 'plannedHoldingDays': current_regime_policy.holdingPeriod if (current_regime_policy and current_regime_policy.holdingPeriod is not None) else horizon_days,
                 'plannedHorizon': f"{current_regime_policy.holdingPeriod if (current_regime_policy and current_regime_policy.holdingPeriod is not None) else horizon_days}d",
                 'exitPolicyVersion': exit_policy_version,
@@ -1037,19 +1228,60 @@ def run_portfolio_backtest(
                 'status': 'INSUFFICIENT_DATA'
             }
             
+    # Section 24 & 59: Gross vs Net Performance and Execution Cost Aggregation
+    gross_pnl_total = sum(t.get('grossPnL', 0.0) for t in completed_trades)
+    net_pnl_total = sum(t.get('netPnL', 0.0) for t in completed_trades)
+    total_fees = sum(t.get('fees', 0.0) for t in completed_trades)
+    total_slippage = sum(t.get('slippage', 0.0) for t in completed_trades)
+    total_impact = sum(t.get('marketImpact', 0.0) for t in completed_trades)
+    total_execution_cost = total_fees + total_slippage + total_impact
+    cost_drag = gross_pnl_total - net_pnl_total
+    cost_drag_ratio = round(cost_drag / gross_pnl_total, 4) if gross_pnl_total > 0 else 0.0
+    
+    gross_rets = [t.get('grossReturn', 0.0) for t in completed_trades]
+    net_rets = [t.get('netReturn', 0.0) for t in completed_trades]
+    gross_exp = round(float(np.mean(gross_rets)), 6) if gross_rets else 0.0
+    net_exp = round(float(np.mean(net_rets)), 6) if net_rets else 0.0
+    
+    pos_g = sum(p for p in [t.get('grossPnL', 0.0) for t in completed_trades] if p > 0)
+    neg_g = abs(sum(p for p in [t.get('grossPnL', 0.0) for t in completed_trades] if p < 0))
+    gross_pf = round(float(pos_g / neg_g), 2) if neg_g > 0 else None
+    
+    gross_equity = initial_cash + gross_pnl_total
+    gross_cagr = round(float(((gross_equity / initial_cash)**(365.0 / calendar_days) - 1.0) * 100.0), 2) if initial_cash > 0 and calendar_days > 0 and gross_equity > 0 else 0.0
+    
+    alpha_cost_buffer_bps = round(max(0.0, (gross_exp * 10000.0) - 28.0), 1)
+    
     return {
         'strategyMode': strategy_mode,
         'totalTrades': len(completed_trades),
         'winRate': win_rate,
         'cagr': round(float(cagr), 2),
+        'netCAGR': round(float(cagr), 2),
+        'grossCAGR': gross_cagr,
         'annualizedReturn': round(float(annualized_return * 100.0), 2),
         'annualizedVol': round(float(annualized_vol * 100.0), 2),
         'sharpe': round(float(sharpe), 2) if isinstance(sharpe, (float, int)) else sharpe,
+        'netSharpe': round(float(sharpe), 2) if isinstance(sharpe, (float, int)) else sharpe,
         'sortino': round(float(sortino), 2) if isinstance(sortino, (float, int)) else sortino,
         'calmar': round(float(calmar), 2) if isinstance(calmar, (float, int)) else calmar,
         'maxDrawdown': round(float(max_dd * 100.0), 2),
         'profitFactor': profit_factor,
+        'netProfitFactor': profit_factor,
+        'grossProfitFactor': gross_pf,
         'profitFactorStatus': profit_factor_status,
+        'grossExpectancy': gross_exp,
+        'netExpectancy': net_exp,
+        'grossPnL': round(gross_pnl_total, 2),
+        'netPnL': round(net_pnl_total, 2),
+        'fees': round(total_fees, 2),
+        'slippage': round(total_slippage, 2),
+        'marketImpact': round(total_impact, 2),
+        'totalExecutionCost': round(total_execution_cost, 2),
+        'costDrag': round(cost_drag, 2),
+        'costDragRatio': cost_drag_ratio,
+        'alphaCostBufferBps': alpha_cost_buffer_bps,
+        'costModelVersion': cost_engine.version,
         'rejectedSignalsCount': rejected_signals_count,
         'rejectedInsufficientQuantData': rejected_insufficient_quant_data,
         'rejectedMissingExecutionPrice': rejected_missing_execution_price,

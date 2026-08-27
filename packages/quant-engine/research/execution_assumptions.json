@@ -1,0 +1,48 @@
+{
+  "costModelVersion": "v6.0.0-execution-engine",
+  "baseFees": {
+    "brokerageRateBps": 3.0,
+    "maxBrokerageINR": 20.0,
+    "exchangeRateBps": 0.345,
+    "gstRatePct": 18.0,
+    "sebiRateBps": 0.01,
+    "stampDutyBuyBps": 1.5,
+    "sttSellBps": 10.0
+  },
+  "baseSlippageBps": 5.0,
+  "impactModel": "square_root_participation",
+  "impactCoefficient": 0.1,
+  "ADVLookback": 20,
+  "maxParticipation": 0.05,
+  "regimeRules": {
+    "LOW_COST": {
+      "slippageBps": 2.0,
+      "brokerageBps": 1.0,
+      "impactCoeff": 0.05
+    },
+    "BASE_COST": {
+      "slippageBps": 5.0,
+      "brokerageBps": 3.0,
+      "impactCoeff": 0.1
+    },
+    "STRESSED_COST": {
+      "slippageBps": 15.0,
+      "brokerageBps": 5.0,
+      "impactCoeff": 0.2
+    },
+    "EXTREME_COST": {
+      "slippageBps": 30.0,
+      "brokerageBps": 10.0,
+      "impactCoeff": 0.4
+    }
+  },
+  "scaleAssumptions": [
+    100000,
+    500000,
+    1000000,
+    2500000,
+    5000000,
+    10000000
+  ],
+  "sha256": "d85ad557f1c16d4e2303559fa9a7de24a03bcbf9679e4eb9dafb3c5b09862727"
+}

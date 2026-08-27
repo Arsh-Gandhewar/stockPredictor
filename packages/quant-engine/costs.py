@@ -3,50 +3,19 @@ Centralized Transaction Cost & Slippage Engine for QuantX.
 Unified fee calculator covering Indian equity delivery & intraday execution charges.
 """
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Optional, Dict, Any
 
-CostRegime = Literal['LOW_COST', 'BASE_COST', 'HIGH_COST']
+from models.execution_cost_engine import (
+    ExecutionCostEngine,
+    ExecutionCostConfig,
+    ExecutionCostLeakageError,
+    LiquidityCapExceededError,
+    COST_REGIME_CONFIGS,
+    CostRegime
+)
 
-@dataclass(frozen=True)
-class TransactionCostConfig:
-    brokerage_rate: float        # e.g., 0.0003 (3 bps)
-    stt_rate_sell: float         # e.g., 0.0010 (10 bps on sell side)
-    exchange_rate: float         # e.g., 0.0000345 (0.345 bps)
-    gst_rate: float              # 18% on (brokerage + exchange)
-    stamp_duty_rate_buy: float   # 0.00015 (1.5 bps on buy side)
-    sebi_rate: float             # 0.000001 (0.01 bps)
-    slippage_bps: float          # Base execution slippage in basis points
-
-# Preset regimes
-COST_REGIMES = {
-    'LOW_COST': TransactionCostConfig(
-        brokerage_rate=0.0001,
-        stt_rate_sell=0.0010,
-        exchange_rate=0.00003,
-        gst_rate=0.18,
-        stamp_duty_rate_buy=0.00015,
-        sebi_rate=0.000001,
-        slippage_bps=2.0,
-    ),
-    'BASE_COST': TransactionCostConfig(
-        brokerage_rate=0.0003,
-        stt_rate_sell=0.0010,
-        exchange_rate=0.0000345,
-        gst_rate=0.18,
-        stamp_duty_rate_buy=0.00015,
-        sebi_rate=0.000001,
-        slippage_bps=5.0,
-    ),
-    'HIGH_COST': TransactionCostConfig(
-        brokerage_rate=0.0005,
-        stt_rate_sell=0.0010,
-        exchange_rate=0.0000345,
-        gst_rate=0.18,
-        stamp_duty_rate_buy=0.00015,
-        sebi_rate=0.000001,
-        slippage_bps=10.0,
-    ),
-}
+TransactionCostConfig = ExecutionCostConfig
+COST_REGIMES = COST_REGIME_CONFIGS
 
 class TransactionCostEngine:
     def __init__(self, regime: CostRegime = 'BASE_COST', custom_config: TransactionCostConfig = None):
