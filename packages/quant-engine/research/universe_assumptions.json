@@ -1,0 +1,16 @@
+﻿{
+  "universeVersion": "v8.0.0-pit-universe",
+  "contract": "POINT_IN_TIME_LIQUIDITY_UNIVERSE",
+  "minAdvThresholdINR": 1000000.0,
+  "advLookbackDays": 20,
+  "survivorshipStatus": "NOT_FULLY_RESOLVED",
+  "fullHistoricalTop500Certification": false,
+  "survivorshipDisclosure": "Historical constituent tracking is limited to liquid NSE equities. Survivorship bias status is marked NOT_FULLY_RESOLVED due to absence of historical delisted equity data.",
+  "listingRule": "listingDate <= signalTimestamp",
+  "delistingRule": "signalTimestamp < delistingDate",
+  "governance": {
+    "zeroLookaheadEnforced": true,
+    "currentUniverseRetroactiveUsageBlocked": true,
+    "distinguishDataUnavailableFromIneligible": true
+  }
+}

@@ -66,6 +66,8 @@ class OpportunityRecord:
     selectionReason: Optional[str] = None
     executionPrice: Optional[float] = None
     sizedNotional: float = 0.0
+    universeVersion: Optional[str] = None
+    universeHash: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -126,7 +128,8 @@ def build_daily_opportunity_table(
     horizon_days: int = 5,
     round_trip_cost: float = BASE_ROUND_TRIP_FRICTION,
     minimum_decision_margin: float = 0.0,
-    regime: str = 'SIDEWAYS'
+    regime: str = 'SIDEWAYS',
+    universe_engine: Optional[Any] = None
 ) -> List[OpportunityRecord]:
     """
     Builds the authoritative Daily Opportunity Table for every available signal on date T.
@@ -147,9 +150,36 @@ def build_daily_opportunity_table(
         pos_val = p['notional'] * (p['currentPrice'] / p['entryPrice'])
         sector_notionals[s] = sector_notionals.get(s, 0.0) + pos_val
         
+    pit_map = None
+    pit_version = getattr(universe_engine, 'universe_version', 'v8.0.0-pit-universe') if universe_engine else None
+    if universe_engine is not None:
+        pit_recs = universe_engine.get_eligible_securities(date_str, candles_dict=historical_candles)
+        pit_map = {r.ticker: r for r in pit_recs}
+
     for _, sig in day_signals.iterrows():
         ticker = str(sig.get('ticker', 'UNKNOWN'))
         sector = str(sig.get('sector') or TICKER_SECTOR_MAP.get(ticker, 'UNKNOWN'))
+
+        # 0. Point-in-Time Universe Eligibility Gate (Repair #8, Section 20)
+        if pit_map is not None:
+            pit_rec = pit_map.get(ticker)
+            if pit_rec is not None and not pit_rec.eligible:
+                rec = OpportunityRecord(
+                    timestamp=date_str, ticker=ticker, sector=sector, horizon=horizon_str,
+                    calibratedProbability=None, probabilityRank=None, expectedGain=None, expectedLoss=None,
+                    expectedReturn=None, stopReturn=None, targetReturn=None, expectedValue=None,
+                    expectedRisk=None, riskAdjustedExpectedValue=None, ATR=None, volatility=None, beta=None,
+                    liquidity=None, ADV=None, participationRate=None, correlationToPortfolio=None,
+                    sectorExposureBefore=sector_notionals.get(sector, 0.0) / total_eq if total_eq > 0 else 0.0,
+                    sectorExposureAfter=sector_notionals.get(sector, 0.0) / total_eq if total_eq > 0 else 0.0,
+                    grossExposureBefore=gross_exp_before, grossExposureAfter=gross_exp_before,
+                    turnoverCost=round_trip_cost, slippageEstimate=0.0005, tradeEligible=False,
+                    ineligibilityReason=pit_rec.eligibilityReason, distributionVersion=None,
+                    distributionFitStart=None, distributionFitEnd=None,
+                    universeVersion=pit_version, universeHash=pit_rec.universeHash
+                )
+                opportunities.append(rec)
+                continue
         
         # 1. Probability Gate
         prob_val = sig.get('calibratedProbability', sig.get('pred_prob'))

@@ -70,6 +70,8 @@ def run_full_pipeline():
         feat_df = calculate_features(df, nifty_df)
         targ_df = compute_targets(feat_df, cost_engine)
         targ_df['ticker'] = ticker
+        targ_df['universeVersionAtObservation'] = 'v8.0.0-pit-universe'
+        targ_df['universeVersion'] = 'v8.0.0-pit-universe'
         all_processed_dfs.append(targ_df)
         
     if not all_processed_dfs:

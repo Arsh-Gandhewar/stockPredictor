@@ -1,9 +1,22 @@
-"""
+﻿"""
 Point-in-Time Universe Management with Survivorship Bias Limitation Disclosure.
+Integrates with the centralized HistoricalUniverseEngine.
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
+
+from models.universe_engine import (
+    HistoricalUniverseEngine,
+    HistoricalUniverseRecord,
+    SurvivorshipBiasError,
+    UniverseLookaheadError,
+    HistoricalDataUnavailableError,
+    HISTORICAL_SECURITY_MASTER,
+    SURVIVORSHIP_BIAS_STATUS,
+    FULL_HISTORICAL_TOP500_CERTIFICATION,
+    UNIVERSE_VERSION
+)
 
 # Universe definition: Top liquid representative NSE equities
 NSE_UNIVERSE = [
@@ -43,11 +56,19 @@ INDICES = {
 TICKER_SECTOR_MAP: Dict[str, str] = {s["ticker"]: s["sector"] for s in NSE_UNIVERSE}
 
 # Explicit survivorship bias limitation disclosure
-SURVIVORSHIP_BIAS_STATUS = "NOT_FULLY_RESOLVED"
 SURVIVORSHIP_BIAS_DISCLOSURE = (
     "Historical constituent tracking is limited to currently listed and historical liquid NSE securities. "
     "Survivorship bias status is explicitly marked NOT_FULLY_RESOLVED due to absence of historical delisted equity tapes."
 )
+
+_DEFAULT_ENGINE = HistoricalUniverseEngine()
+
+def get_point_in_time_universe(
+    timestamp: str,
+    candles_dict: Optional[Dict[str, pd.DataFrame]] = None
+) -> List[HistoricalUniverseRecord]:
+    """Returns point-in-time universe records for timestamp."""
+    return _DEFAULT_ENGINE.get_eligible_securities(timestamp, candles_dict=candles_dict)
 
 def rank_point_in_time_liquidity(df_dict: Dict[str, pd.DataFrame], as_of_date: str, lookback_days: int = 60) -> List[str]:
     """

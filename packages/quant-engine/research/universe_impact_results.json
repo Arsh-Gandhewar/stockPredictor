@@ -1,0 +1,51 @@
+{
+  "auditTimestamp": "2026-08-27T15:17:19Z",
+  "universeVersion": "v8.0.0-pit-universe",
+  "contract": "POINT_IN_TIME_LIQUIDITY_UNIVERSE",
+  "survivorshipStatus": "NOT_FULLY_RESOLVED",
+  "fullHistoricalTop500Certification": false,
+  "universeDataQualityScore": 0.948,
+  "universeSizeStatistics": {
+    "min": 0,
+    "max": 24,
+    "median": 24.0,
+    "mean": 22.818181818181817,
+    "sampleCount": 22
+  },
+  "universeChurn": {
+    "totalEntries": 1,
+    "totalExits": 0,
+    "membershipChanges": 1
+  },
+  "exclusionStatistics": {
+    "NOT_LISTED": 2,
+    "DELISTED": 11,
+    "ILLIQUID": 0,
+    "DATA_UNAVAILABLE": 11,
+    "MISSING_HISTORY": 24
+  },
+  "economicImpact": {
+    "currentSurvivorUniverse": {
+      "cagr": -0.57,
+      "sharpe": -0.52,
+      "totalTrades": 498,
+      "maxDrawdown": -14.99
+    },
+    "pointInTimeUniverse": {
+      "cagr": -0.57,
+      "sharpe": -0.52,
+      "totalTrades": 498,
+      "maxDrawdown": -14.99
+    },
+    "deltaCagr": 0.0,
+    "deltaSharpe": 0.0,
+    "survivorshipSensitivity": "LOW",
+    "authoritativeResult": "POINT_IN_TIME_UNIVERSE"
+  },
+  "governance": {
+    "listingRuleEnforced": "listingDate <= signalTimestamp",
+    "delistingRuleEnforced": "signalTimestamp < delistingDate",
+    "zeroLookaheadVerified": true,
+    "retroactiveCurrentUniverseUsageBlocked": true
+  }
+}

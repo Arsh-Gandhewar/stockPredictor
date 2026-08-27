@@ -47,6 +47,11 @@ from research.research_partition_guard import (
     HoldoutMutationError,
     TestSelectionLockError
 )
+from models.universe_engine import (
+    HistoricalUniverseEngine,
+    HistoricalUniverseRecord,
+    UNIVERSE_VERSION
+)
 
 def evaluate_trade_ohlc_path(
     entry_price: float,
@@ -162,7 +167,8 @@ def run_portfolio_backtest(
     execution_cost_config: Optional[Any] = None,
     cost_buffer: float = 0.0,
     enforce_liquidity_cap: bool = False,
-    partition: Optional[str] = None
+    partition: Optional[str] = None,
+    universe_engine: Optional[Any] = None
 ) -> Dict[str, Any]:
     """
     Executes a portfolio backtest tracking daily cash, open positions, marked-to-market equity,
@@ -265,6 +271,15 @@ def run_portfolio_backtest(
     if not unique_dates:
         return {'strategyMode': strategy_mode, 'totalTrades': 0, 'winRate': 0.0, 'cagr': 0.0, 'sharpe': 0.0, 'maxDrawdown': 0.0}
         
+    if universe_engine is None and historical_candles_by_ticker:
+        lookback = 20 if len(unique_dates) >= 20 else 1
+        thresh = 1_000_000.0 if len(unique_dates) >= 20 else 100.0
+        universe_engine = HistoricalUniverseEngine(
+            historical_candles_by_ticker=historical_candles_by_ticker,
+            adv_lookback_days=lookback,
+            min_adv_threshold=thresh
+        )
+
     cash = float(initial_cash)
     open_positions: List[Dict[str, Any]] = []
     completed_trades: List[Dict[str, Any]] = []
@@ -292,6 +307,12 @@ def run_portfolio_backtest(
     for current_date in unique_dates:
         start_of_day_cash = cash
         date_str = str(current_date)[:10]
+        
+        # Point-in-Time Universe Snapshot & Hash (Repair #8, Section 34 & 35)
+        current_universe_hash = ""
+        if universe_engine is not None:
+            pit_recs = universe_engine.get_eligible_securities(date_str, candles_dict=historical_candles_by_ticker)
+            current_universe_hash = universe_engine.compute_universe_hash(date_str, pit_recs)
         
         # Determine Point-in-Time Regime (Section 3 & 4)
         active_regime = 'SIDEWAYS'
@@ -514,6 +535,8 @@ def run_portfolio_backtest(
                     'regimeRiskBudget': float(pos.get('regimeRiskBudget', 0.01)),
                     'regimeEVThreshold': float(pos.get('regimeEVThreshold', 1.0)),
                     'selectedHoldingPeriod': int(pos.get('selectedHoldingPeriod', horizon_days)),
+                    'universeVersion': pos.get('universeVersion') or (getattr(universe_engine, 'universe_version', UNIVERSE_VERSION) if universe_engine else UNIVERSE_VERSION),
+                    'universeHash': pos.get('universeHash', ''),
                 }
                 
                 if 'payoffProfile' in pos:
@@ -701,6 +724,8 @@ def run_portfolio_backtest(
                             'regimeRiskBudget': float(worst_pos.get('regimeRiskBudget', 0.01)),
                             'regimeEVThreshold': float(worst_pos.get('regimeEVThreshold', 1.0)),
                             'selectedHoldingPeriod': int(worst_pos.get('selectedHoldingPeriod', horizon_days)),
+                            'universeVersion': worst_pos.get('universeVersion') or (getattr(universe_engine, 'universe_version', UNIVERSE_VERSION) if universe_engine else UNIVERSE_VERSION),
+                            'universeHash': worst_pos.get('universeHash', ''),
                         }
                         if 'payoffProfile' in worst_pos:
                             for k in ['payoffProfile', 'expectedGain', 'expectedLoss', 'distributionVersion', 'distributionFitStart', 'distributionFitEnd', 'horizon', 'sampleCount', 'p15', 'p50', 'p85', 'p_up', 'P_UP', 'p_down', 'ev_before_cost', 'ev_after_cost', 'EV', 'riskAdjustedEV', 'expectedRisk']:
@@ -936,6 +961,8 @@ def run_portfolio_backtest(
                 'regimeRiskBudget': float(effective_risk_budget),
                 'regimeEVThreshold': float(current_regime_policy.evThresholdMultiplier if current_regime_policy else 1.0),
                 'selectedHoldingPeriod': int(current_regime_policy.holdingPeriod if (current_regime_policy and current_regime_policy.holdingPeriod is not None) else horizon_days),
+                'universeVersion': getattr(universe_engine, 'universe_version', UNIVERSE_VERSION) if universe_engine else UNIVERSE_VERSION,
+                'universeHash': current_universe_hash,
             }
             if payoff_profile is not None:
                 pos_record['payoffProfile'] = payoff_profile.to_dict()
@@ -977,7 +1004,8 @@ def run_portfolio_backtest(
                 horizon_days=horizon_days,
                 round_trip_cost=round_trip_cost,
                 minimum_decision_margin=minimum_decision_margin,
-                regime='SIDEWAYS'
+                regime=active_regime,
+                universe_engine=universe_engine
             )
             for opp in opp_table:
                 opportunity_ledger.append(opp.to_dict())
@@ -1306,5 +1334,7 @@ def run_portfolio_backtest(
         'cashOpportunityLedger': cash_opportunity_ledger,
         'reconciliationReport': reconciliation_report,
         'regimeAttribution': regime_attribution,
+        'universeVersion': getattr(universe_engine, 'universe_version', UNIVERSE_VERSION) if universe_engine else UNIVERSE_VERSION,
+        'universeHash': current_universe_hash or '',
     }
 
