@@ -16,6 +16,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from quant_governance_config import MIN_RETURN_BUCKET_SAMPLE_COUNT, MIN_TAIL_SAMPLE_COUNT
 from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibration
 from models.conditional_returns import ConditionalReturnEngine, verify_causal_invariance, LeakageError, HorizonMismatchError
+from models.return_magnitude_model import ReturnMagnitudeEngine
 from universe import TICKER_SECTOR_MAP
 
 LIGHTGBM_PARAMS = {
@@ -247,6 +248,24 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             prior_history_df['pred_prob'] = prior_history_df['calibratedProbability']
             prior_history_df['predictionTimestamp'] = [str(d)[:10] for d in prior_history_df.index]
             fit_res = fold_cond_engine.fit_horizon_causal(horizon_str, prior_history_df, t_start_str)
+            
+        # Fit Point-in-Time Machine-Learned Return Magnitude & Downside Quantile Engine (Repair #3)
+        ret_target_col = f'actual_net_return_{horizon_str}'
+        if ret_target_col not in prior_history_df.columns:
+            ret_target_col = f'future_net_ret_{h_days}d'
+        if ret_target_col not in prior_history_df.columns:
+            ret_target_col = net_return_col
+            
+        fold_return_engine = ReturnMagnitudeEngine(horizon_str=horizon_str)
+        if not prior_history_df.empty and ret_target_col in prior_history_df.columns:
+            fold_return_engine.fit(
+                X_train=prior_history_df[features],
+                y_returns=prior_history_df[ret_target_col],
+                fit_end_timestamp=t_start_str,
+                features=features
+            )
+            
+        test_ret_preds = fold_return_engine.predict(test_df[features], t_start_str) if fold_return_engine.is_fitted else None
         
         # 6. Populate OOS Prediction Ledger with Provenance and Attached Conditional Return Estimates
         for idx, (dt, raw_p, cal_p, y_val_actual) in enumerate(zip(test_df.index, test_raw_prob, test_cal_prob, y_test)):
@@ -261,7 +280,18 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             reg = row.get('regime', 'SIDEWAYS') if 'regime' in row else 'SIDEWAYS'
             dist = fold_cond_engine.get_distribution(horizon_str, cal_p, reg)
             
-            if dist['method'] != 'INSUFFICIENT_DATA' and dist['sampleCount'] >= MIN_RETURN_BUCKET_SAMPLE_COUNT:
+            # Repair #3: Prefer Point-in-Time Supervised Model Predictions, Fallback to Empirical Distribution
+            if test_ret_preds is not None and test_ret_preds['method'] == 'SUPERVISED_LIGHTGBM_QUANTILE':
+                p15 = float(test_ret_preds['p15'][idx])
+                p50 = float(test_ret_preds['p50'][idx])
+                p85 = float(test_ret_preds['p85'][idx])
+                cond_gain = float(test_ret_preds['conditional_gain'][idx])
+                cond_loss = float(test_ret_preds['conditional_loss'][idx])
+                ret_method = 'SUPERVISED_LIGHTGBM_QUANTILE'
+                ret_samples = fold_return_engine.sample_count
+                fit_start_ts = fold_return_engine.fit_start
+                fit_end_ts = fold_return_engine.fit_end
+            elif dist['method'] != 'INSUFFICIENT_DATA' and dist['sampleCount'] >= MIN_RETURN_BUCKET_SAMPLE_COUNT:
                 p15 = dist['p15']
                 p50 = dist['p50']
                 p85 = dist['p85']
@@ -394,12 +424,29 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             'status': 'FROZEN_HOLDOUT_VERIFIED'
         }
         
+    # 7b. Fit Final Production Return Magnitude Engine on strictly partitioned pre-holdout data
+    ret_target_col = f'actual_net_return_{horizon_str}'
+    if ret_target_col not in prod_train_df.columns:
+        ret_target_col = f'future_net_ret_{h_days}d'
+    if ret_target_col not in prod_train_df.columns:
+        ret_target_col = net_return_col
+        
+    prod_return_engine = ReturnMagnitudeEngine(horizon_str=horizon_str)
+    if ret_target_col in prod_train_df.columns:
+        prod_return_engine.fit(
+            X_train=prod_train_df[features],
+            y_returns=prod_train_df[ret_target_col],
+            fit_end_timestamp=str(holdout_bounds['start'])[:10],
+            features=features
+        )
+        
     return {
         'horizon': horizon_str,
         'prod_model': prod_model,
         'prod_calibrator': prod_calibrator,
         'prod_calib_knots': prod_calib_res['knots'],
         'prod_calib_status': prod_calib_res['status'],
+        'prod_return_engine': prod_return_engine,
         'fold_metrics': fold_metrics,
         'oos_predictions_df': oos_df,
         'val_predictions': final_calib_preds,
