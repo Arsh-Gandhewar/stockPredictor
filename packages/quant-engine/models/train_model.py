@@ -13,10 +13,15 @@ from typing import Dict, List, Tuple, Any
 from sklearn.metrics import brier_score_loss, log_loss, roc_auc_score, accuracy_score
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-from quant_governance_config import MIN_RETURN_BUCKET_SAMPLE_COUNT, MIN_TAIL_SAMPLE_COUNT
+from quant_governance_config import (
+    MIN_RETURN_BUCKET_SAMPLE_COUNT,
+    MIN_TAIL_SAMPLE_COUNT,
+    BASE_ROUND_TRIP_FRICTION
+)
 from calibration.calibrate import fit_isotonic_calibrator, evaluate_test_calibration
 from models.conditional_returns import ConditionalReturnEngine, verify_causal_invariance, LeakageError, HorizonMismatchError
 from models.return_magnitude_model import ReturnMagnitudeEngine
+from models.downside_model import DownsideModel
 from universe import TICKER_SECTOR_MAP
 
 LIGHTGBM_PARAMS = {
@@ -267,6 +272,18 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             
         test_ret_preds = fold_return_engine.predict(test_df[features], t_start_str) if fold_return_engine.is_fitted else None
         
+        # Fit Point-in-Time Downside Model (Section 27-29)
+        fold_downside_model = DownsideModel(horizon_str=horizon_str)
+        if not prior_history_df.empty and ret_target_col in prior_history_df.columns:
+            fold_downside_model.fit(
+                X_train=prior_history_df[features],
+                y_returns=prior_history_df[ret_target_col],
+                fit_end_timestamp=t_start_str,
+                features=features
+            )
+            
+        test_downside_preds = fold_downside_model.predict(test_df[features], t_start_str) if fold_downside_model.is_fitted else None
+        
         # 6. Populate OOS Prediction Ledger with Provenance and Attached Conditional Return Estimates
         for idx, (dt, raw_p, cal_p, y_val_actual) in enumerate(zip(test_df.index, test_raw_prob, test_cal_prob, y_test)):
             row = test_df.iloc[idx]
@@ -280,21 +297,31 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             reg = row.get('regime', 'SIDEWAYS') if 'regime' in row else 'SIDEWAYS'
             dist = fold_cond_engine.get_distribution(horizon_str, cal_p, reg)
             
-            # Repair #3: Prefer Point-in-Time Supervised Model Predictions, Fallback to Empirical Distribution
-            if test_ret_preds is not None and test_ret_preds['method'] == 'SUPERVISED_LIGHTGBM_QUANTILE':
+            # Prefer Supervised Quantiles, Fallback to Empirical Distribution
+            if test_ret_preds is not None and test_ret_preds['method'].startswith('SUPERVISED'):
+                p10 = float(test_ret_preds['p10'][idx])
                 p15 = float(test_ret_preds['p15'][idx])
+                p25 = float(test_ret_preds['p25'][idx])
                 p50 = float(test_ret_preds['p50'][idx])
+                p75 = float(test_ret_preds['p75'][idx])
                 p85 = float(test_ret_preds['p85'][idx])
-                cond_gain = float(test_ret_preds['conditional_gain'][idx])
-                cond_loss = float(test_ret_preds['conditional_loss'][idx])
-                ret_method = 'SUPERVISED_LIGHTGBM_QUANTILE'
+                p90 = float(test_ret_preds['p90'][idx])
+                exp_ret = float(test_ret_preds['expected_return'][idx]) if test_ret_preds['expected_return'][idx] is not None else None
+                cond_gain = float(test_ret_preds['conditional_gain'][idx]) if test_ret_preds['conditional_gain'][idx] is not None else None
+                cond_loss = float(test_ret_preds['conditional_loss'][idx]) if test_ret_preds['conditional_loss'][idx] is not None else None
+                ret_method = test_ret_preds['method']
                 ret_samples = fold_return_engine.sample_count
                 fit_start_ts = fold_return_engine.fit_start
                 fit_end_ts = fold_return_engine.fit_end
             elif dist['method'] != 'INSUFFICIENT_DATA' and dist['sampleCount'] >= MIN_RETURN_BUCKET_SAMPLE_COUNT:
+                p10 = dist.get('p10')
                 p15 = dist['p15']
+                p25 = dist.get('p25')
                 p50 = dist['p50']
+                p75 = dist.get('p75')
                 p85 = dist['p85']
+                p90 = dist.get('p90')
+                exp_ret = p50
                 cond_gain = dist['conditional_gain'] if dist.get('conditional_gain') is not None else p85
                 cond_loss = dist['conditional_loss'] if dist.get('conditional_loss') is not None else (abs(p15) if p15 is not None else None)
                 ret_method = dist['method']
@@ -302,9 +329,8 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
                 fit_start_ts = dist.get('fittedStart') or fit_res.get('actualFitStart')
                 fit_end_ts = dist.get('fitEndTimestamp') or dist.get('fittedEnd') or fit_res.get('actualFitEnd')
             else:
-                p15 = None
-                p50 = None
-                p85 = None
+                p10 = p15 = p25 = p50 = p75 = p85 = p90 = None
+                exp_ret = None
                 cond_gain = None
                 cond_loss = None
                 ret_method = 'INSUFFICIENT_DATA'
@@ -316,13 +342,31 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
             if fit_end_ts:
                 verify_causal_invariance(dt_str, fit_end_ts)
                 
+            # Section 23: Expected Value calculation
+            if cond_gain is not None and cond_loss is not None:
+                gross_ev = float(round(cal_p * cond_gain - (1.0 - cal_p) * cond_loss, 5))
+                net_ev = float(round(gross_ev - BASE_ROUND_TRIP_FRICTION, 5))
+            else:
+                gross_ev = None
+                net_ev = None
+                
+            risk_val = float(round(abs(p15), 5)) if p15 is not None else None
+            
+            # Downside Tail Probabilities (Section 29)
+            p_loss_1 = float(test_downside_preds['p_loss_1pct'][idx]) if test_downside_preds and test_downside_preds['p_loss_1pct'][idx] is not None else None
+            p_loss_2 = float(test_downside_preds['p_loss_2pct'][idx]) if test_downside_preds and test_downside_preds['p_loss_2pct'][idx] is not None else None
+            p_loss_5 = float(test_downside_preds['p_loss_5pct'][idx]) if test_downside_preds and test_downside_preds['p_loss_5pct'][idx] is not None else None
+            p_loss_10 = float(test_downside_preds['p_loss_10pct'][idx]) if test_downside_preds and test_downside_preds['p_loss_10pct'][idx] is not None else None
+                
             rec = {
                 'predictionTimestamp': dt_str,
+                'timestamp': dt_str,
                 'ticker': ticker_sym,
                 'sector': row.get('sector', TICKER_SECTOR_MAP.get(ticker_sym, 'UNKNOWN')),
                 'horizon': horizon_str,
                 'rawProbability': float(round(raw_p, 4)),
                 'calibratedProbability': float(round(cal_p, 4)),
+                'directionProbability': float(round(cal_p, 4)),
                 'pred_prob': float(round(cal_p, 4)),
                 'target_outcome': int(y_val_actual),
                 'actual_net_return': float(round(row.get(net_return_col, 0.0), 5)),
@@ -334,20 +378,37 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
                 'Low': float(row['Low']) if 'Low' in row and not pd.isna(row['Low']) else None,
                 'Volume': float(row['Volume']) if 'Volume' in row and not pd.isna(row['Volume']) else None,
                 'atr_percent': float(row['atr_percent']) if 'atr_percent' in row and not pd.isna(row['atr_percent']) and float(row['atr_percent']) > 0 else None,
+                'expectedReturn': exp_ret,
+                'expectedGain': cond_gain,
+                'expectedLoss': cond_loss,
                 'conditional_gain': cond_gain,
                 'conditional_loss': cond_loss,
+                'p10': p10,
                 'p15': p15,
+                'p25': p25,
                 'p50': p50,
+                'p75': p75,
                 'p85': p85,
+                'p90': p90,
                 'return_p15': p15,
                 'return_p50': p50,
                 'return_p85': p85,
+                'EV': gross_ev,
+                'netEV': net_ev,
+                'risk': risk_val,
+                'p_loss_1pct': p_loss_1,
+                'p_loss_2pct': p_loss_2,
+                'p_loss_5pct': p_loss_5,
+                'p_loss_10pct': p_loss_10,
                 'returnEstimateMethod': ret_method,
                 'returnEstimateSampleCount': ret_samples,
                 'distributionFitStart': fit_start_ts,
                 'distributionFitEnd': fit_end_ts,
                 'distributionFitEndTimestamp': fit_end_ts,
+                'fitEnd': fit_end_ts,
                 'distributionVersion': 'v5.0.0-fold-causal',
+                'returnModelVersion': 'v5.0.0-supervised-quantile',
+                'calibrationVersion': 'isotonic_oos_v5',
                 'modelVersion': '5.0.0',
                 'foldId': int(fold['fold']),
                 'trainEnd': t_end_str,

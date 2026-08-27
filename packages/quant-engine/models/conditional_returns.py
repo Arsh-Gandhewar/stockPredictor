@@ -96,9 +96,13 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
     if n < MIN_RETURN_BUCKET_SAMPLE_COUNT:
         return {
             'sampleCount': n,
+            'p10': None,
             'p15': None,
+            'p25': None,
             'p50': None,
+            'p75': None,
             'p85': None,
+            'p90': None,
             'mean': None,
             'median': None,
             'std': None,
@@ -117,9 +121,18 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
             'method': 'INSUFFICIENT_DATA'
         }
         
+    p10 = float(round(np.percentile(returns, 10), 4))
     p15 = float(round(np.percentile(returns, 15), 4))
+    p25 = float(round(np.percentile(returns, 25), 4))
     p50 = float(round(np.percentile(returns, 50), 4))
+    p75 = float(round(np.percentile(returns, 75), 4))
     p85 = float(round(np.percentile(returns, 85), 4))
+    p90 = float(round(np.percentile(returns, 90), 4))
+
+    # Section 16 & 60: Strict non-crossing quantile invariant
+    if not (p10 <= p15 <= p25 <= p50 <= p75 <= p85 <= p90):
+        raise LeakageError(f"QUANTILE_INVALID: Crossing quantiles detected [{p10}, {p15}, {p25}, {p50}, {p75}, {p85}, {p90}]")
+
     mean_val = float(round(np.mean(returns), 4))
     median_val = float(round(np.median(returns), 4))
     std_val = float(round(np.std(returns, ddof=1) if n > 1 else 0.0, 4))
@@ -128,16 +141,20 @@ def compute_distribution_metrics(returns: np.ndarray, method_name: str, start_da
     
     pos_ret = returns[returns > 0]
     neg_ret = returns[returns < 0]
-    cond_gain = float(round(np.mean(pos_ret), 4)) if len(pos_ret) > 0 else p85
-    cond_loss = float(round(abs(np.mean(neg_ret)), 4)) if len(neg_ret) > 0 else abs(p15)
+    cond_gain = float(round(np.mean(pos_ret), 4)) if len(pos_ret) >= 100 else (p85 if n >= 100 else None)
+    cond_loss = float(round(abs(np.mean(neg_ret)), 4)) if len(neg_ret) >= 100 else (abs(p15) if n >= 100 else None)
     
     boot_res = calculate_block_bootstrap(returns)
     
     return {
         'sampleCount': n,
+        'p10': p10,
         'p15': p15,
+        'p25': p25,
         'p50': p50,
+        'p75': p75,
         'p85': p85,
+        'p90': p90,
         'mean': mean_val,
         'median': median_val,
         'std': std_val,
@@ -340,9 +357,13 @@ class ConditionalReturnEngine:
         # 5. Strictly Insufficient Data (Zero fabricated numbers)
         return {
             'sampleCount': 0,
+            'p10': None,
             'p15': None,
+            'p25': None,
             'p50': None,
+            'p75': None,
             'p85': None,
+            'p90': None,
             'mean': None,
             'median': None,
             'std': None,
