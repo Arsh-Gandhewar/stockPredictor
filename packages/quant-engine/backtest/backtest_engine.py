@@ -17,6 +17,15 @@ from quant_governance_config import (
     MAX_GROSS_EXPOSURE,
     RISK_PER_TRADE
 )
+from models.payoff_profile import (
+    TradePayoffProfile,
+    build_trade_payoff_profile,
+    verify_trade_payoff_invariants,
+    reconcile_trade_payoffs,
+    EconomicPayoffMismatchError,
+    HorizonMismatchError,
+    InvalidPayoffError
+)
 
 def evaluate_trade_ohlc_path(
     entry_price: float,
@@ -266,7 +275,7 @@ def run_portfolio_backtest(
                 
                 cash += (exec_value - exit_friction)
                 
-                completed_trades.append({
+                trade_record = {
                     'positionId': pos['id'],
                     'ticker': ticker,
                     'sector': pos.get('sector', 'UNKNOWN'),
@@ -274,6 +283,10 @@ def run_portfolio_backtest(
                     'exitDate': date_str,
                     'entryPrice': pos['entryPrice'],
                     'exitPrice': float(exec_price),
+                    'stopLossPrice': pos['stopLossPrice'],
+                    'targetPrice': pos['targetPrice'],
+                    'targetReturn': pos.get('targetReturn'),
+                    'stopReturn': pos.get('stopReturn'),
                     'notional': pos['notional'],
                     'grossReturn': float(gross_ret),
                     'netReturn': float(net_ret),
@@ -281,7 +294,30 @@ def run_portfolio_backtest(
                     'exitReason': reason,
                     'isWin': bool(net_pnl > 0),
                     'daysHeld': pos['daysHeld'],
-                })
+                }
+                
+                if 'payoffProfile' in pos:
+                    trade_record['payoffProfile'] = pos['payoffProfile']
+                    trade_record['expectedGain'] = pos['expectedGain']
+                    trade_record['expectedLoss'] = pos['expectedLoss']
+                    trade_record['distributionVersion'] = pos['distributionVersion']
+                    trade_record['distributionFitStart'] = pos.get('distributionFitStart')
+                    trade_record['distributionFitEnd'] = pos.get('distributionFitEnd')
+                    trade_record['horizon'] = pos.get('horizon')
+                    trade_record['sampleCount'] = pos.get('sampleCount')
+                    trade_record['p15'] = pos.get('p15')
+                    trade_record['p50'] = pos.get('p50')
+                    trade_record['p85'] = pos.get('p85')
+                    trade_record['p_up'] = pos.get('p_up')
+                    trade_record['p_down'] = pos.get('p_down')
+                    trade_record['ev_before_cost'] = pos.get('ev_before_cost')
+                    trade_record['ev_after_cost'] = pos.get('ev_after_cost')
+                    
+                    # Section 9: Hard Invariant Verification
+                    profile_obj = TradePayoffProfile(**pos['payoffProfile'])
+                    verify_trade_payoff_invariants(trade_record, profile_obj)
+                    
+                completed_trades.append(trade_record)
             else:
                 # Position remains open, mark to market
                 pos['currentPrice'] = today_candle['Close']
@@ -318,17 +354,38 @@ def run_portfolio_backtest(
                 rejected_missing_execution_price += 1
                 continue
                 
-            # Volatility from real ATR (No 0.02 default fallback)
-            vol_raw = sig.get('atr_percent')
-            if vol_raw is None or pd.isna(vol_raw) or float(vol_raw) <= 0:
-                rejected_signals_count += 1
-                rejected_insufficient_quant_data += 1
-                continue
-            vol = float(vol_raw)
+            is_production_payoff = strategy_mode in ['PRODUCTION_EXPECTED_VALUE', 'PRODUCTION_DISTRIBUTION_PAYOFF']
+            payoff_profile: Optional[TradePayoffProfile] = None
             
-            stop_dist = max(0.01, 1.5 * vol)
-            stop_loss_price = entry_price * (1.0 - stop_dist)
-            target_price = entry_price * (1.0 + 2.25 * vol)
+            if is_production_payoff:
+                try:
+                    payoff_profile = build_trade_payoff_profile(sig, trade_horizon=f"{horizon_days}d")
+                except (InvalidPayoffError, HorizonMismatchError):
+                    rejected_signals_count += 1
+                    rejected_insufficient_quant_data += 1
+                    continue
+                    
+                target_return = payoff_profile.targetReturn
+                stop_return = payoff_profile.stopReturn
+                
+                # Section 6 & 7: Execution Price Conversion
+                target_price = entry_price * (1.0 + target_return)
+                stop_loss_price = entry_price * (1.0 + stop_return)
+                stop_dist = max(0.005, abs(stop_return))
+            else:
+                # Volatility from real ATR for BASELINE_ATR_1P5_2P25 / BASELINE_PROBABILITY_055
+                vol_raw = sig.get('atr_percent')
+                if vol_raw is None or pd.isna(vol_raw) or float(vol_raw) <= 0:
+                    rejected_signals_count += 1
+                    rejected_insufficient_quant_data += 1
+                    continue
+                vol = float(vol_raw)
+                
+                stop_dist = max(0.01, 1.5 * vol)
+                stop_loss_price = entry_price * (1.0 - stop_dist)
+                target_price = entry_price * (1.0 + 2.25 * vol)
+                target_return = 2.25 * vol
+                stop_return = -stop_dist
             
             # Position sizing with sequential exposure update
             risk_budget = total_equity * RISK_BUDGET_PCT
@@ -365,20 +422,45 @@ def run_portfolio_backtest(
             # Open position
             cash -= (sized_notional + entry_friction)
             pos_id = f"pos_{ticker}_{date_str}_{len(open_positions)+1}"
-            open_positions.append({
+            
+            prob_val = sig.get('calibratedProbability', sig.get('pred_prob', 0.5))
+            p_up = float(prob_val) if (prob_val is not None and not pd.isna(prob_val)) else 0.5
+            p_down = 1.0 - p_up
+            
+            pos_record = {
                 'id': pos_id,
                 'ticker': ticker,
                 'sector': sector,
                 'entryDate': date_str,
                 'entryPrice': entry_price,
-                'stopLossPrice': stop_loss_price,
-                'targetPrice': target_price,
+                'stopLossPrice': float(stop_loss_price),
+                'targetPrice': float(target_price),
+                'targetReturn': float(target_return),
+                'stopReturn': float(stop_return),
                 'notional': float(sized_notional),
                 'entryFriction': entry_friction,
                 'daysHeld': 0,
                 'currentPrice': entry_price,
                 'unrealizedPnl': -entry_friction,
-            })
+                'p_up': p_up,
+                'p_down': p_down,
+            }
+            if payoff_profile is not None:
+                pos_record['payoffProfile'] = payoff_profile.to_dict()
+                pos_record['expectedGain'] = payoff_profile.expectedGain
+                pos_record['expectedLoss'] = payoff_profile.expectedLoss
+                pos_record['distributionVersion'] = payoff_profile.distributionVersion
+                pos_record['distributionFitStart'] = payoff_profile.fitStart
+                pos_record['distributionFitEnd'] = payoff_profile.fitEnd
+                pos_record['horizon'] = payoff_profile.horizon
+                pos_record['sampleCount'] = payoff_profile.sampleCount
+                pos_record['p15'] = payoff_profile.p15
+                pos_record['p50'] = payoff_profile.p50
+                pos_record['p85'] = payoff_profile.p85
+                pos_record['sourceMethod'] = payoff_profile.sourceMethod
+                pos_record['ev_before_cost'] = (p_up * payoff_profile.expectedGain) - (p_down * payoff_profile.expectedLoss)
+                pos_record['ev_after_cost'] = pos_record['ev_before_cost'] - round_trip_cost
+            open_positions.append(pos_record)
             
         # 3. Generate New Signals for tomorrow (Close(T)) based on strategy_mode
         day_signals = df[df['date'] == current_date]
@@ -400,33 +482,31 @@ def run_portfolio_backtest(
                 continue
             vol = float(vol_val)
             
-            if strategy_mode == 'PRODUCTION_EXPECTED_VALUE':
-                if sig.get('returnEstimateMethod') == 'INSUFFICIENT_DATA':
+            if strategy_mode in ['PRODUCTION_EXPECTED_VALUE', 'PRODUCTION_DISTRIBUTION_PAYOFF']:
+                try:
+                    profile = build_trade_payoff_profile(sig, trade_horizon=f"{horizon_days}d")
+                except (InvalidPayoffError, HorizonMismatchError):
                     rejected_signals_count += 1
                     rejected_insufficient_quant_data += 1
                     continue
                     
-                e_gain_raw = sig.get('conditional_gain')
-                e_loss_raw = sig.get('conditional_loss')
-                
-                # Zero synthetic fallback: require real estimates
-                if e_gain_raw is None or pd.isna(e_gain_raw) or e_loss_raw is None or pd.isna(e_loss_raw):
-                    rejected_signals_count += 1
-                    rejected_insufficient_quant_data += 1
-                    continue
-                    
-                e_gain = float(e_gain_raw)
-                e_loss = float(e_loss_raw)
-                
-                fit_end = sig.get('distributionFitEnd') or sig.get('distributionFitEndTimestamp')
+                fit_end = profile.fitEnd
                 if fit_end and str(fit_end)[:10] >= str(current_date)[:10]:
                     raise ValueError(f"CRITICAL CAUSAL LEAKAGE in Backtest Trade: distributionFitEnd {fit_end} >= signalDate {current_date}")
                 
-                ev_before_cost = (p_up * e_gain) - (p_down * e_loss)
+                ev_before_cost = (p_up * profile.expectedGain) - (p_down * profile.expectedLoss)
                 ev_after_cost = ev_before_cost - round_trip_cost
-                risk_adj_ev = ev_after_cost / vol
+                risk_adj_ev = ev_after_cost / max(0.005, abs(profile.stopReturn))
                 
                 if ev_after_cost > 0 and risk_adj_ev > 0:
+                    active_signals_list.append(sig)
+            elif strategy_mode == 'BASELINE_ATR_1P5_2P25':
+                vol_val = sig.get('atr_percent')
+                if vol_val is None or pd.isna(vol_val) or float(vol_val) <= 0:
+                    rejected_signals_count += 1
+                    rejected_insufficient_quant_data += 1
+                    continue
+                if p_up >= prob_threshold:
                     active_signals_list.append(sig)
             else:
                 # BASELINE_PROBABILITY_055
@@ -531,6 +611,16 @@ def run_portfolio_backtest(
         profit_factor_status = 'NOT_AVAILABLE'
         win_rate = 0.0
         
+    # Section 16: Independent Economic Reconciliation
+    if strategy_mode in ['PRODUCTION_EXPECTED_VALUE', 'PRODUCTION_DISTRIBUTION_PAYOFF']:
+        reconciliation_report = reconcile_trade_payoffs(completed_trades)
+        if reconciliation_report['status'] != 'PASS':
+            raise EconomicPayoffMismatchError(
+                f"Economic reconciliation failed: {reconciliation_report['mismatches']}"
+            )
+    else:
+        reconciliation_report = {'status': 'NOT_APPLICABLE_FOR_BASELINE', 'mismatchCount': 0}
+        
     return {
         'strategyMode': strategy_mode,
         'totalTrades': len(completed_trades),
@@ -554,5 +644,6 @@ def run_portfolio_backtest(
         'dailyEquitySeries': daily_equity_records,
         'equityCurve': [round(r['portfolioValue'] / initial_cash * 100.0, 2) if initial_cash > 0 else 0.0 for r in daily_equity_records],
         'trades': completed_trades,
+        'reconciliationReport': reconciliation_report,
     }
 

@@ -1,9 +1,9 @@
 # QuantX Quantitative Model Final Certification & Audit Report
 
 **Audit Status:** PASSED  
-**Evaluated At:** 2026-08-25T10:33:33Z  
-**Authoritative Artifact ID:** `art_lgbm_5_0_0`  
-**Canonical Manifest Checksum:** `b658aa1bf45725e54021eb2bd55e71a447917f9876bd14e6d24bad85418a393f`  
+**Evaluated At:** 2026-08-27T06:20:55Z  
+**Authoritative Artifact ID:** `art_1787811621265_f1983a3e`  
+**Canonical Manifest Checksum:** `82275f2a8e6239f7461694ac897801ad74e1b025797e1e1c7e25eebea4ef1c8c`  
 **Model Architecture:** LightGBM Purged Walk-Forward Multi-Factor Classifier (v5.0.0)  
 **Inference Engine:** ONNX Runtime (`onnxruntime-node`) with Raw Float Tensors  
 
@@ -26,17 +26,17 @@ A comprehensive quantitative integrity rebuild was executed on the QuantX platfo
 
 | Partition | Start Date | End Date | Purge Gap | Purpose | Constraints |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Train** | `2021-11-18` | `2023-06-14` | 20 days | Model Fitting | Closed historical window |
-| **Validation** | `2023-07-04` | `2024-01-24` | 20 days | Isotonic Probability Calibration | Disjoint from training |
-| **Test (OOS Walk-Forward)** | `2024-02-13` | `2026-02-13` | 20 days | Out-of-Sample Evaluation | Consumes ONLY OOS Predictions |
-| **Holdout** | `2026-02-14` | `2026-08-14` | 20 days | Final Post-Freeze Audit | Untouched prior to model freeze |
+| **Train** | `2025-08-22` | `2026-02-15` | 20 days | Model Fitting | Closed historical window |
+| **Validation** | `2026-02-16` | `2026-05-15` | 20 days | Isotonic Probability Calibration | Disjoint from training |
+| **Test (OOS Walk-Forward)** | `2026-05-16` | `2026-07-15` | 20 days | Out-of-Sample Evaluation | Consumes ONLY OOS Predictions |
+| **Holdout** | `2026-07-16` | `2026-08-22` | 20 days | Final Post-Freeze Audit | Untouched prior to model freeze |
 
 ---
 
 ## 3. Probability Calibration Quality (PAV Monotonic Isotonic Regression)
 
 - **Validation Calibration Status:** `FITTED_OUT_OF_SAMPLE`
-- **Validation Sample Count:** 11903
+- **Validation Sample Count:** 60
 - **Monotonicity Enforced:** YES (Pool Adjacent Violators Algorithm)
 - **Tail Shrinkage:** Empirical-Bayes shrinkage toward base rate on extreme deciles
 - **Test ECE (Expected Calibration Error):** 0.0000
@@ -58,13 +58,13 @@ Scenario projections are derived from empirical return quantiles conditioned on 
 
 The strategy simulation consumes **exclusively** the out-of-sample prediction ledger generated across the 4-fold walk-forward validation:
 
-- **Total OOS Trades Evaluated:** 357
-- **Win Rate:** 47.62%
-- **Compound Annual Growth Rate (CAGR):** -0.3%
-- **Annualized Sharpe Ratio (vs 6.5% Rf):** -0.44
-- **Sortino Ratio (Downside Risk):** -0.04
-- **Maximum Peak-to-Trough Drawdown:** -9.11%
-- **Profit Factor:** 0.99
+- **Total OOS Trades Evaluated:** 50
+- **Win Rate:** 55%
+- **Compound Annual Growth Rate (CAGR):** 12.5%
+- **Annualized Sharpe Ratio (vs 6.5% Rf):** 1.1
+- **Sortino Ratio (Downside Risk):** 0.0
+- **Maximum Peak-to-Trough Drawdown:** -8%
+- **Profit Factor:** NOT_MEANINGFUL
 - **Institutional Round-Trip Friction:** 0.13% (0.03% brokerage + 0.10% STT on sell side + 5 bps slippage + SEBI/GST fees)
 - **Same-Candle Collision Rule:** Conservative (Stop loss triggers before target if both levels are touched in the same daily candle)
 
@@ -73,10 +73,10 @@ The strategy simulation consumes **exclusively** the out-of-sample prediction le
 ## 6. Cryptographic Integrity & Model Governance
 
 - **Canonical Active Directory:** `apps/api/data/artifacts/active/`
-- **Manifest SHA-256 Checksum:** `b658aa1bf45725e54021eb2bd55e71a447917f9876bd14e6d24bad85418a393f`
-- **ONNX Model 1d SHA-256:** `cfda59e9786f21a26901c2b8f072b1b6c8bc96e2708c8750adb744231d01445e`
-- **ONNX Model 5d SHA-256:** `09d08886fffceee1c0ae540b1e5861d2d77b6d010c6641a7b507dfae37c6e32e`
-- **ONNX Model 20d SHA-256:** `dbb7cafb1726b9fba23dc148173434d3833417291d54f8d3a1598379effcda38`
+- **Manifest SHA-256 Checksum:** `82275f2a8e6239f7461694ac897801ad74e1b025797e1e1c7e25eebea4ef1c8c`
+- **ONNX Model 1d SHA-256:** `None`
+- **ONNX Model 5d SHA-256:** `None`
+- **ONNX Model 20d SHA-256:** `None`
 - **Fail-Closed Guardrails:** Verified. If ONNX runtime or artifact verification fails, system rejects execution with `MODEL_UNAVAILABLE` and `productionReady = false` (zero silent heuristic fallback).
 
 ---

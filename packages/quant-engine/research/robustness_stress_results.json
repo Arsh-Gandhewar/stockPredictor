@@ -1,0 +1,105 @@
+{
+  "evaluatedAt": "2026-08-25T10:51:15Z",
+  "strategyId": "CAND_09_TOP_1_HIGH_CONVICTION",
+  "costStress": [
+    {
+      "frictionBps": 10,
+      "roundTripCostPct": 0.1,
+      "status": "PASS"
+    },
+    {
+      "frictionBps": 13,
+      "roundTripCostPct": 0.13,
+      "status": "PASS"
+    },
+    {
+      "frictionBps": 20,
+      "roundTripCostPct": 0.2,
+      "status": "PASS"
+    },
+    {
+      "frictionBps": 30,
+      "roundTripCostPct": 0.3,
+      "status": "PASS"
+    },
+    {
+      "frictionBps": 50,
+      "roundTripCostPct": 0.5,
+      "status": "STRESSED"
+    }
+  ],
+  "slippageStress": [
+    {
+      "slippageBps": 0,
+      "status": "PASS"
+    },
+    {
+      "slippageBps": 5,
+      "status": "PASS"
+    },
+    {
+      "slippageBps": 10,
+      "status": "PASS"
+    },
+    {
+      "slippageBps": 20,
+      "status": "STRESSED"
+    }
+  ],
+  "parameterPerturbation": {
+    "ev_hurdle_minus_20pct": {
+      "cagr": 5.21,
+      "sharpe": 0.58,
+      "status": "STABLE"
+    },
+    "ev_hurdle_minus_10pct": {
+      "cagr": 5.42,
+      "sharpe": 0.61,
+      "status": "STABLE"
+    },
+    "ev_hurdle_base_0003": {
+      "cagr": 5.63,
+      "sharpe": 0.64,
+      "status": "OPTIMAL"
+    },
+    "ev_hurdle_plus_10pct": {
+      "cagr": 5.51,
+      "sharpe": 0.62,
+      "status": "STABLE"
+    },
+    "ev_hurdle_plus_20pct": {
+      "cagr": 5.15,
+      "sharpe": 0.55,
+      "status": "STABLE"
+    }
+  },
+  "regimeBreakdown": {
+    "BULL": {
+      "trades": 38,
+      "winRate": 63.16,
+      "pnlPct": 4.85,
+      "status": "HIGH_ALPHA"
+    },
+    "SIDEWAYS": {
+      "trades": 19,
+      "winRate": 52.63,
+      "pnlPct": 1.12,
+      "status": "MODERATE_ALPHA"
+    },
+    "BEAR": {
+      "trades": 4,
+      "winRate": 50.0,
+      "pnlPct": -0.34,
+      "status": "PROTECTED_BY_GATE"
+    },
+    "HIGH_VOLATILITY": {
+      "trades": 0,
+      "winRate": null,
+      "pnlPct": 0.0,
+      "status": "FILTERED_NO_ENTRY"
+    }
+  },
+  "robustnessScore": 88.5,
+  "parameterFragile": false,
+  "costFragile": false
+}

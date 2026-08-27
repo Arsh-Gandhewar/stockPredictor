@@ -238,7 +238,20 @@ def run_full_pipeline():
         strategy_mode='PRODUCTION_EXPECTED_VALUE'
     )
     print(f"Production EV Backtest: Win Rate={prod_backtest_res['winRate']}%, CAGR={prod_backtest_res['cagr']}%, Sharpe={prod_backtest_res['sharpe']}, MaxDD={prod_backtest_res['maxDrawdown']}%, Trades={prod_backtest_res['totalTrades']}")
+    print(f"Independent Payoff Reconciliation: Status={prod_backtest_res['reconciliationReport']['status']}, Reconciled={prod_backtest_res['reconciliationReport']['reconciledProductionTrades']}/{prod_backtest_res['totalTrades']}")
     
+    # Baseline Strategy: Fixed ATR Multipliers (BASELINE_ATR_1P5_2P25) (Section 11)
+    baseline_atr_res = run_portfolio_backtest(
+        predictions_df=oos_5d_df,
+        historical_candles_by_ticker=historical_candles_by_ticker,
+        horizon_days=5,
+        prob_threshold=0.55,
+        initial_cash=1_000_000.0,
+        cost_regime='BASE_COST',
+        strategy_mode='BASELINE_ATR_1P5_2P25'
+    )
+    print(f"Baseline ATR 1.5/2.25 Backtest: Win Rate={baseline_atr_res['winRate']}%, CAGR={baseline_atr_res['cagr']}%, Sharpe={baseline_atr_res['sharpe']}, MaxDD={baseline_atr_res['maxDrawdown']}%, Trades={baseline_atr_res['totalTrades']}")
+
     # Baseline Strategy: Probability >= 0.55
     baseline_backtest_res = run_portfolio_backtest(
         predictions_df=oos_5d_df,
