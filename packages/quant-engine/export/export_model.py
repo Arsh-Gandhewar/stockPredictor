@@ -9,6 +9,8 @@ import hashlib
 import onnxmltools
 from onnxmltools.convert.common.data_types import FloatTensorType
 from typing import Dict, Any, List, Optional
+from datetime import datetime, date
+import pandas as pd
 
 def canonicalize_json_dict(data: Any) -> Any:
     """
@@ -20,6 +22,10 @@ def canonicalize_json_dict(data: Any) -> Any:
         return [canonicalize_json_dict(x) for x in data]
     elif isinstance(data, float):
         return round(data, 6)
+    elif isinstance(data, (pd.Timestamp, datetime, date)):
+        return str(data)[:10]
+    elif hasattr(data, 'item'):
+        return data.item()
     else:
         return data
 
@@ -127,18 +133,20 @@ def export_artifacts(
     }
     
     # Compute recursive canonical checksum
-    checksum = compute_canonical_checksum(manifest)
+    manifest_clean = canonicalize_json_dict(manifest)
+    checksum = compute_canonical_checksum(manifest_clean)
+    manifest_clean["checksum"] = checksum
     manifest["checksum"] = checksum
     
     # Save canonical active artifact
     active_manifest_path = os.path.join(active_dir, 'model-artifact.json')
     with open(active_manifest_path, 'w', encoding='utf-8') as f:
-        json.dump(manifest, f, indent=2)
+        json.dump(manifest_clean, f, indent=2)
         
     # Save archival versioned copy
     version_manifest_path = os.path.join(versions_dir, f"{model_version}_{artifact_id}.json")
     with open(version_manifest_path, 'w', encoding='utf-8') as f:
-        json.dump(manifest, f, indent=2)
+        json.dump(manifest_clean, f, indent=2)
         
     # Section U: Reload active artifact and verify integrity
     with open(active_manifest_path, 'r', encoding='utf-8') as f:
@@ -157,4 +165,4 @@ def export_artifacts(
             raise ValueError(f"CRITICAL ONNX HASH MISMATCH for {h}: {actual_onnx_sha} != {onnx_meta['sha256']}")
             
     print(f"Canonical model artifact saved and verified at {active_manifest_path} (Checksum: {checksum[:12]}...)")
-    return manifest
+    return manifest_clean

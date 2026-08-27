@@ -139,6 +139,10 @@ def run_portfolio_backtest(
     max_sector_weight: float = MAX_SECTOR_WEIGHT,
     max_gross_exposure: float = MAX_GROSS_EXPOSURE,
     max_cluster_exposure: float = 0.50,
+    exit_policy: str = 'FIXED_HORIZON',
+    switch_margin: float = 0.002,
+    min_ev_exit_margin: float = 0.0,
+    exit_policy_version: str = 'v4.0.0-dynamic-exit',
     partition: Optional[str] = None
 ) -> Dict[str, Any]:
     """
@@ -146,6 +150,22 @@ def run_portfolio_backtest(
     and performance metrics strictly from the single authoritative daily equity curve.
     Supports cross-sectional ranking, risk-adjusted allocation, and legacy baselines.
     """
+    if partition in ['TEST', 'HOLDOUT'] and exit_policy != 'FIXED_HORIZON':
+        raise OptimizationLeakageError(f"CRITICAL LEAKAGE: Exit policy optimization attempted on {partition} partition!")
+
+    # Section 21 & 46: Lookahead penetration guard on input candles
+    if historical_candles_by_ticker:
+        for tkr, cdf in historical_candles_by_ticker.items():
+            if any(str(c).startswith('future_') for c in cdf.columns):
+                raise ValueError(f"CRITICAL CAUSAL LEAKAGE: Future data key detected in historical candles for {tkr}!")
+
+    # Section 23: Horizon Consistency Enforcement
+    if not predictions_df.empty and 'horizon' in predictions_df.columns and strategy_mode in ['PRODUCTION_EXPECTED_VALUE', 'PRODUCTION_DISTRIBUTION_PAYOFF']:
+        mismatched = predictions_df[predictions_df['horizon'].astype(str).str.lower().str.strip() != f"{horizon_days}d"]
+        if not mismatched.empty:
+            bad_h = mismatched.iloc[0]['horizon']
+            raise ValueError(f"HORIZON_POLICY_MISMATCH: Input prediction horizon '{bad_h}' does not match backtest horizon '{horizon_days}d'")
+
     cost_engine = TransactionCostEngine(cost_regime)
     round_trip_cost = cost_engine.calculate_round_trip_cost_rate()
     one_way_cost = round_trip_cost / 2.0
@@ -201,13 +221,18 @@ def run_portfolio_backtest(
     df.sort_values('date', inplace=True)
     
     # Construct complete trading calendar from historical data if available
-    unique_dates_set = set(df['date'].unique())
+    unique_dates_set = set(pd.to_datetime(d) for d in df['date'].unique())
     if historical_candles_by_ticker:
         for cdf in historical_candles_by_ticker.values():
-            unique_dates_set.update(cdf.index)
+            unique_dates_set.update(pd.to_datetime(d) for d in cdf.index)
             
     unique_dates = sorted(list(unique_dates_set))
-    min_date, max_date = df['date'].min(), df['date'].max()
+    min_date = pd.to_datetime(df['date'].min())
+    if historical_candles_by_ticker:
+        c_maxes = [pd.to_datetime(cdf.index).max() for cdf in historical_candles_by_ticker.values() if not cdf.empty]
+        max_date = max(c_maxes) if c_maxes else pd.to_datetime(df['date'].max())
+    else:
+        max_date = pd.to_datetime(df['date'].max())
     unique_dates = [d for d in unique_dates if min_date <= d <= max_date]
     
     if not unique_dates:
@@ -249,15 +274,23 @@ def run_portfolio_backtest(
             
             # Lookup today's candle for this ticker
             today_candle = None
-            if candles_df is not None and current_date in candles_df.index:
-                row = candles_df.loc[current_date]
-                today_candle = {
-                    'Open': float(row['Open']),
-                    'High': float(row['High']),
-                    'Low': float(row['Low']),
-                    'Close': float(row['Close']),
-                }
-            else:
+            if candles_df is not None:
+                row = None
+                if current_date in candles_df.index:
+                    row = candles_df.loc[current_date]
+                elif date_str in candles_df.index:
+                    row = candles_df.loc[date_str]
+                if row is not None:
+                    today_candle = {
+                        'Open': float(row['Open']),
+                        'High': float(row['High']),
+                        'Low': float(row['Low']),
+                        'Close': float(row['Close']),
+                    }
+                    for col in row.index:
+                        if str(col).startswith('future_'):
+                            today_candle[str(col)] = row[col]
+            if today_candle is None:
                 today_candle = {
                     'Open': pos['currentPrice'],
                     'High': pos['currentPrice'],
@@ -265,14 +298,31 @@ def run_portfolio_backtest(
                     'Close': pos['currentPrice'],
                 }
                 
+            # Section 21 & 46: Runtime assertion: No future knowledge in exit decisions
+            if any(str(k).startswith('future_') for k in today_candle.keys()):
+                raise ValueError("CRITICAL CAUSAL LEAKAGE: Future data accessed in exit decision!")
+                
             pos['daysHeld'] += 1
+            
+            # Section 17 & 18: Track running excursions for MAE / MFE
+            pos['maxHigh'] = max(pos.get('maxHigh', pos['entryPrice']), today_candle['High'])
+            pos['minLow'] = min(pos.get('minLow', pos['entryPrice']), today_candle['Low'])
             
             # Check Stop / Target on today's candle (STOP LOSS FIRST on same-candle collision)
             hit_stop = today_candle['Low'] <= pos['stopLossPrice']
             hit_target = today_candle['High'] >= pos['targetPrice']
-            is_horizon_expired = pos['daysHeld'] >= horizon_days
+            planned_h = pos.get('plannedHoldingDays', horizon_days)
+            is_horizon_expired = pos['daysHeld'] >= planned_h
             
-            if hit_stop or hit_target or is_horizon_expired:
+            # Section 14: EV Decay Exit Check
+            ev_decay_triggered = False
+            if exit_policy == 'EV_DECAY_EXIT' and pos['daysHeld'] >= 2:
+                decay_factor = max(0.0, 1.0 - (pos['daysHeld'] / planned_h))
+                ev_rem = (pos.get('EV') or 0.0) * decay_factor
+                if ev_rem <= min_ev_exit_margin:
+                    ev_decay_triggered = True
+            
+            if hit_stop or hit_target or is_horizon_expired or ev_decay_triggered:
                 if hit_stop and hit_target:
                     exec_price = min(today_candle['Open'], pos['stopLossPrice']) if today_candle['Open'] < pos['stopLossPrice'] else pos['stopLossPrice']
                     reason = 'STOP_LOSS_COLLISION'
@@ -282,6 +332,9 @@ def run_portfolio_backtest(
                 elif hit_target:
                     exec_price = max(today_candle['Open'], pos['targetPrice']) if today_candle['Open'] > pos['targetPrice'] else pos['targetPrice']
                     reason = 'TARGET_HIT'
+                elif ev_decay_triggered:
+                    exec_price = today_candle['Open']
+                    reason = 'EV_DECAY'
                 else:
                     exec_price = today_candle['Close']
                     reason = 'HORIZON_EXPIRY'
@@ -298,12 +351,19 @@ def run_portfolio_backtest(
                 market_val_now = sum(p['notional'] * (p['currentPrice'] / p['entryPrice']) for p in open_positions)
                 total_eq_now = cash + market_val_now
                 
+                # Excursion Metrics
+                mfe = (pos['maxHigh'] - pos['entryPrice']) / pos['entryPrice']
+                mae = (pos['minLow'] - pos['entryPrice']) / pos['entryPrice']
+                exit_efficiency = float(round(net_ret / mfe, 4)) if mfe > 0 else 0.0
+                max_realizable = (pos['maxHigh'] - pos['entryPrice']) * (pos['notional'] / pos['entryPrice'])
+                profit_captured = float(round(net_pnl / max_realizable, 4)) if max_realizable > 0 and net_pnl > 0 else 0.0
+                
                 trade_record = {
                     'positionId': pos['id'],
                     'tradeId': pos['id'],
                     'ticker': ticker,
                     'sector': pos.get('sector', 'UNKNOWN'),
-                    'signalTimestamp': pos['entryDate'],
+                    'signalTimestamp': pos.get('signalTimestamp', pos['entryDate']),
                     'entryTimestamp': pos['entryDate'],
                     'entryDate': pos['entryDate'],
                     'exitTimestamp': date_str,
@@ -330,6 +390,17 @@ def run_portfolio_backtest(
                     'exitReason': reason,
                     'isWin': bool(net_pnl > 0),
                     'daysHeld': pos['daysHeld'],
+                    'MAE': float(round(mae, 5)),
+                    'MFE': float(round(mfe, 5)),
+                    'exitEfficiency': exit_efficiency,
+                    'profitCaptured': profit_captured,
+                    'plannedHorizon': pos.get('plannedHorizon', f"{horizon_days}d"),
+                    'actualHoldingDays': pos['daysHeld'],
+                    'expectedEVAtEntry': pos.get('EV'),
+                    'expectedEVAtExit': (pos.get('EV') or 0.0) * max(0.0, 1.0 - (pos['daysHeld'] / planned_h)),
+                    'expectedReturnAtEntry': pos.get('expectedGain'),
+                    'expectedReturnAtExit': float(net_ret),
+                    'exitPolicyVersion': exit_policy_version,
                 }
                 
                 if 'payoffProfile' in pos:
@@ -379,25 +450,116 @@ def run_portfolio_backtest(
             total_equity = cash + market_value
             
             if len(open_positions) >= MAX_CONCURRENT_POSITIONS:
-                rejected_signals_count += 1
-                continue
+                # Section 15: Opportunity-cost exit evaluation
+                if exit_policy == 'OPPORTUNITY_COST_EXIT' and open_positions:
+                    worst_pos = min(open_positions, key=lambda p: (p.get('riskAdjustedEV') or 0.0))
+                    worst_ev = worst_pos.get('riskAdjustedEV') or 0.0
+                    cand_ev = sig.get('riskAdjustedEV') or sig.get('opportunityScore') or 0.0
+                    switch_cost = round_trip_cost
+                    if (cand_ev - worst_ev) > (switch_margin + switch_cost):
+                        # Switch: close worst position to free capital
+                        close_ticker = worst_pos['ticker']
+                        w_candles = historical_candles_by_ticker.get(close_ticker) if historical_candles_by_ticker else None
+                        close_price = worst_pos['currentPrice']
+                        if w_candles is not None and current_date in w_candles.index and not pd.isna(w_candles.loc[current_date]['Open']):
+                            close_price = float(w_candles.loc[current_date]['Open'])
+                            
+                        exec_val = worst_pos['notional'] * (close_price / worst_pos['entryPrice'])
+                        exit_frict = exec_val * one_way_cost
+                        close_pnl = exec_val - worst_pos['notional'] - exit_frict - worst_pos['entryFriction']
+                        cash += (exec_val - exit_frict)
+                        
+                        gross_ret = (close_price - worst_pos['entryPrice']) / worst_pos['entryPrice']
+                        net_ret = close_pnl / worst_pos['notional']
+                        mfe = (worst_pos.get('maxHigh', close_price) - worst_pos['entryPrice']) / worst_pos['entryPrice']
+                        mae = (worst_pos.get('minLow', close_price) - worst_pos['entryPrice']) / worst_pos['entryPrice']
+                        
+                        trade_record = {
+                            'positionId': worst_pos['id'],
+                            'tradeId': worst_pos['id'],
+                            'ticker': close_ticker,
+                            'sector': worst_pos.get('sector', 'UNKNOWN'),
+                            'signalTimestamp': worst_pos.get('signalTimestamp', worst_pos['entryDate']),
+                            'entryTimestamp': worst_pos['entryDate'],
+                            'entryDate': worst_pos['entryDate'],
+                            'exitTimestamp': date_str,
+                            'exitDate': date_str,
+                            'entryPrice': worst_pos['entryPrice'],
+                            'exitPrice': float(close_price),
+                            'stopLossPrice': worst_pos['stopLossPrice'],
+                            'targetPrice': worst_pos['targetPrice'],
+                            'targetReturn': worst_pos.get('targetReturn'),
+                            'stopReturn': worst_pos.get('stopReturn'),
+                            'notional': worst_pos['notional'],
+                            'portfolioWeight': round(worst_pos['notional'] / total_equity, 4) if total_equity > 0 else 0.0,
+                            'selectionRank': worst_pos.get('alphaRank'),
+                            'alphaRank': worst_pos.get('alphaRank'),
+                            'opportunityScore': worst_pos.get('opportunityScore'),
+                            'selectionReason': 'OPPORTUNITY_COST_SWITCH',
+                            'grossReturn': float(gross_ret),
+                            'netReturn': float(net_ret),
+                            'grossPnL': float(worst_pos['notional'] * gross_ret),
+                            'fees': float(worst_pos['entryFriction'] + exit_frict),
+                            'slippage': float(worst_pos['notional'] * 0.0005),
+                            'pnl': float(close_pnl),
+                            'netPnL': float(close_pnl),
+                            'exitReason': 'OPPORTUNITY_COST',
+                            'isWin': bool(close_pnl > 0),
+                            'daysHeld': worst_pos['daysHeld'],
+                            'MAE': float(round(mae, 5)),
+                            'MFE': float(round(mfe, 5)),
+                            'exitEfficiency': float(round(net_ret / mfe, 4)) if mfe > 0 else 0.0,
+                            'profitCaptured': 0.0,
+                            'plannedHorizon': worst_pos.get('plannedHorizon', f"{horizon_days}d"),
+                            'actualHoldingDays': worst_pos['daysHeld'],
+                            'expectedEVAtEntry': worst_pos.get('EV'),
+                            'expectedEVAtExit': worst_pos.get('ev_after_cost', 0.0),
+                            'expectedReturnAtEntry': worst_pos.get('expectedGain'),
+                            'expectedReturnAtExit': float(net_ret),
+                            'exitPolicyVersion': exit_policy_version,
+                        }
+                        if 'payoffProfile' in worst_pos:
+                            for k in ['payoffProfile', 'expectedGain', 'expectedLoss', 'distributionVersion', 'distributionFitStart', 'distributionFitEnd', 'horizon', 'sampleCount', 'p15', 'p50', 'p85', 'p_up', 'P_UP', 'p_down', 'ev_before_cost', 'ev_after_cost', 'EV', 'riskAdjustedEV', 'expectedRisk']:
+                                if k in worst_pos:
+                                    trade_record[k] = worst_pos[k]
+                        completed_trades.append(trade_record)
+                        open_positions = [p for p in open_positions if p['id'] != worst_pos['id']]
+                    else:
+                        rejected_signals_count += 1
+                        continue
+                else:
+                    rejected_signals_count += 1
+                    continue
                 
             if any(p['ticker'] == ticker for p in open_positions):
                 continue
                 
             # Entry at Open (No 100.0 default fallback)
             candles_df = historical_candles_by_ticker.get(ticker) if historical_candles_by_ticker else None
-            if candles_df is not None and current_date in candles_df.index and not pd.isna(candles_df.loc[current_date]['Open']):
-                entry_price = float(candles_df.loc[current_date]['Open'])
-            elif 'Open' in sig and sig['Open'] is not None and not pd.isna(sig['Open']) and float(sig['Open']) > 0:
-                entry_price = float(sig['Open'])
-            else:
-                rejected_signals_count += 1
-                rejected_missing_execution_price += 1
-                continue
+            entry_price = None
+            if candles_df is not None:
+                if any(str(c).startswith('future_') for c in candles_df.columns):
+                    raise ValueError("CRITICAL CAUSAL LEAKAGE: Future data accessed in trading candles!")
+                if current_date in candles_df.index and not pd.isna(candles_df.loc[current_date]['Open']):
+                    entry_price = float(candles_df.loc[current_date]['Open'])
+                elif date_str in candles_df.index and not pd.isna(candles_df.loc[date_str]['Open']):
+                    entry_price = float(candles_df.loc[date_str]['Open'])
+            if entry_price is None:
+                if 'Open' in sig and sig['Open'] is not None and not pd.isna(sig['Open']) and float(sig['Open']) > 0:
+                    entry_price = float(sig['Open'])
+                else:
+                    rejected_signals_count += 1
+                    rejected_missing_execution_price += 1
+                    continue
                 
             is_production_payoff = strategy_mode in ['PRODUCTION_EXPECTED_VALUE', 'PRODUCTION_DISTRIBUTION_PAYOFF']
             payoff_profile: Optional[TradePayoffProfile] = None
+            
+            # Section 23: Horizon Consistency Enforcement
+            if is_production_payoff:
+                pos_h = sig.get('horizon')
+                if pos_h and pos_h != f"{horizon_days}d":
+                    raise ValueError(f"HORIZON_POLICY_MISMATCH: Signal horizon {pos_h} != planned horizon {horizon_days}d")
             
             if is_production_payoff:
                 try:
@@ -504,6 +666,12 @@ def run_portfolio_backtest(
                 'correlationExposure': sig.get('correlationToPortfolio'),
                 'expectedRisk': stop_dist,
                 'riskAdjustedEV': sig.get('riskAdjustedExpectedValue'),
+                'maxHigh': float(entry_price),
+                'minLow': float(entry_price),
+                'plannedHoldingDays': horizon_days,
+                'plannedHorizon': f"{horizon_days}d",
+                'exitPolicyVersion': exit_policy_version,
+                'signalTimestamp': sig.get('predictionTimestamp', date_str),
             }
             if payoff_profile is not None:
                 pos_record['payoffProfile'] = payoff_profile.to_dict()
