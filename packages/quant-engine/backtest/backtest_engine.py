@@ -26,6 +26,13 @@ from models.payoff_profile import (
     HorizonMismatchError,
     InvalidPayoffError
 )
+from models.cross_sectional_ranker import (
+    OpportunityRecord,
+    build_daily_opportunity_table,
+    select_and_allocate_portfolio,
+    compute_historical_correlation,
+    OptimizationLeakageError
+)
 
 def evaluate_trade_ohlc_path(
     entry_price: float,
@@ -124,12 +131,20 @@ def run_portfolio_backtest(
     prob_threshold: float = 0.55,
     initial_cash: float = 1_000_000.0,
     cost_regime: str = 'BASE_COST',
-    strategy_mode: str = 'PRODUCTION_EXPECTED_VALUE'
+    strategy_mode: str = 'PRODUCTION_EXPECTED_VALUE',
+    top_n: int = 3,
+    minimum_decision_margin: float = 0.0,
+    risk_per_trade: float = RISK_PER_TRADE,
+    max_position_weight: float = MAX_POSITION_WEIGHT,
+    max_sector_weight: float = MAX_SECTOR_WEIGHT,
+    max_gross_exposure: float = MAX_GROSS_EXPOSURE,
+    max_cluster_exposure: float = 0.50,
+    partition: Optional[str] = None
 ) -> Dict[str, Any]:
     """
     Executes a portfolio backtest tracking daily cash, open positions, marked-to-market equity,
     and performance metrics strictly from the single authoritative daily equity curve.
-    Supports both PRODUCTION_EXPECTED_VALUE and BASELINE_PROBABILITY_055 decision strategies.
+    Supports cross-sectional ranking, risk-adjusted allocation, and legacy baselines.
     """
     cost_engine = TransactionCostEngine(cost_regime)
     round_trip_cost = cost_engine.calculate_round_trip_cost_rate()
@@ -208,14 +223,19 @@ def run_portfolio_backtest(
     rejected_missing_execution_price = 0
     rejected_sector_exposure_limit = 0
     rejected_gross_exposure_limit = 0
+    rejected_cluster_exposure_limit = 0
+    
+    opportunity_ledger: List[Dict[str, Any]] = []
+    cash_opportunity_ledger: List[Dict[str, Any]] = []
     
     daily_equity_records: List[Dict[str, Any]] = []
     
     MAX_CONCURRENT_POSITIONS = 10
-    MAX_GROSS_EXPOSURE = 1.000001
-    MAX_POSITION_WEIGHT = 0.10      # Max 10% allocation per stock
-    MAX_SECTOR_WEIGHT = 0.25        # Max 25% allocation per sector
-    RISK_BUDGET_PCT = 0.005         # 0.50% portfolio equity risk budget
+    MAX_GROSS_EXPOSURE = max_gross_exposure
+    MAX_POSITION_WEIGHT = max_position_weight
+    MAX_SECTOR_WEIGHT = max_sector_weight
+    MAX_CLUSTER_EXPOSURE = max_cluster_exposure
+    RISK_BUDGET_PCT = risk_per_trade
     
     for current_date in unique_dates:
         start_of_day_cash = cash
@@ -275,11 +295,18 @@ def run_portfolio_backtest(
                 
                 cash += (exec_value - exit_friction)
                 
+                market_val_now = sum(p['notional'] * (p['currentPrice'] / p['entryPrice']) for p in open_positions)
+                total_eq_now = cash + market_val_now
+                
                 trade_record = {
                     'positionId': pos['id'],
+                    'tradeId': pos['id'],
                     'ticker': ticker,
                     'sector': pos.get('sector', 'UNKNOWN'),
+                    'signalTimestamp': pos['entryDate'],
+                    'entryTimestamp': pos['entryDate'],
                     'entryDate': pos['entryDate'],
+                    'exitTimestamp': date_str,
                     'exitDate': date_str,
                     'entryPrice': pos['entryPrice'],
                     'exitPrice': float(exec_price),
@@ -288,9 +315,18 @@ def run_portfolio_backtest(
                     'targetReturn': pos.get('targetReturn'),
                     'stopReturn': pos.get('stopReturn'),
                     'notional': pos['notional'],
+                    'portfolioWeight': round(pos['notional'] / total_eq_now, 4) if total_eq_now > 0 else 0.0,
+                    'selectionRank': pos.get('alphaRank'),
+                    'alphaRank': pos.get('alphaRank'),
+                    'opportunityScore': pos.get('opportunityScore'),
+                    'selectionReason': pos.get('selectionReason', 'QUALIFYING_SIGNAL'),
                     'grossReturn': float(gross_ret),
                     'netReturn': float(net_ret),
+                    'grossPnL': float(pos['notional'] * gross_ret),
+                    'fees': float(pos['entryFriction'] + exit_friction),
+                    'slippage': float(pos['notional'] * 0.0005),
                     'pnl': float(net_pnl),
+                    'netPnL': float(net_pnl),
                     'exitReason': reason,
                     'isWin': bool(net_pnl > 0),
                     'daysHeld': pos['daysHeld'],
@@ -309,9 +345,13 @@ def run_portfolio_backtest(
                     trade_record['p50'] = pos.get('p50')
                     trade_record['p85'] = pos.get('p85')
                     trade_record['p_up'] = pos.get('p_up')
+                    trade_record['P_UP'] = pos.get('p_up')
                     trade_record['p_down'] = pos.get('p_down')
                     trade_record['ev_before_cost'] = pos.get('ev_before_cost')
                     trade_record['ev_after_cost'] = pos.get('ev_after_cost')
+                    trade_record['EV'] = pos.get('ev_after_cost')
+                    trade_record['riskAdjustedEV'] = pos.get('riskAdjustedEV')
+                    trade_record['expectedRisk'] = pos.get('expectedRisk')
                     
                     # Section 9: Hard Invariant Verification
                     profile_obj = TradePayoffProfile(**pos['payoffProfile'])
@@ -326,6 +366,8 @@ def run_portfolio_backtest(
                 surviving_positions.append(pos)
                 
         open_positions = surviving_positions
+        market_value = sum(p['notional'] * (p['currentPrice'] / p['entryPrice']) for p in open_positions)
+        total_equity = cash + market_value
         
         # 2. Process Pending Signals Sequentially (Entry at Open(T+1))
         for sig in pending_signals:
@@ -419,6 +461,18 @@ def run_portfolio_backtest(
                 rejected_sector_exposure_limit += 1
                 continue
                 
+            # Check post-trade correlation cluster exposure (MAX_CLUSTER_EXPOSURE = 0.50) (Section 16)
+            cluster_notional = sized_notional
+            for p in open_positions:
+                corr = compute_historical_correlation(ticker, p['ticker'], historical_candles_by_ticker or {}, date_str)
+                if corr is not None and corr >= 0.75:
+                    pos_val = p['notional'] * (p['currentPrice'] / p['entryPrice'])
+                    cluster_notional += pos_val
+            if (cluster_notional / total_equity) > MAX_CLUSTER_EXPOSURE:
+                rejected_signals_count += 1
+                rejected_cluster_exposure_limit += 1
+                continue
+                
             # Open position
             cash -= (sized_notional + entry_friction)
             pos_id = f"pos_{ticker}_{date_str}_{len(open_positions)+1}"
@@ -444,6 +498,12 @@ def run_portfolio_backtest(
                 'unrealizedPnl': -entry_friction,
                 'p_up': p_up,
                 'p_down': p_down,
+                'alphaRank': sig.get('alphaRank'),
+                'opportunityScore': sig.get('opportunityScore'),
+                'selectionReason': sig.get('selectionReason'),
+                'correlationExposure': sig.get('correlationToPortfolio'),
+                'expectedRisk': stop_dist,
+                'riskAdjustedEV': sig.get('riskAdjustedExpectedValue'),
             }
             if payoff_profile is not None:
                 pos_record['payoffProfile'] = payoff_profile.to_dict()
@@ -466,23 +526,94 @@ def run_portfolio_backtest(
         day_signals = df[df['date'] == current_date]
         active_signals_list = []
         
-        for _, sig in day_signals.iterrows():
-            prob_val = sig.get('calibratedProbability', sig.get('pred_prob'))
-            if prob_val is None or pd.isna(prob_val):
-                rejected_signals_count += 1
-                rejected_insufficient_quant_data += 1
-                continue
-            p_up = float(prob_val)
-            p_down = 1.0 - p_up
+        is_cross_sectional = strategy_mode in [
+            'PRODUCTION_EXPECTED_VALUE',
+            'PRODUCTION_DISTRIBUTION_PAYOFF',
+            'CROSS_SECTIONAL_ALPHA_RANK',
+            'CROSS_SECTIONAL_EV_RANK'
+        ]
+        
+        if is_cross_sectional:
+            # Build Daily Opportunity Table for date T (Section 2)
+            opp_table = build_daily_opportunity_table(
+                date_str=date_str,
+                day_signals=day_signals,
+                historical_candles=historical_candles_by_ticker or {},
+                open_positions=open_positions,
+                portfolio_equity=total_equity,
+                cash=cash,
+                horizon_days=horizon_days,
+                round_trip_cost=round_trip_cost,
+                minimum_decision_margin=minimum_decision_margin,
+                regime='SIDEWAYS'
+            )
+            for opp in opp_table:
+                opportunity_ledger.append(opp.to_dict())
+                
+            selected_opps, rejected_opps = select_and_allocate_portfolio(
+                opportunities=opp_table,
+                open_positions=open_positions,
+                portfolio_equity=total_equity,
+                available_cash=cash,
+                historical_candles=historical_candles_by_ticker or {},
+                as_of_date=date_str,
+                top_n=top_n,
+                risk_per_trade=RISK_BUDGET_PCT,
+                max_position_weight=MAX_POSITION_WEIGHT,
+                max_sector_weight=MAX_SECTOR_WEIGHT,
+                max_gross_exposure=MAX_GROSS_EXPOSURE,
+                max_cluster_exposure=MAX_CLUSTER_EXPOSURE,
+                round_trip_cost=round_trip_cost
+            )
             
-            vol_val = sig.get('atr_percent')
-            if vol_val is None or pd.isna(vol_val) or float(vol_val) <= 0:
+            for rej in rejected_opps:
                 rejected_signals_count += 1
-                rejected_insufficient_quant_data += 1
-                continue
-            vol = float(vol_val)
-            
-            if strategy_mode in ['PRODUCTION_EXPECTED_VALUE', 'PRODUCTION_DISTRIBUTION_PAYOFF']:
+                if rej.ineligibilityReason in [
+                    'MISSING_EXPECTED_GAIN', 'MISSING_EXPECTED_LOSS',
+                    'MISSING_OR_INVALID_P85', 'MISSING_OR_INVALID_P15',
+                    'INVALID_PROBABILITY', 'INSUFFICIENT_RISK_DATA', 'HORIZON_MISMATCH'
+                ]:
+                    rejected_insufficient_quant_data += 1
+                elif rej.ineligibilityReason == 'MISSING_EXECUTION_PRICE':
+                    rejected_missing_execution_price += 1
+                elif rej.ineligibilityReason == 'SECTOR_EXPOSURE_LIMIT_EXCEEDED':
+                    rejected_sector_exposure_limit += 1
+                elif rej.ineligibilityReason == 'GROSS_EXPOSURE_LIMIT_EXCEEDED':
+                    rejected_gross_exposure_limit += 1
+                elif rej.ineligibilityReason == 'CORRELATED_CLUSTER_LIMIT_EXCEEDED':
+                    rejected_cluster_exposure_limit += 1
+                    
+            if not selected_opps:
+                cash_opportunity_ledger.append({
+                    'date': date_str,
+                    'action': 'HOLD_CASH',
+                    'reason': 'NO_ELIGIBLE_OPPORTUNITIES' if not opp_table else 'ALL_CANDIDATES_REJECTED_OR_INSUFFICIENT_EDGE',
+                    'availableCash': round(cash, 2),
+                    'eligibleOpportunitiesCount': len([o for o in opp_table if o.tradeEligible])
+                })
+            else:
+                for opp in selected_opps:
+                    sig_dict = opp.to_dict()
+                    sig_dict['pred_prob'] = opp.calibratedProbability
+                    sig_dict['calibratedProbability'] = opp.calibratedProbability
+                    sig_dict['conditional_gain'] = opp.expectedGain
+                    sig_dict['conditional_loss'] = opp.expectedLoss
+                    sig_dict['p85'] = opp.targetReturn
+                    sig_dict['p15'] = opp.stopReturn
+                    sig_dict['p50'] = opp.expectedReturn
+                    sig_dict['atr_percent'] = opp.ATR
+                    sig_dict['Open'] = opp.executionPrice
+                    active_signals_list.append(sig_dict)
+                    
+        elif strategy_mode == 'POSITIVE_EV':
+            for _, sig in day_signals.iterrows():
+                prob_val = sig.get('calibratedProbability', sig.get('pred_prob'))
+                if prob_val is None or pd.isna(prob_val):
+                    rejected_signals_count += 1
+                    rejected_insufficient_quant_data += 1
+                    continue
+                p_up = float(prob_val)
+                p_down = 1.0 - p_up
                 try:
                     profile = build_trade_payoff_profile(sig, trade_horizon=f"{horizon_days}d")
                 except (InvalidPayoffError, HorizonMismatchError):
@@ -500,7 +631,14 @@ def run_portfolio_backtest(
                 
                 if ev_after_cost > 0 and risk_adj_ev > 0:
                     active_signals_list.append(sig)
-            elif strategy_mode == 'BASELINE_ATR_1P5_2P25':
+        elif strategy_mode == 'BASELINE_ATR_1P5_2P25':
+            for _, sig in day_signals.iterrows():
+                prob_val = sig.get('calibratedProbability', sig.get('pred_prob'))
+                if prob_val is None or pd.isna(prob_val) or float(prob_val) <= 0:
+                    rejected_signals_count += 1
+                    rejected_insufficient_quant_data += 1
+                    continue
+                p_up = float(prob_val)
                 vol_val = sig.get('atr_percent')
                 if vol_val is None or pd.isna(vol_val) or float(vol_val) <= 0:
                     rejected_signals_count += 1
@@ -508,9 +646,11 @@ def run_portfolio_backtest(
                     continue
                 if p_up >= prob_threshold:
                     active_signals_list.append(sig)
-            else:
-                # BASELINE_PROBABILITY_055
-                if p_up >= prob_threshold:
+        else:
+            # BASELINE_PROBABILITY_055
+            for _, sig in day_signals.iterrows():
+                prob_val = sig.get('calibratedProbability', sig.get('pred_prob'))
+                if prob_val is not None and not pd.isna(prob_val) and float(prob_val) >= prob_threshold:
                     active_signals_list.append(sig)
                     
         pending_signals = active_signals_list
@@ -531,15 +671,25 @@ def run_portfolio_backtest(
         prev_eq = daily_equity_records[-1]['portfolioValue'] if daily_equity_records else initial_cash
         daily_ret = (end_equity - prev_eq) / prev_eq if prev_eq > 0 else 0.0
         
+        daily_turnover = sum(p['notional'] for p in open_positions if p['daysHeld'] == 1)
+        daily_fees = sum(p['entryFriction'] for p in open_positions if p['daysHeld'] == 1)
+        daily_slippage = daily_turnover * 0.0005
+        
         daily_equity_records.append({
             'date': date_str,
+            'cash': round(cash, 2),
             'startingCash': round(start_of_day_cash, 2),
             'endingCash': round(cash, 2),
-            'openPositions': len(open_positions),
-            'grossExposure': round(gross_exp, 4),
             'marketValue': round(market_value, 2),
             'portfolioValue': round(end_equity, 2),
             'dailyReturn': round(daily_ret, 6),
+            'grossExposure': round(gross_exp, 4),
+            'netExposure': round(gross_exp, 4),
+            'turnover': round(daily_turnover, 2),
+            'fees': round(daily_fees, 2),
+            'slippage': round(daily_slippage, 2),
+            'openPositions': len(open_positions),
+            'cashWeight': round(cash / end_equity, 4) if end_equity > 0 else 1.0,
             'cumulativeReturn': round((end_equity - initial_cash) / initial_cash, 6) if initial_cash > 0 else 0.0,
         })
         
@@ -639,11 +789,14 @@ def run_portfolio_backtest(
         'rejectedMissingExecutionPrice': rejected_missing_execution_price,
         'rejectedSectorExposureLimit': rejected_sector_exposure_limit,
         'rejectedGrossExposureLimit': rejected_gross_exposure_limit,
+        'rejectedClusterExposureLimit': rejected_cluster_exposure_limit,
         'frictionRateBps': round(round_trip_cost * 10000, 1),
         'costRegime': cost_regime,
         'dailyEquitySeries': daily_equity_records,
         'equityCurve': [round(r['portfolioValue'] / initial_cash * 100.0, 2) if initial_cash > 0 else 0.0 for r in daily_equity_records],
         'trades': completed_trades,
+        'opportunityLedger': opportunity_ledger,
+        'cashOpportunityLedger': cash_opportunity_ledger,
         'reconciliationReport': reconciliation_report,
     }
 

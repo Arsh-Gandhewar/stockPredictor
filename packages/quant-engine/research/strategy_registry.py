@@ -1,4 +1,4 @@
-﻿import os
+import os
 import sys
 import glob
 import json
@@ -248,25 +248,28 @@ def run_strategy_experiment_suite():
     
     for c in candidates:
         m = c['metrics']
-        cagr = m.get('cagr', 0.0)
-        sharpe = m.get('sharpe', 0.0)
-        maxdd = m.get('maxDrawdown', 0.0)
-        wr = m.get('winRate', 0.0)
-        trades = m.get('totalTrades', 0)
-        pf = m.get('profitFactor', 0.0)
+        cagr = float(m.get('cagr', 0.0)) if isinstance(m.get('cagr'), (int, float)) else 0.0
+        sharpe_raw = m.get('sharpe', 0.0)
+        sharpe = float(sharpe_raw) if isinstance(sharpe_raw, (int, float)) else 0.0
+        maxdd = float(m.get('maxDrawdown', 0.0)) if isinstance(m.get('maxDrawdown'), (int, float)) else 0.0
+        wr = float(m.get('winRate', 0.0)) if isinstance(m.get('winRate'), (int, float)) else 0.0
+        trades = int(m.get('totalTrades', 0)) if isinstance(m.get('totalTrades'), (int, float)) else 0
+        pf_raw = m.get('profitFactor')
+        pf = float(pf_raw) if isinstance(pf_raw, (int, float)) else 1.0
         
         # Economic utility score: 30% Sharpe, 20% CAGR, 15% MaxDD, 10% PF, 10% WinRate
         utility_score = (
             0.30 * max(0.0, sharpe) * 20.0 +
             0.20 * max(0.0, cagr) +
             0.15 * max(0.0, 100.0 + maxdd) * 0.2 +
-            0.10 * (pf if isinstance(pf, (int, float)) and pf > 0 else 1.0) * 10.0 +
+            0.10 * max(0.0, pf) * 10.0 +
             0.10 * (wr / 10.0)
         )
         c['economicUtilityScore'] = round(utility_score, 2)
         
-        pf_str = f"{pf:.2f}" if isinstance(pf, (int, float)) else str(pf)
-        print(f"{c['experimentId']:<32} | {cagr:>6.2f}% | {sharpe:>6.2f} | {maxdd:>6.2f}% | {wr:>6.2f}% | {trades:>6} | {pf_str:>6}")
+        pf_str = f"{pf:.2f}" if isinstance(pf_raw, (int, float)) else str(pf_raw)
+        sharpe_str = f"{sharpe:>6.2f}" if isinstance(sharpe_raw, (int, float)) else f"{str(sharpe_raw):>6}"
+        print(f"{c['experimentId']:<32} | {cagr:>6.2f}% | {sharpe_str} | {maxdd:>6.2f}% | {wr:>6.2f}% | {trades:>6} | {pf_str:>6}")
         
         if utility_score > best_score and trades >= 30:
             best_score = utility_score
