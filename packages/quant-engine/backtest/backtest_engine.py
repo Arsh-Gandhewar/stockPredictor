@@ -42,6 +42,11 @@ from models.execution_cost_engine import (
     LiquidityCapExceededError,
     COST_REGIME_CONFIGS
 )
+from research.research_partition_guard import (
+    ResearchPartitionGuard,
+    HoldoutMutationError,
+    TestSelectionLockError
+)
 
 def evaluate_trade_ohlc_path(
     entry_price: float,
@@ -164,6 +169,10 @@ def run_portfolio_backtest(
     and performance metrics strictly from the single authoritative daily equity curve.
     Supports cross-sectional ranking, risk-adjusted allocation, and legacy baselines.
     """
+    if ResearchPartitionGuard.is_holdout_active():
+        if execution_cost_config is not None or cost_buffer > 0.0 or switch_margin != 0.002 or exit_policy != 'FIXED_HORIZON':
+            ResearchPartitionGuard.assert_not_in_holdout("Custom strategy parameter mutation")
+
     if partition in ['TEST', 'HOLDOUT']:
         if exit_policy != 'FIXED_HORIZON':
             raise OptimizationLeakageError(f"CRITICAL LEAKAGE: Exit policy optimization attempted on {partition} partition!")

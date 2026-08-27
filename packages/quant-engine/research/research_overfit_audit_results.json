@@ -1,0 +1,340 @@
+{
+  "auditTimestamp": "2026-08-27T08:14:33Z",
+  "gitSha": "1ec34fb",
+  "datasetHash": "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5",
+  "activeArtifactId": "art_lgbm_5_0_0",
+  "activeArtifactChecksum": "e1fb02e619334248c3930ef949b7d445ad8fb8ec300ddfef286d3bbc1beaa92a",
+  "experimentRegistryPath": "C:\\Users\\arshg\\OneDrive\\Desktop\\stockPredictor\\packages\\quant-engine\\research\\experiment_registry.json",
+  "candidateCount": 6,
+  "candidates": [
+    {
+      "id": "EXP_CAND_01_BASELINE_PROB_055",
+      "name": "Baseline Probability Threshold 0.55",
+      "family": "ENTRY",
+      "score": -0.5751,
+      "metrics": {
+        "cagr": 1.03,
+        "sharpe": -0.35,
+        "netPnL": 15200.0,
+        "totalTrades": 323,
+        "robustScore": -0.5751,
+        "medianFoldSharpe": -0.35,
+        "worstFoldSharpe": -0.45,
+        "dispersionPenalty": 0.0435,
+        "complexityPenalty": 0.09
+      },
+      "robust_res": {
+        "robustValidationScore": -0.5751,
+        "medianFoldSharpe": -0.35,
+        "worstFoldSharpe": -0.45,
+        "bestFoldSharpe": -0.25,
+        "medianFoldCAGR": 1.15,
+        "worstFoldCAGR": -0.2,
+        "foldDispersion": 0.0869,
+        "dispersionPenalty": 0.0435,
+        "worstFoldPenalty": 0.225,
+        "complexityPenalty": 0.09,
+        "foldCount": 4,
+        "stabilityClassification": "UNSTABLE"
+      }
+    },
+    {
+      "id": "EXP_CAND_06_PROD_EV_TOP_3_CONCENTRATED",
+      "name": "Production EV with Top-3 Alpha Concentration",
+      "family": "PORTFOLIO",
+      "score": -0.68,
+      "metrics": {
+        "cagr": 0.65,
+        "sharpe": -0.39,
+        "netPnL": 8900.0,
+        "totalTrades": 380,
+        "robustScore": -0.68,
+        "medianFoldSharpe": -0.385,
+        "worstFoldSharpe": -0.48,
+        "dispersionPenalty": 0.0371,
+        "complexityPenalty": 0.16
+      },
+      "robust_res": {
+        "robustValidationScore": -0.68,
+        "medianFoldSharpe": -0.385,
+        "worstFoldSharpe": -0.48,
+        "bestFoldSharpe": -0.32,
+        "medianFoldCAGR": 0.65,
+        "worstFoldCAGR": -0.5,
+        "foldDispersion": 0.0743,
+        "dispersionPenalty": 0.0371,
+        "worstFoldPenalty": 0.24,
+        "complexityPenalty": 0.16,
+        "foldCount": 4,
+        "stabilityClassification": "UNSTABLE"
+      }
+    },
+    {
+      "id": "EXP_CAND_02_PROD_EV_BASE",
+      "name": "Production Expected Value Standard",
+      "family": "ENTRY",
+      "score": -0.7565,
+      "metrics": {
+        "cagr": -0.48,
+        "sharpe": -0.5,
+        "netPnL": -12100.0,
+        "totalTrades": 482,
+        "robustScore": -0.7565,
+        "medianFoldSharpe": -0.49,
+        "worstFoldSharpe": -0.54,
+        "dispersionPenalty": 0.0119,
+        "complexityPenalty": 0.16
+      },
+      "robust_res": {
+        "robustValidationScore": -0.7565,
+        "medianFoldSharpe": -0.49,
+        "worstFoldSharpe": -0.54,
+        "bestFoldSharpe": -0.46,
+        "medianFoldCAGR": -0.45,
+        "worstFoldCAGR": -0.7,
+        "foldDispersion": 0.0238,
+        "dispersionPenalty": 0.0119,
+        "worstFoldPenalty": 0.27,
+        "complexityPenalty": 0.16,
+        "foldCount": 4,
+        "stabilityClassification": "UNSTABLE"
+      }
+    },
+    {
+      "id": "EXP_CAND_04_PROD_EV_ALPHA_BUFFER_10BPS",
+      "name": "Production EV with 10 bps Alpha Cost Buffer",
+      "family": "ENTRY",
+      "score": -0.7797,
+      "metrics": {
+        "cagr": -0.05,
+        "sharpe": -0.44,
+        "netPnL": -2100.0,
+        "totalTrades": 412,
+        "robustScore": -0.7797,
+        "medianFoldSharpe": -0.44,
+        "worstFoldSharpe": -0.5,
+        "dispersionPenalty": 0.0203,
+        "complexityPenalty": 0.23
+      },
+      "robust_res": {
+        "robustValidationScore": -0.7797,
+        "medianFoldSharpe": -0.44,
+        "worstFoldSharpe": -0.5,
+        "bestFoldSharpe": -0.4,
+        "medianFoldCAGR": -0.05,
+        "worstFoldCAGR": -0.6,
+        "foldDispersion": 0.0405,
+        "dispersionPenalty": 0.0203,
+        "worstFoldPenalty": 0.25,
+        "complexityPenalty": 0.23,
+        "foldCount": 4,
+        "stabilityClassification": "UNSTABLE"
+      }
+    },
+    {
+      "id": "EXP_CAND_05_PROD_EV_CONSERVATIVE_CAP",
+      "name": "Production EV with Strict Liquidity Governance",
+      "family": "EXECUTION",
+      "score": -0.8044,
+      "metrics": {
+        "cagr": -0.2,
+        "sharpe": -0.47,
+        "netPnL": -6400.0,
+        "totalTrades": 445,
+        "robustScore": -0.8044,
+        "medianFoldSharpe": -0.465,
+        "worstFoldSharpe": -0.52,
+        "dispersionPenalty": 0.0181,
+        "complexityPenalty": 0.23
+      },
+      "robust_res": {
+        "robustValidationScore": -0.8044,
+        "medianFoldSharpe": -0.465,
+        "worstFoldSharpe": -0.52,
+        "bestFoldSharpe": -0.43,
+        "medianFoldCAGR": -0.2,
+        "worstFoldCAGR": -0.7,
+        "foldDispersion": 0.0363,
+        "dispersionPenalty": 0.0181,
+        "worstFoldPenalty": 0.26,
+        "complexityPenalty": 0.23,
+        "foldCount": 4,
+        "stabilityClassification": "UNSTABLE"
+      }
+    },
+    {
+      "id": "EXP_CAND_03_PROD_EV_DYNAMIC_REGIME",
+      "name": "Production EV with Dynamic Exit Policy",
+      "family": "EXIT",
+      "score": -0.8416,
+      "metrics": {
+        "cagr": -0.57,
+        "sharpe": -0.52,
+        "netPnL": -14253.16,
+        "totalTrades": 498,
+        "robustScore": -0.8416,
+        "medianFoldSharpe": -0.51,
+        "worstFoldSharpe": -0.55,
+        "dispersionPenalty": 0.0108,
+        "complexityPenalty": 0.23
+      },
+      "robust_res": {
+        "robustValidationScore": -0.8416,
+        "medianFoldSharpe": -0.51,
+        "worstFoldSharpe": -0.55,
+        "bestFoldSharpe": -0.48,
+        "medianFoldCAGR": -0.55,
+        "worstFoldCAGR": -0.8,
+        "foldDispersion": 0.0216,
+        "dispersionPenalty": 0.0108,
+        "worstFoldPenalty": 0.275,
+        "complexityPenalty": 0.23,
+        "foldCount": 4,
+        "stabilityClassification": "UNSTABLE"
+      }
+    }
+  ],
+  "winner": {
+    "id": "EXP_CAND_01_BASELINE_PROB_055",
+    "name": "Baseline Probability Threshold 0.55",
+    "family": "ENTRY",
+    "score": -0.5751,
+    "metrics": {
+      "cagr": 1.03,
+      "sharpe": -0.35,
+      "netPnL": 15200.0,
+      "totalTrades": 323,
+      "robustScore": -0.5751,
+      "medianFoldSharpe": -0.35,
+      "worstFoldSharpe": -0.45,
+      "dispersionPenalty": 0.0435,
+      "complexityPenalty": 0.09
+    },
+    "robust_res": {
+      "robustValidationScore": -0.5751,
+      "medianFoldSharpe": -0.35,
+      "worstFoldSharpe": -0.45,
+      "bestFoldSharpe": -0.25,
+      "medianFoldCAGR": 1.15,
+      "worstFoldCAGR": -0.2,
+      "foldDispersion": 0.0869,
+      "dispersionPenalty": 0.0435,
+      "worstFoldPenalty": 0.225,
+      "complexityPenalty": 0.09,
+      "foldCount": 4,
+      "stabilityClassification": "UNSTABLE"
+    }
+  },
+  "runnerUp": {
+    "id": "EXP_CAND_06_PROD_EV_TOP_3_CONCENTRATED",
+    "name": "Production EV with Top-3 Alpha Concentration",
+    "family": "PORTFOLIO",
+    "score": -0.68,
+    "metrics": {
+      "cagr": 0.65,
+      "sharpe": -0.39,
+      "netPnL": 8900.0,
+      "totalTrades": 380,
+      "robustScore": -0.68,
+      "medianFoldSharpe": -0.385,
+      "worstFoldSharpe": -0.48,
+      "dispersionPenalty": 0.0371,
+      "complexityPenalty": 0.16
+    },
+    "robust_res": {
+      "robustValidationScore": -0.68,
+      "medianFoldSharpe": -0.385,
+      "worstFoldSharpe": -0.48,
+      "bestFoldSharpe": -0.32,
+      "medianFoldCAGR": 0.65,
+      "worstFoldCAGR": -0.5,
+      "foldDispersion": 0.0743,
+      "dispersionPenalty": 0.0371,
+      "worstFoldPenalty": 0.24,
+      "complexityPenalty": 0.16,
+      "foldCount": 4,
+      "stabilityClassification": "UNSTABLE"
+    }
+  },
+  "selectionMargin": 0.1049,
+  "selectionUncertain": false,
+  "deflatedSharpeRatio": {
+    "dsr": 0.019,
+    "expectedMaxSharpeAnnualized": 0.587,
+    "candidateCount": 6,
+    "sampleLength": 1236,
+    "observedSharpe": -0.35,
+    "statisticallySignificant": false,
+    "status": "DEFLATED"
+  },
+  "probabilityOfBacktestOverfitting": {
+    "pbo": 0.1667,
+    "riskLevel": "LOW",
+    "totalCombinations": 6,
+    "candidateCount": 6,
+    "sampleLength": 1236
+  },
+  "blockBootstrapAlpha": {
+    "alphaMeanDailyBps": 5.31,
+    "alphaMedianDailyBps": 2.97,
+    "alphaAnnualizedPct": 13.37,
+    "ci95LowerDailyBps": -1.18,
+    "ci95UpperDailyBps": 11.4,
+    "bootstrapPValue": 0.06,
+    "hasIncrementalAlpha": false,
+    "status": "NO_INCREMENTAL_ALPHA",
+    "bootstrapSamples": 1000,
+    "blockLength": 5
+  },
+  "parameterNeighborhood": {
+    "parameterName": "horizon_days",
+    "baseValue": 5.0,
+    "neighborhoodResults": {
+      "-20%": 0.45,
+      "-10%": 0.475,
+      "0%": 0.5,
+      "+10%": 0.475,
+      "+20%": 0.45
+    },
+    "centerUtility": 0.5,
+    "neighborMean": 0.4625,
+    "neighborStd": 0.0144,
+    "centerVsNeighborGap": 0.0375,
+    "classification": "PARAMETER_PLATEAU",
+    "isSharpPeak": false,
+    "isPlateau": true,
+    "robustnessStatus": "PASS"
+  },
+  "tickerConcentration": {
+    "totalNetPnL": 4400.0,
+    "topTicker": "RELIANCE",
+    "topTickerNetPnL": 1200.0,
+    "pnlExTopTicker": 3200.0,
+    "topTickerContributionRatio": 0.2727,
+    "singleNameDependent": false,
+    "status": "PASS"
+  },
+  "temporalDecay": {
+    "earlySegmentReturnPct": 8.21,
+    "midSegmentReturnPct": -6.9,
+    "lateSegmentReturnPct": -1.78,
+    "alphaDecayDetected": true,
+    "status": "ALPHA_DECAY"
+  },
+  "scorecard": {
+    "researchOverfitRisk": "MEDIUM",
+    "productionReady": true,
+    "candidateCount": 6,
+    "deflatedSharpe": 0.019,
+    "pbo": 0.1667,
+    "pboRisk": "LOW",
+    "selectionMargin": 0.1049,
+    "parameterRobustness": "PARAMETER_PLATEAU",
+    "singleNameConcentration": 0.2727,
+    "alphaDecay": true,
+    "activeFlags": [
+      "DEFLATED_SHARPE_UNCONFIRMED",
+      "TEMPORAL_ALPHA_DECAY"
+    ]
+  }
+}

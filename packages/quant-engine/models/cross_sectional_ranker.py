@@ -21,9 +21,7 @@ from models.payoff_profile import (
     HorizonMismatchError
 )
 
-class OptimizationLeakageError(Exception):
-    """Raised when strategy selection or parameter tuning is attempted on TEST or HOLDOUT partitions."""
-    pass
+from research.research_partition_guard import OptimizationLeakageError, ResearchPartitionGuard
 
 class EconomicConstraintViolationError(Exception):
     """Raised when a hard portfolio risk constraint is violated."""

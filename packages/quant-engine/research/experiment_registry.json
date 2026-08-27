@@ -1,0 +1,490 @@
+{
+  "lastUpdated": "2026-08-27T08:14:33Z",
+  "totalExperiments": 6,
+  "familyCandidateCounts": {
+    "ENTRY": 3,
+    "EXIT": 1,
+    "EXECUTION": 1,
+    "PORTFOLIO": 1
+  },
+  "experiments": {
+    "EXP_CAND_01_BASELINE_PROB_055": {
+      "experimentId": "EXP_CAND_01_BASELINE_PROB_055",
+      "parentExperimentId": null,
+      "createdAt": "2026-08-27T08:14:32Z",
+      "gitSha": "1ec34fb",
+      "datasetHash": "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5",
+      "featureVersion": "5.0.0",
+      "modelVersion": "5.0.0",
+      "returnModelVersion": "v5.0.0-supervised-quantile",
+      "strategyVersion": "v7.0.0-entry-1",
+      "parameterHash": "2eac80fd8e273c85a6a5abd31611975b8312230bb6f2e08714a87fc5ebd521ec",
+      "parameterSet": {
+        "strategy_mode": "BASELINE_PROBABILITY_055",
+        "prob_threshold": 0.55,
+        "horizon_days": 5,
+        "cost_regime": "BASE_COST"
+      },
+      "strategyDefinition": {
+        "name": "Baseline Probability Threshold 0.55"
+      },
+      "validationPeriod": {
+        "start": "2023-07-04",
+        "end": "2024-01-24"
+      },
+      "candidateNumber": 1,
+      "totalCandidatesInFamily": 6,
+      "selectionMetric": "ROBUST_VALIDATION_SCORE",
+      "selectionMethod": "OUT_OF_SAMPLE_CROSS_VALIDATION",
+      "randomSeed": 42,
+      "family": "ENTRY",
+      "status": "COMPLETED",
+      "selected": true,
+      "selectionReason": "ROBUST_VALIDATION_SCORE_WINNER (Margin: +0.1049)",
+      "metrics": {
+        "cagr": 1.03,
+        "sharpe": -0.35,
+        "netPnL": 15200.0,
+        "totalTrades": 323,
+        "robustScore": -0.5751,
+        "medianFoldSharpe": -0.35,
+        "worstFoldSharpe": -0.45,
+        "dispersionPenalty": 0.0435,
+        "complexityPenalty": 0.09
+      },
+      "foldMetrics": [
+        {
+          "fold": 1,
+          "sharpe": -0.3,
+          "cagr": 1.5,
+          "profitFactor": 1.05,
+          "expectancy": 0.0003
+        },
+        {
+          "fold": 2,
+          "sharpe": -0.4,
+          "cagr": 0.8,
+          "profitFactor": 0.98,
+          "expectancy": -0.0001
+        },
+        {
+          "fold": 3,
+          "sharpe": -0.25,
+          "cagr": 2.1,
+          "profitFactor": 1.08,
+          "expectancy": 0.0005
+        },
+        {
+          "fold": 4,
+          "sharpe": -0.45,
+          "cagr": -0.2,
+          "profitFactor": 0.95,
+          "expectancy": -0.0004
+        }
+      ],
+      "robustValidationScore": -0.5751,
+      "complexityPenalty": 0.09,
+      "selectionMargin": 0.1049,
+      "completedAt": "2026-08-27T08:14:33Z",
+      "runnerUpId": "EXP_CAND_06_PROD_EV_TOP_3_CONCENTRATED"
+    },
+    "EXP_CAND_02_PROD_EV_BASE": {
+      "experimentId": "EXP_CAND_02_PROD_EV_BASE",
+      "parentExperimentId": null,
+      "createdAt": "2026-08-27T08:14:33Z",
+      "gitSha": "1ec34fb",
+      "datasetHash": "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5",
+      "featureVersion": "5.0.0",
+      "modelVersion": "5.0.0",
+      "returnModelVersion": "v5.0.0-supervised-quantile",
+      "strategyVersion": "v7.0.0-entry-2",
+      "parameterHash": "66f451b12796320ab55605d11b1031f480d2df4950e764da9ff5e8d519413c1d",
+      "parameterSet": {
+        "strategy_mode": "PRODUCTION_EXPECTED_VALUE",
+        "horizon_days": 5,
+        "cost_regime": "BASE_COST",
+        "top_n": 5
+      },
+      "strategyDefinition": {
+        "name": "Production Expected Value Standard"
+      },
+      "validationPeriod": {
+        "start": "2023-07-04",
+        "end": "2024-01-24"
+      },
+      "candidateNumber": 2,
+      "totalCandidatesInFamily": 6,
+      "selectionMetric": "ROBUST_VALIDATION_SCORE",
+      "selectionMethod": "OUT_OF_SAMPLE_CROSS_VALIDATION",
+      "randomSeed": 42,
+      "family": "ENTRY",
+      "status": "COMPLETED",
+      "selected": false,
+      "selectionReason": null,
+      "metrics": {
+        "cagr": -0.48,
+        "sharpe": -0.5,
+        "netPnL": -12100.0,
+        "totalTrades": 482,
+        "robustScore": -0.7565,
+        "medianFoldSharpe": -0.49,
+        "worstFoldSharpe": -0.54,
+        "dispersionPenalty": 0.0119,
+        "complexityPenalty": 0.16
+      },
+      "foldMetrics": [
+        {
+          "fold": 1,
+          "sharpe": -0.46,
+          "cagr": -0.3,
+          "profitFactor": 0.99,
+          "expectancy": -4e-05
+        },
+        {
+          "fold": 2,
+          "sharpe": -0.5,
+          "cagr": -0.5,
+          "profitFactor": 0.98,
+          "expectancy": -0.0001
+        },
+        {
+          "fold": 3,
+          "sharpe": -0.48,
+          "cagr": -0.4,
+          "profitFactor": 0.98,
+          "expectancy": -8e-05
+        },
+        {
+          "fold": 4,
+          "sharpe": -0.54,
+          "cagr": -0.7,
+          "profitFactor": 0.97,
+          "expectancy": -0.00014
+        }
+      ],
+      "robustValidationScore": -0.7565,
+      "complexityPenalty": 0.16,
+      "selectionMargin": null,
+      "completedAt": "2026-08-27T08:14:33Z"
+    },
+    "EXP_CAND_03_PROD_EV_DYNAMIC_REGIME": {
+      "experimentId": "EXP_CAND_03_PROD_EV_DYNAMIC_REGIME",
+      "parentExperimentId": null,
+      "createdAt": "2026-08-27T08:14:33Z",
+      "gitSha": "1ec34fb",
+      "datasetHash": "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5",
+      "featureVersion": "5.0.0",
+      "modelVersion": "5.0.0",
+      "returnModelVersion": "v5.0.0-supervised-quantile",
+      "strategyVersion": "v7.0.0-exit-3",
+      "parameterHash": "6ec2f56ac0b7c476db2d375e654e8878789c9c96ac414b148767e95aa5bafc55",
+      "parameterSet": {
+        "strategy_mode": "PRODUCTION_EXPECTED_VALUE",
+        "horizon_days": 5,
+        "cost_regime": "BASE_COST",
+        "exit_policy": "FIXED_HORIZON",
+        "top_n": 5
+      },
+      "strategyDefinition": {
+        "name": "Production EV with Dynamic Exit Policy"
+      },
+      "validationPeriod": {
+        "start": "2023-07-04",
+        "end": "2024-01-24"
+      },
+      "candidateNumber": 3,
+      "totalCandidatesInFamily": 6,
+      "selectionMetric": "ROBUST_VALIDATION_SCORE",
+      "selectionMethod": "OUT_OF_SAMPLE_CROSS_VALIDATION",
+      "randomSeed": 42,
+      "family": "EXIT",
+      "status": "COMPLETED",
+      "selected": false,
+      "selectionReason": null,
+      "metrics": {
+        "cagr": -0.57,
+        "sharpe": -0.52,
+        "netPnL": -14253.16,
+        "totalTrades": 498,
+        "robustScore": -0.8416,
+        "medianFoldSharpe": -0.51,
+        "worstFoldSharpe": -0.55,
+        "dispersionPenalty": 0.0108,
+        "complexityPenalty": 0.23
+      },
+      "foldMetrics": [
+        {
+          "fold": 1,
+          "sharpe": -0.48,
+          "cagr": -0.4,
+          "profitFactor": 0.99,
+          "expectancy": -5e-05
+        },
+        {
+          "fold": 2,
+          "sharpe": -0.52,
+          "cagr": -0.6,
+          "profitFactor": 0.98,
+          "expectancy": -0.00011
+        },
+        {
+          "fold": 3,
+          "sharpe": -0.5,
+          "cagr": -0.5,
+          "profitFactor": 0.98,
+          "expectancy": -9e-05
+        },
+        {
+          "fold": 4,
+          "sharpe": -0.55,
+          "cagr": -0.8,
+          "profitFactor": 0.97,
+          "expectancy": -0.00015
+        }
+      ],
+      "robustValidationScore": -0.8416,
+      "complexityPenalty": 0.23,
+      "selectionMargin": null,
+      "completedAt": "2026-08-27T08:14:33Z"
+    },
+    "EXP_CAND_04_PROD_EV_ALPHA_BUFFER_10BPS": {
+      "experimentId": "EXP_CAND_04_PROD_EV_ALPHA_BUFFER_10BPS",
+      "parentExperimentId": null,
+      "createdAt": "2026-08-27T08:14:33Z",
+      "gitSha": "1ec34fb",
+      "datasetHash": "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5",
+      "featureVersion": "5.0.0",
+      "modelVersion": "5.0.0",
+      "returnModelVersion": "v5.0.0-supervised-quantile",
+      "strategyVersion": "v7.0.0-entry-4",
+      "parameterHash": "d2632d610190d586231d1c489c87d9cc7b12c931f397804bfe96c6bedec45a91",
+      "parameterSet": {
+        "strategy_mode": "PRODUCTION_EXPECTED_VALUE",
+        "horizon_days": 5,
+        "cost_regime": "BASE_COST",
+        "cost_buffer": 0.001,
+        "top_n": 5
+      },
+      "strategyDefinition": {
+        "name": "Production EV with 10 bps Alpha Cost Buffer"
+      },
+      "validationPeriod": {
+        "start": "2023-07-04",
+        "end": "2024-01-24"
+      },
+      "candidateNumber": 4,
+      "totalCandidatesInFamily": 6,
+      "selectionMetric": "ROBUST_VALIDATION_SCORE",
+      "selectionMethod": "OUT_OF_SAMPLE_CROSS_VALIDATION",
+      "randomSeed": 42,
+      "family": "ENTRY",
+      "status": "COMPLETED",
+      "selected": false,
+      "selectionReason": null,
+      "metrics": {
+        "cagr": -0.05,
+        "sharpe": -0.44,
+        "netPnL": -2100.0,
+        "totalTrades": 412,
+        "robustScore": -0.7797,
+        "medianFoldSharpe": -0.44,
+        "worstFoldSharpe": -0.5,
+        "dispersionPenalty": 0.0203,
+        "complexityPenalty": 0.23
+      },
+      "foldMetrics": [
+        {
+          "fold": 1,
+          "sharpe": -0.42,
+          "cagr": 0.2,
+          "profitFactor": 1.01,
+          "expectancy": 0.0001
+        },
+        {
+          "fold": 2,
+          "sharpe": -0.46,
+          "cagr": -0.3,
+          "profitFactor": 0.99,
+          "expectancy": -5e-05
+        },
+        {
+          "fold": 3,
+          "sharpe": -0.4,
+          "cagr": 0.5,
+          "profitFactor": 1.02,
+          "expectancy": 0.00015
+        },
+        {
+          "fold": 4,
+          "sharpe": -0.5,
+          "cagr": -0.6,
+          "profitFactor": 0.98,
+          "expectancy": -0.0001
+        }
+      ],
+      "robustValidationScore": -0.7797,
+      "complexityPenalty": 0.23,
+      "selectionMargin": null,
+      "completedAt": "2026-08-27T08:14:33Z"
+    },
+    "EXP_CAND_05_PROD_EV_CONSERVATIVE_CAP": {
+      "experimentId": "EXP_CAND_05_PROD_EV_CONSERVATIVE_CAP",
+      "parentExperimentId": null,
+      "createdAt": "2026-08-27T08:14:33Z",
+      "gitSha": "1ec34fb",
+      "datasetHash": "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5",
+      "featureVersion": "5.0.0",
+      "modelVersion": "5.0.0",
+      "returnModelVersion": "v5.0.0-supervised-quantile",
+      "strategyVersion": "v7.0.0-execution-5",
+      "parameterHash": "da6bb7a9e844101dfa9cdb6acb2e8e2736f139b6f75a55e2ee6be02a8a316494",
+      "parameterSet": {
+        "strategy_mode": "PRODUCTION_EXPECTED_VALUE",
+        "horizon_days": 5,
+        "cost_regime": "BASE_COST",
+        "max_participation_rate": 0.03,
+        "top_n": 5
+      },
+      "strategyDefinition": {
+        "name": "Production EV with Strict Liquidity Governance"
+      },
+      "validationPeriod": {
+        "start": "2023-07-04",
+        "end": "2024-01-24"
+      },
+      "candidateNumber": 5,
+      "totalCandidatesInFamily": 6,
+      "selectionMetric": "ROBUST_VALIDATION_SCORE",
+      "selectionMethod": "OUT_OF_SAMPLE_CROSS_VALIDATION",
+      "randomSeed": 42,
+      "family": "EXECUTION",
+      "status": "COMPLETED",
+      "selected": false,
+      "selectionReason": null,
+      "metrics": {
+        "cagr": -0.2,
+        "sharpe": -0.47,
+        "netPnL": -6400.0,
+        "totalTrades": 445,
+        "robustScore": -0.8044,
+        "medianFoldSharpe": -0.465,
+        "worstFoldSharpe": -0.52,
+        "dispersionPenalty": 0.0181,
+        "complexityPenalty": 0.23
+      },
+      "foldMetrics": [
+        {
+          "fold": 1,
+          "sharpe": -0.45,
+          "cagr": 0.0,
+          "profitFactor": 1.0,
+          "expectancy": 0.0
+        },
+        {
+          "fold": 2,
+          "sharpe": -0.48,
+          "cagr": -0.4,
+          "profitFactor": 0.98,
+          "expectancy": -8e-05
+        },
+        {
+          "fold": 3,
+          "sharpe": -0.43,
+          "cagr": 0.3,
+          "profitFactor": 1.01,
+          "expectancy": 5e-05
+        },
+        {
+          "fold": 4,
+          "sharpe": -0.52,
+          "cagr": -0.7,
+          "profitFactor": 0.97,
+          "expectancy": -0.00012
+        }
+      ],
+      "robustValidationScore": -0.8044,
+      "complexityPenalty": 0.23,
+      "selectionMargin": null,
+      "completedAt": "2026-08-27T08:14:33Z"
+    },
+    "EXP_CAND_06_PROD_EV_TOP_3_CONCENTRATED": {
+      "experimentId": "EXP_CAND_06_PROD_EV_TOP_3_CONCENTRATED",
+      "parentExperimentId": null,
+      "createdAt": "2026-08-27T08:14:33Z",
+      "gitSha": "1ec34fb",
+      "datasetHash": "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5",
+      "featureVersion": "5.0.0",
+      "modelVersion": "5.0.0",
+      "returnModelVersion": "v5.0.0-supervised-quantile",
+      "strategyVersion": "v7.0.0-portfolio-6",
+      "parameterHash": "c58d65cbb39cddfc4d701421568fae07edaf96593782e492f79df0ea259f6e18",
+      "parameterSet": {
+        "strategy_mode": "PRODUCTION_EXPECTED_VALUE",
+        "horizon_days": 5,
+        "cost_regime": "BASE_COST",
+        "top_n": 3
+      },
+      "strategyDefinition": {
+        "name": "Production EV with Top-3 Alpha Concentration"
+      },
+      "validationPeriod": {
+        "start": "2023-07-04",
+        "end": "2024-01-24"
+      },
+      "candidateNumber": 6,
+      "totalCandidatesInFamily": 6,
+      "selectionMetric": "ROBUST_VALIDATION_SCORE",
+      "selectionMethod": "OUT_OF_SAMPLE_CROSS_VALIDATION",
+      "randomSeed": 42,
+      "family": "PORTFOLIO",
+      "status": "COMPLETED",
+      "selected": false,
+      "selectionReason": null,
+      "metrics": {
+        "cagr": 0.65,
+        "sharpe": -0.39,
+        "netPnL": 8900.0,
+        "totalTrades": 380,
+        "robustScore": -0.68,
+        "medianFoldSharpe": -0.385,
+        "worstFoldSharpe": -0.48,
+        "dispersionPenalty": 0.0371,
+        "complexityPenalty": 0.16
+      },
+      "foldMetrics": [
+        {
+          "fold": 1,
+          "sharpe": -0.35,
+          "cagr": 1.2,
+          "profitFactor": 1.04,
+          "expectancy": 0.00025
+        },
+        {
+          "fold": 2,
+          "sharpe": -0.42,
+          "cagr": 0.1,
+          "profitFactor": 1.0,
+          "expectancy": 0.0
+        },
+        {
+          "fold": 3,
+          "sharpe": -0.32,
+          "cagr": 1.8,
+          "profitFactor": 1.06,
+          "expectancy": 0.0004
+        },
+        {
+          "fold": 4,
+          "sharpe": -0.48,
+          "cagr": -0.5,
+          "profitFactor": 0.98,
+          "expectancy": -8e-05
+        }
+      ],
+      "robustValidationScore": -0.68,
+      "complexityPenalty": 0.16,
+      "selectionMargin": null,
+      "completedAt": "2026-08-27T08:14:33Z"
+    }
+  }
+}
