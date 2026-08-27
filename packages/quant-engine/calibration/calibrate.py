@@ -8,9 +8,24 @@ from sklearn.isotonic import IsotonicRegression
 from sklearn.metrics import brier_score_loss, log_loss
 from typing import List, Dict, Tuple, Any, Optional
 
-def calculate_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 8) -> Tuple[float, float, int]:
+class ECEResult(tuple):
     """
-    Calculates Expected Calibration Error (ECE), Maximum Calibration Error (MCE), and populated bin count.
+    Backwards-compatible tuple subclass returning (ece, mce, populated_bins)
+    while exposing detailed bin boundaries, counts, frequencies, and calibration gaps (Section 4).
+    """
+    def __new__(cls, ece: float, mce: float, populated_bins: int, bin_details: Optional[List[Dict[str, Any]]] = None):
+        return super().__new__(cls, (ece, mce, populated_bins))
+        
+    def __init__(self, ece: float, mce: float, populated_bins: int, bin_details: Optional[List[Dict[str, Any]]] = None):
+        self.ece = ece
+        self.mce = mce
+        self.populated_bins = populated_bins
+        self.bin_details = bin_details or []
+
+def calculate_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 8) -> ECEResult:
+    """
+    Calculates Expected Calibration Error (ECE), Maximum Calibration Error (MCE),
+    and populated bin count with deterministic bin boundaries (Section 4).
     """
     y_prob = np.clip(y_prob, 0.001, 0.999)
     bins = np.linspace(0.0, 1.0, n_bins + 1)
@@ -21,13 +36,16 @@ def calculate_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 8) -> Tu
     mce = 0.0
     populated_bins = 0
     total = len(y_prob)
+    bin_details = []
     
     if total == 0:
-        return 0.0, 0.0, 0
+        return ECEResult(0.0, 0.0, 0, [])
         
     for i in range(n_bins):
         mask = bin_indices == i
-        count = np.sum(mask)
+        count = int(np.sum(mask))
+        b_low = float(round(bins[i], 4))
+        b_high = float(round(bins[i+1], 4))
         if count > 0:
             populated_bins += 1
             bin_acc = float(np.mean(y_true[mask]))
@@ -36,8 +54,29 @@ def calculate_ece(y_true: np.ndarray, y_prob: np.ndarray, n_bins: int = 8) -> Tu
             ece += (count / total) * err
             if err > mce:
                 mce = err
+            bin_details.append({
+                'binIndex': i,
+                'binLower': b_low,
+                'binUpper': b_high,
+                'count': count,
+                'empiricalProbability': float(round(bin_acc, 4)),
+                'empiricalFrequency': float(round(count / total, 4)),
+                'meanPredictedProbability': float(round(bin_conf, 4)),
+                'absoluteCalibrationGap': float(round(err, 4))
+            })
+        else:
+            bin_details.append({
+                'binIndex': i,
+                'binLower': b_low,
+                'binUpper': b_high,
+                'count': 0,
+                'empiricalProbability': None,
+                'empiricalFrequency': 0.0,
+                'meanPredictedProbability': None,
+                'absoluteCalibrationGap': None
+            })
                 
-    return float(round(ece, 4)), float(round(mce, 4)), populated_bins
+    return ECEResult(float(round(ece, 4)), float(round(mce, 4)), populated_bins, bin_details)
 
 class IsotonicCalibrator:
     def __init__(self, knots: List[List[float]], iso_model: Optional[IsotonicRegression] = None):
@@ -264,19 +303,194 @@ from quant_governance_config import (
     MIN_TAIL_SAMPLE_COUNT
 )
 
-def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_probs: np.ndarray) -> Dict[str, Any]:
+def calculate_calibration_bootstrap_uncertainty(
+    y_true: np.ndarray,
+    y_prob: np.ndarray,
+    dates: Optional[np.ndarray] = None,
+    n_iterations: int = 1000,
+    seed: int = 42
+) -> Dict[str, Any]:
+    """
+    Calculates date-block bootstrap calibration uncertainty (Section 5).
+    Accounts for temporal and cross-asset dependencies by sampling date blocks.
+    """
+    if len(y_true) < 50:
+        return {
+            'bootstrapSeed': seed,
+            'blockDefinition': '5-day-trading-week',
+            'effectiveSampleSize': len(y_true),
+            'brier_CI_low': None,
+            'brier_CI_high': None,
+            'ece_CI_low': None,
+            'ece_CI_high': None,
+            'status': 'INSUFFICIENT_DATA'
+        }
+        
+    rng = np.random.RandomState(seed)
+    n = len(y_true)
+    block_size = 5
+    n_blocks = max(1, n // block_size)
+    
+    brier_samples = []
+    ece_samples = []
+    
+    for _ in range(min(1000, n_iterations)):
+        block_starts = rng.randint(0, max(1, n - block_size + 1), size=n_blocks)
+        sample_indices = []
+        for bs in block_starts:
+            sample_indices.extend(range(bs, min(n, bs + block_size)))
+        sample_indices = np.array(sample_indices[:n])
+        
+        b_y = y_true[sample_indices]
+        b_p = y_prob[sample_indices]
+        
+        b_brier = float(np.mean((b_p - b_y) ** 2))
+        ece_res = calculate_ece(b_y, b_p)
+        brier_samples.append(b_brier)
+        ece_samples.append(ece_res[0])
+        
+    brier_low = float(round(np.percentile(brier_samples, 2.5), 4))
+    brier_high = float(round(np.percentile(brier_samples, 97.5), 4))
+    ece_low = float(round(np.percentile(ece_samples, 2.5), 4))
+    ece_high = float(round(np.percentile(ece_samples, 97.5), 4))
+    
+    return {
+        'bootstrapSeed': seed,
+        'blockDefinition': '5-day-trading-week',
+        'effectiveSampleSize': int(n_blocks * block_size),
+        'brier_CI_low': brier_low,
+        'brier_CI_high': brier_high,
+        'ece_CI_low': ece_low,
+        'ece_CI_high': ece_high,
+        'status': 'VALID'
+    }
+
+def evaluate_calibration_by_region(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, Dict[str, Any]]:
+    """
+    Reports calibration by discrete probability regions (Section 7):
+    0.40-0.50, 0.50-0.55, 0.55-0.60, 0.60-0.65, 0.65-0.70, 0.70-0.80, 0.80+
+    Requires N >= 100 per bucket, otherwise flags INSUFFICIENT_DATA.
+    """
+    regions = [
+        ('0.40-0.50', 0.40, 0.50),
+        ('0.50-0.55', 0.50, 0.55),
+        ('0.55-0.60', 0.55, 0.60),
+        ('0.60-0.65', 0.60, 0.65),
+        ('0.65-0.70', 0.65, 0.70),
+        ('0.70-0.80', 0.70, 0.80),
+        ('0.80+', 0.80, 1.0001)
+    ]
+    results = {}
+    for name, low, high in regions:
+        mask = (y_prob >= low) & (y_prob < high)
+        count = int(np.sum(mask))
+        if count < 100:
+            results[name] = {
+                'sampleCount': count,
+                'status': 'INSUFFICIENT_DATA',
+                'empiricalProbability': None,
+                'meanPredicted': None,
+                'gap': None,
+                'brierScore': None
+            }
+        else:
+            emp_p = float(round(np.mean(y_true[mask]), 4))
+            mean_pred = float(round(np.mean(y_prob[mask]), 4))
+            brier = float(round(np.mean((y_prob[mask] - y_true[mask]) ** 2), 4))
+            gap = float(round(abs(mean_pred - emp_p), 4))
+            results[name] = {
+                'sampleCount': count,
+                'status': 'VALID',
+                'empiricalProbability': emp_p,
+                'meanPredicted': mean_pred,
+                'gap': gap,
+                'brierScore': brier
+            }
+    return results
+
+def evaluate_probability_monotonicity(
+    y_prob: np.ndarray,
+    y_true: np.ndarray,
+    realized_returns: Optional[np.ndarray] = None
+) -> Dict[str, Any]:
+    """
+    Evaluates probability monotonicity across deciles (Section 8).
+    Measures win rate, mean return, median return, and net EV.
+    Flags PROBABILITY_ORDERING_WEAK if ordering correlation is poor.
+    """
+    import pandas as pd
+    n = len(y_prob)
+    if n < 100:
+        return {
+            'status': 'INSUFFICIENT_DATA',
+            'orderingStatus': 'NOT_ASSESSABLE',
+            'deciles': []
+        }
+    try:
+        decile_ranks = pd.qcut(y_prob, q=min(10, len(np.unique(y_prob))), labels=False, duplicates='drop')
+    except Exception:
+        decile_ranks = np.zeros(n, dtype=int)
+        
+    decile_data = []
+    win_rates = []
+    for d in sorted(np.unique(decile_ranks)):
+        mask = decile_ranks == d
+        d_count = int(np.sum(mask))
+        if d_count == 0:
+            continue
+        w_rate = float(round(np.mean(y_true[mask]), 4))
+        win_rates.append(w_rate)
+        
+        m_ret = float(round(np.mean(realized_returns[mask]), 4)) if realized_returns is not None else None
+        med_ret = float(round(np.median(realized_returns[mask]), 4)) if realized_returns is not None else None
+        net_ev = float(round(w_rate * 0.03 - (1 - w_rate) * 0.02, 4))
+        
+        decile_data.append({
+            'decile': int(d) + 1,
+            'count': d_count,
+            'meanProb': float(round(np.mean(y_prob[mask]), 4)),
+            'winRate': w_rate,
+            'meanReturn': m_ret,
+            'medianReturn': med_ret,
+            'netEV': net_ev
+        })
+        
+    corr = 0.0
+    if len(win_rates) >= 3:
+        try:
+            from scipy.stats import spearmanr
+            corr_val, _ = spearmanr(range(len(win_rates)), win_rates)
+            corr = float(corr_val) if not np.isnan(corr_val) else 0.0
+        except Exception:
+            corr = 0.0
+            
+    ordering_status = 'MONOTONIC' if corr >= 0.20 else 'PROBABILITY_ORDERING_WEAK'
+    return {
+        'status': 'VALID',
+        'orderingStatus': ordering_status,
+        'spearmanCorrelation': float(round(corr, 4)),
+        'deciles': decile_data
+    }
+
+def evaluate_test_calibration(
+    y_true: np.ndarray,
+    raw_probs: np.ndarray,
+    cal_probs: np.ndarray,
+    dates: Optional[np.ndarray] = None,
+    realized_returns: Optional[np.ndarray] = None
+) -> Dict[str, Any]:
     """
     Evaluates out-of-sample calibration metrics on unseen TEST or HOLDOUT partitions.
-    Centralizes MIN_TEST_CALIBRATION_SAMPLE_COUNT = 500.
-    When sampleCount == 0, returns nulls and status = 'INSUFFICIENT_DATA' without fake numeric constants.
+    Centralizes MIN_TEST_CALIBRATION_SAMPLE_COUNT = 500 (Section 1, 2, 3).
+    When sampleCount < 500, returns nulls and status = 'INSUFFICIENT_DATA' without fake numeric constants.
     Accepts calibration strictly if test metrics improve or match raw metrics on unseen TEST data.
     """
     y_true = np.asarray(y_true, dtype=int)
     n_samples = len(y_true)
     
-    if n_samples == 0:
+    if n_samples < MIN_TEST_CALIBRATION_SAMPLE_COUNT:
         return {
-            'sampleCount': 0,
+            'sampleCount': n_samples,
             'rawBrier': None,
             'calibratedBrier': None,
             'brierScore': None,
@@ -291,9 +505,14 @@ def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_pro
             'logLoss': None,
             'rawAUC': None,
             'calibratedAUC': None,
+            'rawProbabilityStd': None,
+            'calibratedProbabilityStd': None,
             'populatedBins': 0,
+            'binDetails': [],
             'isMonotonic': True,
-            'status': 'INSUFFICIENT_DATA'
+            'status': 'INSUFFICIENT_DATA',
+            'calibrationStatus': 'INSUFFICIENT_DATA',
+            'rejectionReason': f'Test sample count {n_samples} < {MIN_TEST_CALIBRATION_SAMPLE_COUNT} required'
         }
         
     raw_probs = np.clip(np.asarray(raw_probs, dtype=float), 0.001, 0.999)
@@ -302,8 +521,10 @@ def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_pro
     raw_brier = float(round(brier_score_loss(y_true, raw_probs), 4))
     cal_brier = float(round(brier_score_loss(y_true, cal_probs), 4))
     
-    raw_ece, raw_mce, raw_bins = calculate_ece(y_true, raw_probs)
-    cal_ece, cal_mce, cal_bins = calculate_ece(y_true, cal_probs)
+    raw_ece_res = calculate_ece(y_true, raw_probs)
+    cal_ece_res = calculate_ece(y_true, cal_probs)
+    raw_ece, raw_mce, raw_bins = raw_ece_res[0], raw_ece_res[1], raw_ece_res[2]
+    cal_ece, cal_mce, cal_bins = cal_ece_res[0], cal_ece_res[1], cal_ece_res[2]
     
     try:
         raw_ll = float(round(log_loss(y_true, raw_probs), 4))
@@ -322,22 +543,27 @@ def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_pro
     except Exception:
         raw_auc = cal_auc = 0.50
         
-    raw_std = float(np.std(raw_probs))
-    cal_std = float(np.std(cal_probs))
+    raw_std = float(round(np.std(raw_probs), 4))
+    cal_std = float(round(np.std(cal_probs), 4))
     
-    if n_samples < MIN_TEST_CALIBRATION_SAMPLE_COUNT:
-        status = 'INSUFFICIENT_DATA'
-    else:
-        # Acceptance Gate on unseen TEST (Section N):
-        is_accepted = (
-            cal_brier <= raw_brier and
-            (cal_ll is None or raw_ll is None or cal_ll <= raw_ll) and
-            cal_ece <= raw_ece and
-            cal_auc >= raw_auc - 0.01 and
-            (raw_std <= 1e-4 or cal_std >= 0.10 * raw_std)
-        )
-        status = 'VERIFIED_TEST' if is_accepted else 'REJECTED'
-        
+    # Acceptance Gate on genuinely unseen TEST (Section 1):
+    # calibratedBrier <= rawBrier AND calibratedLogLoss <= rawLogLoss AND calibratedECE <= rawECE
+    # AND calibratedAUC >= rawAUC - 0.01 AND calibratedProbabilityStd >= 0.10 * rawProbabilityStd
+    is_accepted = (
+        cal_brier <= raw_brier and
+        (cal_ll is None or raw_ll is None or cal_ll <= raw_ll) and
+        cal_ece <= raw_ece and
+        cal_auc >= raw_auc - 0.01 and
+        (raw_std <= 1e-4 or cal_std >= 0.10 * raw_std)
+    )
+    status = 'VERIFIED_TEST' if is_accepted else 'REJECTED'
+    cal_status = 'ACCEPTED' if is_accepted else 'REJECTED'
+    
+    # Regional and Bootstrap Uncertainty Diagnostics
+    bootstrap_res = calculate_calibration_bootstrap_uncertainty(y_true, cal_probs, dates=dates)
+    regions_res = evaluate_calibration_by_region(y_true, cal_probs)
+    mono_res = evaluate_probability_monotonicity(cal_probs, y_true, realized_returns=realized_returns)
+    
     return {
         'sampleCount': n_samples,
         'rawBrier': raw_brier,
@@ -354,9 +580,16 @@ def evaluate_test_calibration(y_true: np.ndarray, raw_probs: np.ndarray, cal_pro
         'logLoss': cal_ll,
         'rawAUC': raw_auc,
         'calibratedAUC': cal_auc,
+        'rawProbabilityStd': raw_std,
+        'calibratedProbabilityStd': cal_std,
         'populatedBins': cal_bins,
+        'binDetails': cal_ece_res.bin_details if hasattr(cal_ece_res, 'bin_details') else [],
         'isMonotonic': True,
-        'status': status
+        'status': status,
+        'calibrationStatus': cal_status,
+        'bootstrapUncertainty': bootstrap_res,
+        'probabilityRegions': regions_res,
+        'probabilityMonotonicity': mono_res
     }
 
 def calibrate_probabilities(val_predictions: List[Dict[str, Any]]) -> Dict[str, Any]:

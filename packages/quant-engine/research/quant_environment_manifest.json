@@ -1,0 +1,15 @@
+{
+  "operatingSystem": "Windows-11-10.0.26200-SP0",
+  "pythonVersion": "3.12.10 (tags/v3.12.10:0cc8128, Apr  8 2025, 12:21:36) [MSC v.1943 64 bit (AMD64)]",
+  "nodeVersion": "v20.x",
+  "gitSha": "1d46993386f3ebf3d111a26d136cb0759664e2d2",
+  "randomSeed": 42,
+  "packages": {
+    "numpy": "2.4.2",
+    "pandas": "2.2.3",
+    "scikit-learn": "1.6.1",
+    "lightgbm": "4.7.0",
+    "onnxruntime": "1.29.0"
+  },
+  "manifestHash": "05ad05eee5d161626f76440408d3cfd968dc81a481371d17a3f9d658e77304a4"
+}

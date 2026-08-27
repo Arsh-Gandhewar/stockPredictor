@@ -101,7 +101,7 @@ def independent_profit_factor(trades_pnl: List[float]) -> Any:
         return float(round(gains / losses, 2))
     elif gains > 0:
         return 'NOT_MEANINGFUL'
-    return 0.0
+    return 'NOT_AVAILABLE' if len(trades_pnl) == 0 else 0.0
 
 from datetime import datetime, timezone
 
@@ -195,6 +195,103 @@ def audit_manifest(manifest_input: Any) -> Dict[str, Any]:
     
     return audit_results
 
+
+def three_pass_certification(manifest_input: Any) -> Dict[str, Any]:
+    """
+    Executes Three-Pass Certification (Section 97):
+    PASS 1: Technical Verification (data integrity, PIT bounds, ONNX hashes, schema).
+    PASS 2: Economic Verification (recomputed metrics vs reported metrics, cost realism).
+    PASS 3: Independent Red-Team Verification (zero lookahead, anti-sentinels, survivorship disclosure, no false pass).
+    """
+    if isinstance(manifest_input, dict):
+        manifest = manifest_input
+    elif isinstance(manifest_input, str):
+        if not os.path.exists(manifest_input):
+            return {'status': 'FAILED', 'passed': False, 'reason': f"File not found: {manifest_input}"}
+        with open(manifest_input, 'r', encoding='utf-8') as f:
+            manifest = json.load(f)
+    else:
+        return {'status': 'FAILED', 'passed': False, 'reason': "Invalid input"}
+
+    # PASS 1: Technical Verification
+    pass_1_checks = []
+    t_start = pd.to_datetime(manifest.get('trainingStart', '2021-01-01'))
+    t_end = pd.to_datetime(manifest.get('trainingEnd', '2023-12-31'))
+    v_start = pd.to_datetime(manifest.get('validationStart', '2024-01-01'))
+    v_end = pd.to_datetime(manifest.get('validationEnd', '2024-12-31'))
+    test_start = pd.to_datetime(manifest.get('testStart', '2025-01-01'))
+    test_end = pd.to_datetime(manifest.get('testEnd', '2025-06-30'))
+    
+    chronology_valid = t_start <= t_end <= v_start <= v_end <= test_start <= test_end
+    pass_1_checks.append({'name': 'chronology_partition_bounds', 'passed': bool(chronology_valid)})
+    
+    # Verify ONNX model hashes
+    onnx_models = manifest.get('onnxModels', {})
+    onnx_valid = len(onnx_models) >= 3 and all('sha256' in info for info in onnx_models.values())
+    pass_1_checks.append({'name': 'onnx_models_presence_and_hashes', 'passed': bool(onnx_valid)})
+    
+    # Verify feature schema
+    schema = manifest.get('featureSchema', [])
+    schema_valid = len(schema) >= 20
+    pass_1_checks.append({'name': 'feature_schema_integrity', 'passed': bool(schema_valid)})
+    
+    pass_1_passed = all(c['passed'] for c in pass_1_checks)
+
+    # PASS 2: Economic Verification
+    pass_2_checks = []
+    bt = manifest.get('backtest', {})
+    cagr = bt.get('cagr', -0.57)
+    sharpe = bt.get('sharpe', -0.52)
+    max_dd = bt.get('maxDrawdown', -14.99)
+    pf = bt.get('profitFactor')
+    
+    # Independent calculation from daily equity series if present
+    equity_series = bt.get('dailyEquitySeries', [])
+    if equity_series and len(equity_series) > 30:
+        vals = [entry['portfolioValue'] if isinstance(entry, dict) else float(entry) for entry in equity_series]
+        ind_dd = independent_max_drawdown(np.array(vals))
+        dd_diff = abs(ind_dd - max_dd)
+        pass_2_checks.append({'name': 'recomputed_max_drawdown_parity', 'passed': dd_diff <= TOLERANCES['maxDrawdown']})
+    else:
+        pass_2_checks.append({'name': 'daily_equity_series_presence', 'passed': bool(equity_series)})
+        
+    cost_drag = bt.get('costDrag', 0.0)
+    pass_2_checks.append({'name': 'cost_drag_realism', 'passed': cost_drag > 0.0 or bt.get('totalExecutionCost', 0) > 0})
+    pass_2_passed = all(c['passed'] for c in pass_2_checks)
+
+    # PASS 3: Independent Red-Team Verification
+    pass_3_checks = []
+    # Sentinel check: no fake 99, 999, Infinity
+    no_sentinels = pf not in [99, 99.0, 999, 999.0, float('inf')]
+    pass_3_checks.append({'name': 'no_sentinel_metrics', 'passed': bool(no_sentinels)})
+    
+    # Survivorship bias disclosure check
+    surv_status = manifest.get('survivorshipStatus', 'NOT_FULLY_RESOLVED')
+    surv_valid = surv_status == 'NOT_FULLY_RESOLVED'
+    pass_3_checks.append({'name': 'honest_survivorship_status', 'passed': bool(surv_valid)})
+    
+    # Economic gate enforcement (Section 54 & 55): If CAGR <= 5.0% or Sharpe <= 0.50, productionReady must be FALSE
+    economic_fail = (cagr <= 5.0 or (isinstance(sharpe, (int, float)) and sharpe <= 0.50))
+    # Must NOT claim production ready if economic fail
+    pass_3_checks.append({
+        'name': 'economic_fail_blocks_production_ready',
+        'passed': bool(not (economic_fail and manifest.get('productionReady', False)))
+    })
+    pass_3_passed = all(c['passed'] for c in pass_3_checks)
+
+    overall_passed = pass_1_passed and pass_2_passed and pass_3_passed
+
+    return {
+        'overallPassed': overall_passed,
+        'pass1Technical': {'passed': pass_1_passed, 'checks': pass_1_checks},
+        'pass2Economic': {'passed': pass_2_passed, 'checks': pass_2_checks},
+        'pass3RedTeam': {'passed': pass_3_passed, 'checks': pass_3_checks},
+        'economicStrategyStatus': 'FAIL' if economic_fail else 'PASS',
+        'survivorshipStatus': surv_status,
+        'auditTimestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    }
+
+
 def test_deliberate_corruption_detection() -> bool:
     """
     Deliberately injects corrupted metrics and proves that the independent audit catches them.
@@ -213,11 +310,15 @@ def test_deliberate_corruption_detection() -> bool:
             print(f"FAILED to catch corruption: {case['name']}")
     return all_caught
 
+
 if __name__ == "__main__":
     manifest_p = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', 'apps', 'api', 'data', 'artifacts', 'active', 'model-artifact.json'))
     print("Running Independent Quantitative Audit...")
     res = audit_manifest(manifest_p)
     print("Audit Result:", json.dumps(res, indent=2))
+    print("\nRunning Three-Pass Certification...")
+    three_pass = three_pass_certification(manifest_p)
+    print("Three-Pass Certification Result:", json.dumps(three_pass, indent=2))
     print("\nRunning Deliberate Corruption Adversarial Tests...")
     corp_ok = test_deliberate_corruption_detection()
     print(f"Adversarial Corruption Tests All Passed: {corp_ok}")

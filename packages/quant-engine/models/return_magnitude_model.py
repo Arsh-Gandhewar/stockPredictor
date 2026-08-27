@@ -285,3 +285,199 @@ class ReturnMagnitudeEngine:
                 'distributionFitEnd': self.fit_end,
                 'sampleCount': 0
             }
+
+
+def evaluate_return_error_structure(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, Any]:
+    """
+    Evaluates return-model error structure (Section 9):
+    MAE, RMSE, Huber loss, bias, rank IC, Spearman, top-decile spread, bottom-decile spread, slope.
+    """
+    y_t = np.asarray(y_true, dtype=float)
+    y_p = np.asarray(y_pred, dtype=float)
+    mask = (~np.isnan(y_t)) & (~np.isnan(y_p))
+    y_t, y_p = y_t[mask], y_p[mask]
+    if len(y_t) < 10:
+        return {'status': 'INSUFFICIENT_DATA'}
+        
+    diff = y_p - y_t
+    mae = float(round(np.mean(np.abs(diff)), 4))
+    rmse = float(round(np.sqrt(np.mean(diff ** 2)), 4))
+    bias = float(round(np.mean(diff), 4))
+    
+    # Huber loss (delta = 0.02)
+    delta = 0.02
+    abs_d = np.abs(diff)
+    huber = np.where(abs_d <= delta, 0.5 * (diff ** 2), delta * (abs_d - 0.5 * delta))
+    huber_loss = float(round(np.mean(huber), 6))
+    
+    # Rank IC & Spearman
+    from scipy.stats import spearmanr
+    try:
+        spearman_corr, _ = spearmanr(y_p, y_t)
+        rank_ic = float(round(spearman_corr, 4)) if not np.isnan(spearman_corr) else 0.0
+    except Exception:
+        rank_ic = 0.0
+        
+    # Decile spread
+    try:
+        p_ranks = pd.qcut(y_p, q=10, labels=False, duplicates='drop')
+        top_dec = float(round(np.mean(y_t[p_ranks == p_ranks.max()]), 4))
+        bot_dec = float(round(np.mean(y_t[p_ranks == p_ranks.min()]), 4))
+        decile_spread = float(round(top_dec - bot_dec, 4))
+    except Exception:
+        top_dec, bot_dec, decile_spread = 0.0, 0.0, 0.0
+        
+    # Linear slope: realized vs predicted
+    try:
+        slope, _ = np.polyfit(y_p, y_t, 1)
+        slope = float(round(slope, 4))
+    except Exception:
+        slope = 1.0
+        
+    return {
+        'status': 'VALID',
+        'sampleCount': len(y_t),
+        'mae': mae,
+        'rmse': rmse,
+        'bias': bias,
+        'huberLoss': huber_loss,
+        'rankIC': rank_ic,
+        'topDecileMean': top_dec,
+        'bottomDecileMean': bot_dec,
+        'topMinusBottomSpread': decile_spread,
+        'realizedVsPredictedSlope': slope
+    }
+
+
+def evaluate_return_model_calibration(y_true: np.ndarray, y_pred: np.ndarray, n_buckets: int = 5) -> Dict[str, Any]:
+    """
+    Evaluates return-model calibration across predicted return buckets (Section 10).
+    Detects systematic RETURN_OVERPREDICTION.
+    """
+    y_t = np.asarray(y_true, dtype=float)
+    y_p = np.asarray(y_pred, dtype=float)
+    mask = (~np.isnan(y_t)) & (~np.isnan(y_p))
+    y_t, y_p = y_t[mask], y_p[mask]
+    if len(y_t) < 50:
+        return {'status': 'INSUFFICIENT_DATA', 'buckets': []}
+        
+    unique_p = np.unique(y_p)
+    if len(unique_p) == 1:
+        p_mean = float(round(float(unique_p[0]), 4))
+        r_mean = float(round(np.mean(y_t), 4))
+        bias = float(round(p_mean - r_mean, 4))
+        is_over = (p_mean > 0.02 and p_mean > 1.5 * max(0.001, r_mean))
+        return {
+            'status': 'RETURN_OVERPREDICTION' if is_over else 'CALIBRATED',
+            'buckets': [{
+                'bucket': 1,
+                'count': len(y_p),
+                'predictedMean': p_mean,
+                'realizedMean': r_mean,
+                'predictionBias': bias,
+                'medianRealized': float(round(np.median(y_t), 4)),
+                'p10Realized': float(round(np.percentile(y_t, 10), 4)),
+                'p90Realized': float(round(np.percentile(y_t, 90), 4))
+            }],
+            'overpredictedBucketCount': 1 if is_over else 0
+        }
+        
+    try:
+        b_indices = pd.qcut(y_p, q=n_buckets, labels=False, duplicates='drop')
+    except Exception:
+        return {'status': 'INSUFFICIENT_DATA', 'buckets': []}
+        
+    buckets_data = []
+    overpredict_count = 0
+    valid_buckets = 0
+    
+    for b in sorted(np.unique(b_indices)):
+        m = b_indices == b
+        p_sub = y_p[m]
+        r_sub = y_t[m]
+        p_mean = float(round(np.mean(p_sub), 4))
+        r_mean = float(round(np.mean(r_sub), 4))
+        bias = float(round(p_mean - r_mean, 4))
+        
+        # Check overprediction
+        if p_mean > 0.02 and p_mean > 1.5 * max(0.001, r_mean):
+            overpredict_count += 1
+        valid_buckets += 1
+        
+        buckets_data.append({
+            'bucket': int(b) + 1,
+            'count': int(np.sum(m)),
+            'predictedMean': p_mean,
+            'realizedMean': r_mean,
+            'predictionBias': bias,
+            'medianRealized': float(round(np.median(r_sub), 4)),
+            'p10Realized': float(round(np.percentile(r_sub, 10), 4)),
+            'p90Realized': float(round(np.percentile(r_sub, 90), 4))
+        })
+        
+    status = 'RETURN_OVERPREDICTION' if overpredict_count >= valid_buckets // 2 and valid_buckets > 0 else 'CALIBRATED'
+    return {
+        'status': status,
+        'buckets': buckets_data,
+        'overpredictedBucketCount': overpredict_count
+    }
+
+
+def enforce_quantile_monotonicity(
+    p10: float, p15: float, p25: float, p50: float, p75: float, p85: float, p90: float
+) -> Tuple[Dict[str, float], str]:
+    """
+    Enforces non-crossing quantile constraint (Section 11):
+    P10 <= P15 <= P25 <= P50 <= P75 <= P85 <= P90.
+    Returns corrected quantiles and versioned correction provenance.
+    """
+    raw_vals = np.array([p10, p15, p25, p50, p75, p85, p90], dtype=float)
+    if np.all(np.diff(raw_vals) >= -1e-6):
+        corr_method = 'RAW_MONOTONIC'
+        adj_vals = raw_vals
+    else:
+        corr_method = 'v5.0.0-isotonic-quantile-correction'
+        from sklearn.isotonic import IsotonicRegression
+        iso = IsotonicRegression(increasing=True)
+        adj_vals = iso.fit_transform(np.arange(len(raw_vals)), raw_vals)
+        
+    return {
+        'p10': float(round(adj_vals[0], 4)),
+        'p15': float(round(adj_vals[1], 4)),
+        'p25': float(round(adj_vals[2], 4)),
+        'p50': float(round(adj_vals[3], 4)),
+        'p75': float(round(adj_vals[4], 4)),
+        'p85': float(round(adj_vals[5], 4)),
+        'p90': float(round(adj_vals[6], 4))
+    }, corr_method
+
+
+def compute_expected_value_uncertainty(
+    p_up: float,
+    p_down: float,
+    expected_gain: float,
+    expected_loss: float,
+    round_trip_cost: float = 0.0013,
+    p_std: float = 0.04,
+    gain_std: float = 0.01,
+    loss_std: float = 0.01
+) -> Dict[str, float]:
+    """
+    Calculates causal Expected Value and uncertainty confidence bounds (Section 13).
+    """
+    ev = (p_up * expected_gain) - (p_down * expected_loss) - round_trip_cost
+    
+    # 95% confidence lower bound under conservative parameter variation
+    p_up_low = max(0.05, p_up - 1.96 * p_std)
+    p_down_high = min(0.95, p_down + 1.96 * p_std)
+    gain_low = max(0.005, expected_gain - 1.96 * gain_std)
+    loss_high = max(0.005, expected_loss + 1.96 * loss_std)
+    
+    ev_lower = (p_up_low * gain_low) - (p_down_high * loss_high) - round_trip_cost
+    ev_upper = ((p_up + 1.96 * p_std) * (expected_gain + 1.96 * gain_std)) - ((p_down - 1.96 * p_std) * max(0.005, expected_loss - 1.96 * loss_std)) - round_trip_cost
+    
+    return {
+        'expectedValue': float(round(ev, 6)),
+        'evLowerBound': float(round(ev_lower, 6)),
+        'evUpperBound': float(round(ev_upper, 6))
+    }
