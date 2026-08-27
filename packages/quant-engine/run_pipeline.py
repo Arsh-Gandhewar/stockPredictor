@@ -228,6 +228,16 @@ def run_full_pipeline():
     oos_5d_df = oos_predictions_by_horizon['5d']
     print(f"Total OOS 5d predictions available: {len(oos_5d_df)}")
     
+    # Initialize point-in-time MarketRegimeEngine
+    nifty_parquet = 'packages/quant-engine/data/historical/NSEI.parquet'
+    vix_parquet = 'packages/quant-engine/data/historical/INDIAVIX.parquet'
+    market_regime_engine = None
+    if os.path.exists(nifty_parquet):
+        nifty_df = pd.read_parquet(nifty_parquet)
+        vix_df = pd.read_parquet(vix_parquet) if os.path.exists(vix_parquet) else None
+        from models.regime_engine import MarketRegimeEngine
+        market_regime_engine = MarketRegimeEngine(benchmark_df=nifty_df, vix_df=vix_df)
+    
     # Production Strategy: Expected Value
     prod_backtest_res = run_portfolio_backtest(
         predictions_df=oos_5d_df,
@@ -235,7 +245,8 @@ def run_full_pipeline():
         horizon_days=5,
         initial_cash=1_000_000.0,
         cost_regime='BASE_COST',
-        strategy_mode='PRODUCTION_EXPECTED_VALUE'
+        strategy_mode='PRODUCTION_EXPECTED_VALUE',
+        market_regime_engine=market_regime_engine
     )
     print(f"Production EV Backtest: Win Rate={prod_backtest_res['winRate']}%, CAGR={prod_backtest_res['cagr']}%, Sharpe={prod_backtest_res['sharpe']}, MaxDD={prod_backtest_res['maxDrawdown']}%, Trades={prod_backtest_res['totalTrades']}")
     print(f"Independent Payoff Reconciliation: Status={prod_backtest_res['reconciliationReport']['status']}, Reconciled={prod_backtest_res['reconciliationReport']['reconciledProductionTrades']}/{prod_backtest_res['totalTrades']}")

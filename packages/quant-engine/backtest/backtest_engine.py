@@ -33,6 +33,8 @@ from models.cross_sectional_ranker import (
     compute_historical_correlation,
     OptimizationLeakageError
 )
+from models.regime_engine import MarketRegimeEngine, RegimeLookaheadError, MIN_REGIME_SAMPLE_COUNT
+from models.regime_policy import RegimePolicyConfig, RegimePolicy, build_baseline_policy
 
 def evaluate_trade_ohlc_path(
     entry_price: float,
@@ -143,6 +145,8 @@ def run_portfolio_backtest(
     switch_margin: float = 0.002,
     min_ev_exit_margin: float = 0.0,
     exit_policy_version: str = 'v4.0.0-dynamic-exit',
+    regime_policy_config: Optional[Any] = None,
+    market_regime_engine: Optional[Any] = None,
     partition: Optional[str] = None
 ) -> Dict[str, Any]:
     """
@@ -150,8 +154,11 @@ def run_portfolio_backtest(
     and performance metrics strictly from the single authoritative daily equity curve.
     Supports cross-sectional ranking, risk-adjusted allocation, and legacy baselines.
     """
-    if partition in ['TEST', 'HOLDOUT'] and exit_policy != 'FIXED_HORIZON':
-        raise OptimizationLeakageError(f"CRITICAL LEAKAGE: Exit policy optimization attempted on {partition} partition!")
+    if partition in ['TEST', 'HOLDOUT']:
+        if exit_policy != 'FIXED_HORIZON':
+            raise OptimizationLeakageError(f"CRITICAL LEAKAGE: Exit policy optimization attempted on {partition} partition!")
+        if regime_policy_config is not None and getattr(regime_policy_config, 'policyId', '') != 'POLICY_A_BASELINE_NO_REGIME':
+            raise OptimizationLeakageError(f"CRITICAL LEAKAGE: Regime policy optimization attempted on {partition} partition!")
 
     # Section 21 & 46: Lookahead penetration guard on input candles
     if historical_candles_by_ticker:
@@ -265,6 +272,24 @@ def run_portfolio_backtest(
     for current_date in unique_dates:
         start_of_day_cash = cash
         date_str = str(current_date)[:10]
+        
+        # Determine Point-in-Time Regime (Section 3 & 4)
+        active_regime = 'SIDEWAYS'
+        reg_version = 'v5.0.0-default'
+        reg_confidence = 0.50
+        if market_regime_engine is not None:
+            r_info = market_regime_engine.classify_date(current_date)
+            active_regime = r_info['regime']
+            reg_version = r_info['regimeVersion']
+            reg_confidence = r_info.get('regimeConfidence', 0.50)
+            
+        current_regime_policy = None
+        effective_gross_exposure = MAX_GROSS_EXPOSURE
+        effective_risk_budget = RISK_BUDGET_PCT
+        if regime_policy_config is not None:
+            current_regime_policy = regime_policy_config.get_policy(active_regime)
+            effective_gross_exposure = min(MAX_GROSS_EXPOSURE, current_regime_policy.maxExposure)
+            effective_risk_budget = current_regime_policy.riskBudget
         
         # 1. Check / Update / Close Existing Open Positions
         surviving_positions = []
@@ -399,8 +424,16 @@ def run_portfolio_backtest(
                     'expectedEVAtEntry': pos.get('EV'),
                     'expectedEVAtExit': (pos.get('EV') or 0.0) * max(0.0, 1.0 - (pos['daysHeld'] / planned_h)),
                     'expectedReturnAtEntry': pos.get('expectedGain'),
-                    'expectedReturnAtExit': float(net_ret),
                     'exitPolicyVersion': exit_policy_version,
+                    # Section 44: Complete Trade Regime Provenance
+                    'regime': pos.get('regime', 'SIDEWAYS'),
+                    'regimeVersion': pos.get('regimeVersion', 'v5.0.0-default'),
+                    'regimeTimestamp': pos.get('regimeTimestamp', pos['entryDate']),
+                    'regimePolicyVersion': pos.get('regimePolicyVersion', 'v5.0.0-default'),
+                    'regimeExposureLimit': float(pos.get('regimeExposureLimit', 1.0)),
+                    'regimeRiskBudget': float(pos.get('regimeRiskBudget', 0.01)),
+                    'regimeEVThreshold': float(pos.get('regimeEVThreshold', 1.0)),
+                    'selectedHoldingPeriod': int(pos.get('selectedHoldingPeriod', horizon_days)),
                 }
                 
                 if 'payoffProfile' in pos:
@@ -517,6 +550,15 @@ def run_portfolio_backtest(
                             'expectedReturnAtEntry': worst_pos.get('expectedGain'),
                             'expectedReturnAtExit': float(net_ret),
                             'exitPolicyVersion': exit_policy_version,
+                            # Section 44: Complete Trade Regime Provenance
+                            'regime': worst_pos.get('regime', 'SIDEWAYS'),
+                            'regimeVersion': worst_pos.get('regimeVersion', 'v5.0.0-default'),
+                            'regimeTimestamp': worst_pos.get('regimeTimestamp', worst_pos['entryDate']),
+                            'regimePolicyVersion': worst_pos.get('regimePolicyVersion', 'v5.0.0-default'),
+                            'regimeExposureLimit': float(worst_pos.get('regimeExposureLimit', 1.0)),
+                            'regimeRiskBudget': float(worst_pos.get('regimeRiskBudget', 0.01)),
+                            'regimeEVThreshold': float(worst_pos.get('regimeEVThreshold', 1.0)),
+                            'selectedHoldingPeriod': int(worst_pos.get('selectedHoldingPeriod', horizon_days)),
                         }
                         if 'payoffProfile' in worst_pos:
                             for k in ['payoffProfile', 'expectedGain', 'expectedLoss', 'distributionVersion', 'distributionFitStart', 'distributionFitEnd', 'horizon', 'sampleCount', 'p15', 'p50', 'p85', 'p_up', 'P_UP', 'p_down', 'ev_before_cost', 'ev_after_cost', 'EV', 'riskAdjustedEV', 'expectedRisk']:
@@ -533,6 +575,19 @@ def run_portfolio_backtest(
                 
             if any(p['ticker'] == ticker for p in open_positions):
                 continue
+                
+            # Section 24: Regime NO_TRADE policy
+            if current_regime_policy is not None and not current_regime_policy.allowNewTrades:
+                rejected_signals_count += 1
+                continue
+                
+            # Section 12: Regime EV Hurdle multiplier
+            if current_regime_policy is not None and current_regime_policy.evThresholdMultiplier > 1.0:
+                sig_ev = sig.get('ev_after_cost', sig.get('EV', 0.0))
+                min_req_ev = 0.001 * current_regime_policy.evThresholdMultiplier
+                if sig_ev < min_req_ev:
+                    rejected_signals_count += 1
+                    continue
                 
             # Entry at Open (No 100.0 default fallback)
             candles_df = historical_candles_by_ticker.get(ticker) if historical_candles_by_ticker else None
@@ -592,7 +647,7 @@ def run_portfolio_backtest(
                 stop_return = -stop_dist
             
             # Position sizing with sequential exposure update
-            risk_budget = total_equity * RISK_BUDGET_PCT
+            risk_budget = total_equity * effective_risk_budget
             max_from_risk = risk_budget / stop_dist
             max_from_pos_cap = total_equity * MAX_POSITION_WEIGHT
             available_cash_limit = max(0.0, cash)
@@ -604,9 +659,9 @@ def run_portfolio_backtest(
                 rejected_signals_count += 1
                 continue
                 
-            # Check post-trade gross exposure (MAX_GROSS_EXPOSURE = 1.000001)
+            # Check post-trade gross exposure (effective_gross_exposure ceiling)
             projected_market_value = market_value + sized_notional
-            if (projected_market_value / total_equity) > MAX_GROSS_EXPOSURE:
+            if (projected_market_value / total_equity) > effective_gross_exposure:
                 rejected_signals_count += 1
                 rejected_gross_exposure_limit += 1
                 continue
@@ -668,10 +723,19 @@ def run_portfolio_backtest(
                 'riskAdjustedEV': sig.get('riskAdjustedExpectedValue'),
                 'maxHigh': float(entry_price),
                 'minLow': float(entry_price),
-                'plannedHoldingDays': horizon_days,
-                'plannedHorizon': f"{horizon_days}d",
+                'plannedHoldingDays': current_regime_policy.holdingPeriod if (current_regime_policy and current_regime_policy.holdingPeriod is not None) else horizon_days,
+                'plannedHorizon': f"{current_regime_policy.holdingPeriod if (current_regime_policy and current_regime_policy.holdingPeriod is not None) else horizon_days}d",
                 'exitPolicyVersion': exit_policy_version,
-                'signalTimestamp': sig.get('predictionTimestamp', date_str),
+                'signalTimestamp': str(sig.get('predictionTimestamp', date_str))[:10],
+                # Section 44: Complete Trade Regime Provenance
+                'regime': active_regime,
+                'regimeVersion': reg_version,
+                'regimeTimestamp': date_str,
+                'regimePolicyVersion': current_regime_policy.policyVersion if current_regime_policy else 'v5.0.0-default',
+                'regimeExposureLimit': float(effective_gross_exposure),
+                'regimeRiskBudget': float(effective_risk_budget),
+                'regimeEVThreshold': float(current_regime_policy.evThresholdMultiplier if current_regime_policy else 1.0),
+                'selectedHoldingPeriod': int(current_regime_policy.holdingPeriod if (current_regime_policy and current_regime_policy.holdingPeriod is not None) else horizon_days),
             }
             if payoff_profile is not None:
                 pos_record['payoffProfile'] = payoff_profile.to_dict()
@@ -939,6 +1003,40 @@ def run_portfolio_backtest(
     else:
         reconciliation_report = {'status': 'NOT_APPLICABLE_FOR_BASELINE', 'mismatchCount': 0}
         
+    # Section 45: Economic Attribution by Market Regime
+    regime_attribution = {}
+    for r in ['BULL', 'BEAR', 'SIDEWAYS', 'HIGH_VOLATILITY', 'PANIC']:
+        r_trades = [t for t in completed_trades if t.get('regime') == r]
+        if r_trades:
+            r_wins = [t for t in r_trades if t['netPnL'] > 0]
+            r_pnl = sum(t['netPnL'] for t in r_trades)
+            r_gross_pnl = sum(t.get('grossPnL', 0.0) for t in r_trades)
+            r_fees = sum(t.get('fees', 0.0) + t.get('slippage', 0.0) for t in r_trades)
+            r_rets = [t.get('netReturn', 0.0) for t in r_trades]
+            regime_attribution[r] = {
+                'sampleCount': len(r_trades),
+                'tradeCount': len(r_trades),
+                'winRate': round(len(r_wins) / len(r_trades) * 100.0, 2),
+                'netPnL': round(r_pnl, 2),
+                'grossPnL': round(r_gross_pnl, 2),
+                'fees': round(r_fees, 2),
+                'meanNetReturn': round(float(np.mean(r_rets)), 5),
+                'medianNetReturn': round(float(np.median(r_rets)), 5),
+                'status': 'VALID' if len(r_trades) >= MIN_REGIME_SAMPLE_COUNT else 'INSUFFICIENT_DATA'
+            }
+        else:
+            regime_attribution[r] = {
+                'sampleCount': 0,
+                'tradeCount': 0,
+                'winRate': 0.0,
+                'netPnL': 0.0,
+                'grossPnL': 0.0,
+                'fees': 0.0,
+                'meanNetReturn': 0.0,
+                'medianNetReturn': 0.0,
+                'status': 'INSUFFICIENT_DATA'
+            }
+            
     return {
         'strategyMode': strategy_mode,
         'totalTrades': len(completed_trades),
@@ -966,5 +1064,6 @@ def run_portfolio_backtest(
         'opportunityLedger': opportunity_ledger,
         'cashOpportunityLedger': cash_opportunity_ledger,
         'reconciliationReport': reconciliation_report,
+        'regimeAttribution': regime_attribution,
     }
 

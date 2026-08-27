@@ -1,0 +1,28 @@
+﻿{
+  "benchmarkId": "STRATEGY_PRE_REPAIR_5",
+  "recordedAt": "2026-08-27T12:00:00Z",
+  "modelVersion": "5.0.0",
+  "returnModelVersion": "v5.0.0-supervised-quantile",
+  "strategyVersion": "v4.0.0-dynamic-exit",
+  "datasetHash": "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5",
+  "gitSha": "bdd93c0",
+  "metrics": {
+    "cagr": -0.88,
+    "sharpe": -0.54,
+    "sortino": -0.05,
+    "calmar": -0.05,
+    "maxDrawdown": -16.27,
+    "profitFactor": 0.98,
+    "expectancy": -0.00041567,
+    "turnover": 40131507.02,
+    "costDrag": 190731.81,
+    "tradeCount": 530,
+    "winRate": 48.49,
+    "averageWin": 3.83,
+    "averageLoss": -3.69,
+    "averageHoldingPeriod": 3.13,
+    "medianHoldingPeriod": 3.0,
+    "averageExposure": 0.2619,
+    "status": "FROZEN_PRE_REPAIR_5_IMMUTABLE"
+  }
+}
