@@ -10,6 +10,7 @@ from models.execution_cost_engine import (
     ExecutionCostConfig,
     ExecutionCostLeakageError,
     LiquidityCapExceededError,
+    ExecutionPriceSanityError,
     COST_REGIME_CONFIGS,
     CostRegime
 )
@@ -21,6 +22,13 @@ class TransactionCostEngine:
     def __init__(self, regime: CostRegime = 'BASE_COST', custom_config: TransactionCostConfig = None):
         self.config = custom_config or COST_REGIMES[regime]
         self.regime = regime
+        self._execution_engine = ExecutionCostEngine(regime=regime, custom_config=self.config)
+
+    def calculate_buy_costs(self, *args, **kwargs):
+        return self._execution_engine.calculate_buy_costs(*args, **kwargs)
+
+    def calculate_sell_costs(self, *args, **kwargs):
+        return self._execution_engine.calculate_sell_costs(*args, **kwargs)
 
     def calculate_round_trip_cost_rate(self) -> float:
         """

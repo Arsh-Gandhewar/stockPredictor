@@ -1,0 +1,209 @@
+{
+  "runTimestamp": "2026-08-28T03:42:34Z",
+  "executionStatus": "EXECUTION_REALISM_ESTABLISHED",
+  "executionVersion": "v6.0.0-institutional-execution-engine",
+  "costModelVersion": "v6.0.0-execution-engine",
+  "auditStatus": "AUDIT_VERIFIED",
+  "auditErrorCount": 0,
+  "auditErrors": [],
+  "baselineComparison": {
+    "frozenPreBug3": {
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "maxDrawdown": -6.85,
+      "tradeCount": 206,
+      "totalCost": 52795.47
+    },
+    "productionBug3": {
+      "grossCAGR": 4.72,
+      "netCAGR": 2.74,
+      "netSharpe": -0.15,
+      "netSortino": -0.01,
+      "maxDrawdown": -6.85,
+      "profitFactor": 1.17,
+      "tradeCount": 206,
+      "winRate": 53.4,
+      "totalFees": 33241.19,
+      "totalSlippage": 19142.51,
+      "totalMarketImpact": 411.77,
+      "totalCost": 52795.47,
+      "costDrag": 52795.47,
+      "alphaCostBufferBps": 55.5,
+      "rejectionsGated": 11550
+    }
+  },
+  "costStressMatrix": {
+    "BASE": {
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "maxDrawdown": -6.85,
+      "totalCost": 52795.47,
+      "trades": 206
+    },
+    "+10bps": {
+      "cagr": -2.0,
+      "sharpe": -0.96,
+      "maxDrawdown": -8.55,
+      "totalCost": 52205.42,
+      "trades": 161
+    },
+    "+20bps": {
+      "cagr": -2.78,
+      "sharpe": -1.42,
+      "maxDrawdown": -11.63,
+      "totalCost": 46725.68,
+      "trades": 117
+    },
+    "+30bps": {
+      "cagr": -0.1,
+      "sharpe": -1.32,
+      "maxDrawdown": -6.53,
+      "totalCost": 39459.72,
+      "trades": 82
+    },
+    "+40bps": {
+      "cagr": -0.01,
+      "sharpe": -1.8,
+      "maxDrawdown": -3.0,
+      "totalCost": 24877.17,
+      "trades": 47
+    },
+    "+50bps": {
+      "cagr": -0.44,
+      "sharpe": -2.38,
+      "maxDrawdown": -2.36,
+      "totalCost": 19987.74,
+      "trades": 35
+    }
+  },
+  "slippageSensitivity": {
+    "0bps": {
+      "cagr": 4.38,
+      "sharpe": 0.09,
+      "totalSlippage": 0.0
+    },
+    "5bps": {
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "totalSlippage": 19142.51
+    },
+    "10bps": {
+      "cagr": -1.99,
+      "sharpe": -0.96,
+      "totalSlippage": 27411.27
+    },
+    "20bps": {
+      "cagr": -0.09,
+      "sharpe": -1.31,
+      "totalSlippage": 27074.97
+    }
+  },
+  "liquidityParticipationStress": {
+    "1%_ADV": {
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "trades": 206,
+      "rejectedSignals": 11550
+    },
+    "2%_ADV": {
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "trades": 206,
+      "rejectedSignals": 11550
+    },
+    "5%_ADV": {
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "trades": 206,
+      "rejectedSignals": 11550
+    }
+  },
+  "capacityCurve": {
+    "1 Lakh": {
+      "initialCapital": 100000.0,
+      "cagr": 2.6,
+      "sharpe": -0.18,
+      "trades": 206,
+      "rejections": 11552,
+      "totalCost": 5638.99
+    },
+    "5 Lakhs": {
+      "initialCapital": 500000.0,
+      "cagr": 2.59,
+      "sharpe": -0.18,
+      "trades": 206,
+      "rejections": 11552,
+      "totalCost": 28273.22
+    },
+    "10 Lakhs": {
+      "initialCapital": 1000000.0,
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "trades": 206,
+      "rejections": 11550,
+      "totalCost": 52795.47
+    },
+    "25 Lakhs": {
+      "initialCapital": 2500000.0,
+      "cagr": 2.94,
+      "sharpe": -0.12,
+      "trades": 206,
+      "rejections": 11553,
+      "totalCost": 118637.64
+    },
+    "50 Lakhs": {
+      "initialCapital": 5000000.0,
+      "cagr": 3.01,
+      "sharpe": -0.11,
+      "trades": 206,
+      "rejections": 11551,
+      "totalCost": 229075.84
+    },
+    "1 Crore": {
+      "initialCapital": 10000000.0,
+      "cagr": 3.03,
+      "sharpe": -0.11,
+      "trades": 206,
+      "rejections": 11551,
+      "totalCost": 452387.01
+    },
+    "2.5 Crores": {
+      "initialCapital": 25000000.0,
+      "cagr": 3.02,
+      "sharpe": -0.11,
+      "trades": 206,
+      "rejections": 11551,
+      "totalCost": 1135340.68
+    },
+    "5 Crores": {
+      "initialCapital": 50000000.0,
+      "cagr": 3.0,
+      "sharpe": -0.11,
+      "trades": 206,
+      "rejections": 11551,
+      "totalCost": 2303179.04
+    },
+    "10 Crores": {
+      "initialCapital": 100000000.0,
+      "cagr": 2.95,
+      "sharpe": -0.12,
+      "trades": 206,
+      "rejections": 11551,
+      "totalCost": 4715526.0
+    }
+  },
+  "crisisStressPeriods": {
+    "COVID_MARCH_2020": {
+      "maxDD": -5.12,
+      "status": "RESILIENT"
+    },
+    "INFLATION_TIGHTENING_2022": {
+      "maxDD": -4.85,
+      "status": "RESILIENT"
+    },
+    "ELECTION_VOLATILITY_2024": {
+      "maxDD": -3.2,
+      "status": "RESILIENT"
+    }
+  }
+}

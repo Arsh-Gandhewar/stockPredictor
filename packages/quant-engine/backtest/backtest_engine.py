@@ -53,6 +53,35 @@ from models.universe_engine import (
     UNIVERSE_VERSION
 )
 
+# Centralized Execution & Accounting Tolerances (Section 106)
+ACCOUNTING_TOLERANCE = 1e-6
+PRICE_TOLERANCE = 1e-4
+COST_TOLERANCE = 1e-4
+
+class InvalidCandleError(ValueError):
+    """Raised when an OHLC candle violates data quality standards."""
+    pass
+
+def validate_ohlc_candle(candle: Dict[str, Any], date_str: Optional[str] = None) -> bool:
+    """Validates physical and economic plausibility of an OHLC candle."""
+    open_p = candle.get('Open')
+    high_p = candle.get('High')
+    low_p = candle.get('Low')
+    close_p = candle.get('Close')
+    volume = candle.get('Volume', 0)
+    
+    if any(p is None or pd.isna(p) for p in [open_p, high_p, low_p, close_p]):
+        raise InvalidCandleError(f"Candle at {date_str} contains NaN price values")
+    if open_p <= 0 or close_p <= 0 or high_p <= 0 or low_p <= 0:
+        raise InvalidCandleError(f"Candle at {date_str} has non-positive prices: O={open_p}, H={high_p}, L={low_p}, C={close_p}")
+    if high_p < low_p:
+        raise InvalidCandleError(f"Candle at {date_str} has High {high_p} < Low {low_p}")
+    if open_p > high_p or open_p < low_p or close_p > high_p or close_p < low_p:
+        raise InvalidCandleError(f"Candle at {date_str} violates Open/Close within High/Low bounds")
+    if volume is not None and not pd.isna(volume) and volume < 0:
+        raise InvalidCandleError(f"Candle at {date_str} has negative volume: {volume}")
+    return True
+
 def evaluate_trade_ohlc_path(
     entry_price: float,
     stop_loss_price: float,
@@ -294,6 +323,7 @@ def run_portfolio_backtest(
     
     opportunity_ledger: List[Dict[str, Any]] = []
     cash_opportunity_ledger: List[Dict[str, Any]] = []
+    rejection_ledger: List[Dict[str, Any]] = []
     
     daily_equity_records: List[Dict[str, Any]] = []
     
@@ -502,6 +532,8 @@ def run_portfolio_backtest(
                     'targetReturn': pos.get('targetReturn'),
                     'stopReturn': pos.get('stopReturn'),
                     'notional': pos['notional'],
+                    'quantity': float(round(pos_shares, 4)),
+                    'shares': float(round(pos_shares, 4)),
                     'portfolioWeight': round(pos['notional'] / total_eq_now, 4) if total_eq_now > 0 else 0.0,
                     'selectionRank': pos.get('alphaRank'),
                     'alphaRank': pos.get('alphaRank'),
@@ -823,6 +855,16 @@ def run_portfolio_backtest(
             sized_notional = min(max_from_risk, max_from_pos_cap, available_cash_limit)
             if sized_notional <= 0 or (total_equity > 0 and sized_notional < (total_equity * 0.01)):
                 rejected_signals_count += 1
+                rejection_ledger.append({
+                    'timestamp': date_str,
+                    'ticker': ticker,
+                    'reason': 'INSUFFICIENT_CASH_OR_RISK_BUDGET',
+                    'requestedSize': sized_notional,
+                    'risk': vol,
+                    'liquidity': None,
+                    'cost': 0.0,
+                    'projectedExposure': 0.0
+                })
                 continue
                 
             # Point-in-Time ADV calculation (Section 15, 16, 17)
@@ -833,12 +875,32 @@ def run_portfolio_backtest(
             if adv is None and enforce_liquidity_cap:
                 rejected_signals_count += 1
                 rejected_insufficient_quant_data += 1
+                rejection_ledger.append({
+                    'timestamp': date_str,
+                    'ticker': ticker,
+                    'reason': 'INSUFFICIENT_ADV_DATA',
+                    'requestedSize': sized_notional,
+                    'risk': vol,
+                    'liquidity': None,
+                    'cost': 0.0,
+                    'projectedExposure': 0.0
+                })
                 continue
                 
             # Check participation against 5% cap (Section 13)
             participation_rate = (sized_notional / adv) if (adv is not None and adv > 0) else 0.0
             if enforce_liquidity_cap and participation_rate > cost_engine.config.max_participation_rate:
                 rejected_signals_count += 1
+                rejection_ledger.append({
+                    'timestamp': date_str,
+                    'ticker': ticker,
+                    'reason': 'LIQUIDITY_CAP',
+                    'requestedSize': sized_notional,
+                    'risk': vol,
+                    'liquidity': adv,
+                    'cost': 0.0,
+                    'projectedExposure': 0.0
+                })
                 continue
                 
             prob_val = sig.get('calibratedProbability', sig.get('pred_prob', 0.5))
@@ -853,6 +915,16 @@ def run_portfolio_backtest(
             if is_production_payoff:
                 if ev_gross <= 0 or ev_net <= 0 or ev_net < cost_buffer:
                     rejected_signals_count += 1
+                    rejection_ledger.append({
+                        'timestamp': date_str,
+                        'ticker': ticker,
+                        'reason': 'INSUFFICIENT_EDGE',
+                        'requestedSize': sized_notional,
+                        'risk': vol,
+                        'liquidity': adv,
+                        'cost': estimated_cost_rate,
+                        'projectedExposure': 0.0
+                    })
                     continue
                     
             # Calculate side-specific BUY transaction cost
@@ -875,6 +947,16 @@ def run_portfolio_backtest(
             cash_outflow = ((sized_notional / entry_price) * effective_entry_price) + entry_fees
             if cash < cash_outflow:
                 rejected_signals_count += 1
+                rejection_ledger.append({
+                    'timestamp': date_str,
+                    'ticker': ticker,
+                    'reason': 'INSUFFICIENT_CASH_FOR_FEES',
+                    'requestedSize': sized_notional,
+                    'risk': vol,
+                    'liquidity': adv,
+                    'cost': entry_fees,
+                    'projectedExposure': 0.0
+                })
                 continue
                 
             # Check post-trade gross exposure (effective_gross_exposure ceiling)
@@ -882,6 +964,16 @@ def run_portfolio_backtest(
             if (projected_market_value / total_equity) > effective_gross_exposure:
                 rejected_signals_count += 1
                 rejected_gross_exposure_limit += 1
+                rejection_ledger.append({
+                    'timestamp': date_str,
+                    'ticker': ticker,
+                    'reason': 'GROSS_EXPOSURE_LIMIT_EXCEEDED',
+                    'requestedSize': sized_notional,
+                    'risk': vol,
+                    'liquidity': adv,
+                    'cost': 0.0,
+                    'projectedExposure': float(round(projected_market_value / total_equity, 4))
+                })
                 continue
                 
             # Check post-trade sector exposure (MAX_SECTOR_WEIGHT = 0.25)
@@ -894,6 +986,16 @@ def run_portfolio_backtest(
             if (projected_sector_notional / total_equity) > MAX_SECTOR_WEIGHT:
                 rejected_signals_count += 1
                 rejected_sector_exposure_limit += 1
+                rejection_ledger.append({
+                    'timestamp': date_str,
+                    'ticker': ticker,
+                    'reason': 'SECTOR_EXPOSURE_LIMIT_EXCEEDED',
+                    'requestedSize': sized_notional,
+                    'risk': vol,
+                    'liquidity': adv,
+                    'cost': 0.0,
+                    'projectedExposure': float(round(projected_sector_notional / total_equity, 4))
+                })
                 continue
                 
             # Check post-trade correlation cluster exposure (MAX_CLUSTER_EXPOSURE = 0.50) (Section 16)
@@ -906,6 +1008,16 @@ def run_portfolio_backtest(
             if (cluster_notional / total_equity) > MAX_CLUSTER_EXPOSURE:
                 rejected_signals_count += 1
                 rejected_cluster_exposure_limit += 1
+                rejection_ledger.append({
+                    'timestamp': date_str,
+                    'ticker': ticker,
+                    'reason': 'CORRELATED_CLUSTER_LIMIT_EXCEEDED',
+                    'requestedSize': sized_notional,
+                    'risk': vol,
+                    'liquidity': adv,
+                    'cost': 0.0,
+                    'projectedExposure': float(round(cluster_notional / total_equity, 4))
+                })
                 continue
                 
             # Open position
@@ -1032,6 +1144,16 @@ def run_portfolio_backtest(
             
             for rej in rejected_opps:
                 rejected_signals_count += 1
+                rejection_ledger.append({
+                    'timestamp': date_str,
+                    'ticker': rej.ticker,
+                    'reason': rej.ineligibilityReason,
+                    'requestedSize': getattr(rej, 'sizedNotional', 0.0),
+                    'risk': getattr(rej, 'expectedRisk', None),
+                    'liquidity': getattr(rej, 'ADV', getattr(rej, 'liquidity', None)),
+                    'cost': getattr(rej, 'estimatedExecutionCost', getattr(rej, 'turnoverCost', 0.0)),
+                    'projectedExposure': float(round(getattr(rej, 'grossExposureAfter', 0.0), 4))
+                })
                 if rej.ineligibilityReason in [
                     'MISSING_EXPECTED_GAIN', 'MISSING_EXPECTED_LOSS',
                     'MISSING_OR_INVALID_P85', 'MISSING_OR_INVALID_P15',
@@ -1340,5 +1462,6 @@ def run_portfolio_backtest(
         'regimeAttribution': regime_attribution,
         'universeVersion': getattr(universe_engine, 'universe_version', UNIVERSE_VERSION) if universe_engine else UNIVERSE_VERSION,
         'universeHash': current_universe_hash or '',
+        'rejectionLedger': rejection_ledger,
     }
 

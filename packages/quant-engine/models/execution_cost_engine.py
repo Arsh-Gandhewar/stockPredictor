@@ -4,7 +4,7 @@ Calculates Indian cash equity transaction charges, adverse execution slippage,
 and monotonic square-root market impact with point-in-time ADV liquidity gating.
 """
 from dataclasses import dataclass
-from typing import Dict, Any, Optional, Literal
+from typing import Dict, List, Any, Optional, Literal
 import math
 import numpy as np
 import pandas as pd
@@ -17,6 +17,10 @@ class ExecutionCostLeakageError(ValueError):
 
 class LiquidityCapExceededError(ValueError):
     """Raised when an order exceeds the maximum allowable participation rate."""
+    pass
+
+class ExecutionPriceSanityError(ValueError):
+    """Raised when execution price violates adverse execution direction."""
     pass
 
 @dataclass(frozen=True)
@@ -219,8 +223,12 @@ class ExecutionCostEngine:
         
         if side_clean == 'BUY':
             execution_price = ref_price * (1.0 + total_adverse_rate)
+            if execution_price < ref_price - 1e-6:
+                raise ExecutionPriceSanityError(f"BUY execution price {execution_price} < reference price {ref_price}")
         else: # SELL
             execution_price = ref_price * (1.0 - total_adverse_rate)
+            if execution_price > ref_price + 1e-6:
+                raise ExecutionPriceSanityError(f"SELL execution price {execution_price} > reference price {ref_price}")
             
         total_execution_cost = statutory_fees + slippage_inr + market_impact_inr
         effective_cost_bps = (total_execution_cost / trade_notional * 10000.0) if trade_notional > 0 else 0.0
@@ -250,6 +258,54 @@ class ExecutionCostEngine:
             'eligible': eligible,
             'rejectionReason': rejection_reason
         }
+
+    def calculate_buy_costs(
+        self,
+        reference_price: float,
+        quantity: float,
+        notional: Optional[float] = None,
+        ticker: Optional[str] = None,
+        timestamp: Optional[str] = None,
+        adv: Optional[float] = None,
+        volatility: Optional[float] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Explicit side-specific BUY transaction cost calculator."""
+        return self.calculate_transaction_cost(
+            side='BUY',
+            reference_price=reference_price,
+            quantity=quantity,
+            notional=notional,
+            ticker=ticker,
+            timestamp=timestamp,
+            adv=adv,
+            volatility=volatility,
+            **kwargs
+        )
+
+    def calculate_sell_costs(
+        self,
+        reference_price: float,
+        quantity: float,
+        notional: Optional[float] = None,
+        ticker: Optional[str] = None,
+        timestamp: Optional[str] = None,
+        adv: Optional[float] = None,
+        volatility: Optional[float] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """Explicit side-specific SELL transaction cost calculator."""
+        return self.calculate_transaction_cost(
+            side='SELL',
+            reference_price=reference_price,
+            quantity=quantity,
+            notional=notional,
+            ticker=ticker,
+            timestamp=timestamp,
+            adv=adv,
+            volatility=volatility,
+            **kwargs
+        )
         
     def estimate_round_trip_cost_rate(
         self,
@@ -261,7 +317,20 @@ class ExecutionCostEngine:
         Estimates total round-trip cost as a percentage fraction (e.g. 0.0028 for 28 bps)
         for pre-trade Net EV calculation.
         """
-        buy_res = self.calculate_transaction_cost('BUY', reference_price=100.0, quantity=notional/100.0, notional=notional, adv=adv, volatility=volatility)
-        sell_res = self.calculate_transaction_cost('SELL', reference_price=100.0, quantity=notional/100.0, notional=notional, adv=adv, volatility=volatility)
+        buy_res = self.calculate_buy_costs(reference_price=100.0, quantity=notional/100.0, notional=notional, adv=adv, volatility=volatility)
+        sell_res = self.calculate_sell_costs(reference_price=100.0, quantity=notional/100.0, notional=notional, adv=adv, volatility=volatility)
         total_cost = buy_res['totalCost'] + sell_res['totalCost']
         return float(total_cost / notional) if notional > 0 else 0.003
+
+    @staticmethod
+    def calculate_cost_forecast_error(expected_costs: List[float], actual_costs: List[float]) -> Dict[str, float]:
+        """Calculates error distribution metrics between expected and realized execution costs."""
+        if not expected_costs or len(expected_costs) != len(actual_costs):
+            return {'mean': 0.0, 'median': 0.0, 'mae': 0.0, 'bias': 0.0}
+        errors = np.array(actual_costs) - np.array(expected_costs)
+        return {
+            'mean': float(round(np.mean(errors), 4)),
+            'median': float(round(np.median(errors), 4)),
+            'mae': float(round(np.mean(np.abs(errors)), 4)),
+            'bias': float(round(np.mean(errors), 4))
+        }
