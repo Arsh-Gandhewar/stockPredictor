@@ -1,12 +1,14 @@
-﻿"""
+"""
 QuantX Centralized Quantitative Governance Configuration.
 Single source of truth for all quantitative, statistical, risk, and certification constants.
 """
 
-# Sample Size Governance Thresholds (Sections 9, 16, 18)
+# Sample Size Governance Thresholds (Sections 9, 16, 18, BUG 4)
 MIN_TEST_CALIBRATION_SAMPLE_COUNT = 500
 MIN_RETURN_BUCKET_SAMPLE_COUNT = 100
 MIN_TAIL_SAMPLE_COUNT = 250
+MIN_RETURN_MODEL_TRAIN_N = 1000
+MIN_REGIME_N = 250
 
 # Portfolio Risk & Exposure Invariants (Sections 18, 31)
 MAX_POSITION_WEIGHT = 0.10

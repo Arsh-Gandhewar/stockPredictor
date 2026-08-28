@@ -176,14 +176,22 @@ class ExecutionHashEngine:
 class UniverseHashEngine:
     """
     Hashes the point-in-time universe specification.
+    Order of tickers does not alter the hash.
     """
 
     @staticmethod
-    def compute(universe_config: Dict[str, Any]) -> str:
+    def compute(universe_config: Any) -> str:
         """
-        universe_config must include:
-          tickers, universeVersion, selectionCriteria, pitCutoffDate
+        universe_config can be a list/set of tickers or a dict containing 'tickers'.
         """
+        if isinstance(universe_config, (list, set, tuple)):
+            canonical = sorted(list(universe_config))
+            return _sha256({'tickers': canonical})
+        if isinstance(universe_config, dict) and 'tickers' in universe_config:
+            cfg = dict(universe_config)
+            if isinstance(cfg['tickers'], (list, set, tuple)):
+                cfg['tickers'] = sorted(list(cfg['tickers']))
+            return _sha256(cfg)
         return _sha256(universe_config)
 
 

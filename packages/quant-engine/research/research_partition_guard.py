@@ -102,6 +102,13 @@ _SELECTION_OPERATIONS = {
 _FORBIDDEN_ON_HOLDOUT = _SELECTION_OPERATIONS | {OperationType.FIT}
 
 
+class Partition(str, Enum):
+    TRAIN = 'TRAIN'
+    VALIDATION = 'VALIDATION'
+    TEST = 'TEST'
+    HOLDOUT = 'HOLDOUT'
+
+
 # ---------------------------------------------------------------------------
 # Main Guard
 # ---------------------------------------------------------------------------
@@ -131,18 +138,19 @@ class ResearchPartitionGuard:
         partition: Optional[str],
         operation_type: OperationType = OperationType.OPTIMIZE,
         operation_name: str = 'Operation'
-    ) -> None:
+    ) -> bool:
         """
         Guarantees that selection/optimization operations are NEVER
         executed on TEST or HOLDOUT partitions.
 
-        - Selection on TEST  → OptimizationLeakageError
+        - Selection or FIT on TEST  → OptimizationLeakageError
         - Any mutation on HOLDOUT → HoldoutMutationError (if active)
         - FIT on HOLDOUT → HoldoutMutationError
         """
         if partition is None:
-            return
-        p_upper = str(partition).upper().strip()
+            return True
+        p_str = partition.value if hasattr(partition, 'value') else str(partition)
+        p_upper = p_str.upper().strip()
 
         if p_upper == 'HOLDOUT':
             if operation_type in _FORBIDDEN_ON_HOLDOUT:
@@ -150,14 +158,15 @@ class ResearchPartitionGuard:
                     f"HOLDOUT VIOLATION: {operation_type.value} '{operation_name}' is strictly "
                     "forbidden on HOLDOUT partition. HOLDOUT is immutable once activated."
                 )
-            return  # EVALUATE is allowed on HOLDOUT
+            return True  # EVALUATE is allowed on HOLDOUT
 
         if p_upper == 'TEST':
-            if operation_type in _SELECTION_OPERATIONS:
+            if operation_type in _SELECTION_OPERATIONS or operation_type == OperationType.FIT:
                 raise OptimizationLeakageError(
                     f"CRITICAL RESEARCH LEAKAGE: {operation_type.value} '{operation_name}' is "
                     "strictly forbidden on TEST partition. Selection must be done on VALIDATION only."
                 )
+        return True
 
     # ------------------------------------------------------------------
     # Holdout Lock

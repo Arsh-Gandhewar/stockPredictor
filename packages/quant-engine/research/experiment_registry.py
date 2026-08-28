@@ -1,14 +1,36 @@
-﻿"""
-QuantX Formal Experiment Registry & Parameter Hashing Engine.
+"""
+QuantX Formal Experiment Registry & Parameter Hashing Engine — BUG 4 Full Upgrade.
+
 Enforces pre-registration of all economic experiments, deterministic parameter hashing,
 family-wise multiple-hypothesis tracking, and strict research immutability.
+Prevents deleting failed experiments, hiding bad folds, or manipulating candidate footprints.
 """
 import os
+import sys
 import json
 import hashlib
 from typing import Dict, List, Any, Optional
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from datetime import datetime, timezone
+
+from research.research_partition_guard import RegistryDeleteError
+
+try:
+    from research.research_lineage_engine import (
+        StrategyHashEngine,
+        ExecutionHashEngine,
+        EnvironmentHashEngine,
+        UniverseHashEngine,
+        get_current_git_sha
+    )
+except ImportError:
+    StrategyHashEngine = None
+    ExecutionHashEngine = None
+    EnvironmentHashEngine = None
+    UniverseHashEngine = None
+    def get_current_git_sha():
+        return "UNKNOWN"
+
 
 def compute_parameter_hash(parameters: Dict[str, Any]) -> str:
     """
@@ -16,8 +38,9 @@ def compute_parameter_hash(parameters: Dict[str, Any]) -> str:
     Two strategy runs with identical parameters have identical hash;
     altering any economic parameter produces a distinct hash.
     """
-    canonical_json = json.dumps(parameters, sort_keys=True, separators=(',', ':'))
+    canonical_json = json.dumps(parameters, sort_keys=True, separators=(',', ':'), default=str)
     return hashlib.sha256(canonical_json.encode('utf-8')).hexdigest()
+
 
 @dataclass
 class ExperimentRecord:
@@ -43,11 +66,23 @@ class ExperimentRecord:
     status: str
     selected: bool
     selectionReason: Optional[str]
+    # BUG 4 additions:
+    universeHash: Optional[str] = None
+    executionHash: Optional[str] = None
+    environmentHash: Optional[str] = None
+    trainPeriod: Optional[Dict[str, str]] = None
+    testPeriod: Optional[Dict[str, str]] = None
+    holdoutPeriod: Optional[Dict[str, str]] = None
+    outerFoldId: Optional[str] = None
+    selectionMargin: Optional[float] = None
+    foldStability: Optional[Dict[str, Any]] = None
+    researchOverfitRisk: Optional[str] = None
+    pbo: Optional[float] = None
+    dsr: Optional[float] = None
     metrics: Optional[Dict[str, Any]] = None
     foldMetrics: Optional[List[Dict[str, Any]]] = None
     robustValidationScore: Optional[float] = None
     complexityPenalty: Optional[float] = None
-    selectionMargin: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -93,8 +128,15 @@ class ExperimentRegistry:
         candidate_number: int,
         total_candidates: int,
         parent_id: Optional[str] = None,
-        git_sha: str = "1ec34fb",
-        dataset_hash: str = "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5",
+        git_sha: Optional[str] = None,
+        dataset_hash: Optional[str] = None,
+        universe_hash: Optional[str] = None,
+        execution_hash: Optional[str] = None,
+        environment_hash: Optional[str] = None,
+        train_period: Optional[Dict[str, str]] = None,
+        test_period: Optional[Dict[str, str]] = None,
+        holdout_period: Optional[Dict[str, str]] = None,
+        outer_fold_id: Optional[str] = None,
         selection_metric: str = "ROBUST_VALIDATION_SCORE",
         selection_method: str = "OUT_OF_SAMPLE_CROSS_VALIDATION"
     ) -> ExperimentRecord:
@@ -108,12 +150,19 @@ class ExperimentRegistry:
                 )
 
         param_hash = compute_parameter_hash(parameter_set)
+        effective_git_sha = git_sha or get_current_git_sha()
+        effective_dataset_hash = dataset_hash or "a65a2b18852442d6ae94ef8392fa9d8a73f3f95eb322ecc9e20a3040b2dae3d5"
+
+        env_hash = environment_hash
+        if env_hash is None and EnvironmentHashEngine is not None:
+            env_hash = EnvironmentHashEngine.compute()
+
         record = ExperimentRecord(
             experimentId=experiment_id,
             parentExperimentId=parent_id,
             createdAt=datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-            gitSha=git_sha,
-            datasetHash=dataset_hash,
+            gitSha=effective_git_sha,
+            datasetHash=effective_dataset_hash,
             featureVersion="5.0.0",
             modelVersion="5.0.0",
             returnModelVersion="v5.0.0-supervised-quantile",
@@ -130,7 +179,14 @@ class ExperimentRegistry:
             family=family.upper(),
             status="REGISTERED",
             selected=False,
-            selectionReason=None
+            selectionReason=None,
+            universeHash=universe_hash,
+            executionHash=execution_hash,
+            environmentHash=env_hash,
+            trainPeriod=train_period,
+            testPeriod=test_period,
+            holdoutPeriod=holdout_period,
+            outerFoldId=outer_fold_id,
         )
         self.experiments[experiment_id] = record.to_dict()
         self.save()
@@ -142,7 +198,11 @@ class ExperimentRegistry:
         metrics: Dict[str, Any],
         fold_metrics: Optional[List[Dict[str, Any]]] = None,
         robust_score: Optional[float] = None,
-        complexity_penalty: Optional[float] = None
+        complexity_penalty: Optional[float] = None,
+        fold_stability: Optional[Dict[str, Any]] = None,
+        research_overfit_risk: Optional[str] = None,
+        pbo: Optional[float] = None,
+        dsr: Optional[float] = None
     ) -> None:
         """Records finalized results for an experiment. Enforces immutability thereafter."""
         if experiment_id not in self.experiments:
@@ -156,11 +216,21 @@ class ExperimentRegistry:
         rec['foldMetrics'] = fold_metrics or []
         rec['robustValidationScore'] = robust_score
         rec['complexityPenalty'] = complexity_penalty
+        rec['foldStability'] = fold_stability
+        rec['researchOverfitRisk'] = research_overfit_risk
+        rec['pbo'] = pbo
+        rec['dsr'] = dsr
         rec['status'] = 'COMPLETED'
         rec['completedAt'] = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
         self.save()
 
-    def mark_selected(self, winner_id: str, runner_up_id: Optional[str] = None, selection_margin: Optional[float] = None, reason: str = "HIGHEST_ROBUST_VALIDATION_SCORE") -> None:
+    def mark_selected(
+        self,
+        winner_id: str,
+        runner_up_id: Optional[str] = None,
+        selection_margin: Optional[float] = None,
+        reason: str = "HIGHEST_ROBUST_VALIDATION_SCORE"
+    ) -> None:
         """Marks winning candidate in registry with runner-up audit margin."""
         if winner_id not in self.experiments:
             raise KeyError(f"Winner '{winner_id}' not found in registry.")
@@ -170,6 +240,21 @@ class ExperimentRegistry:
         self.experiments[winner_id]['selectionMargin'] = selection_margin
         self.experiments[winner_id]['runnerUpId'] = runner_up_id
         self.save()
+
+    def delete_experiment(self, experiment_id: str) -> None:
+        """
+        STRICT ANTI-CHERRY-PICKING INVARIANT:
+        Experiments cannot be deleted from the registry once registered,
+        regardless of whether they failed, produced poor returns, or diverged.
+        """
+        raise RegistryDeleteError(
+            f"ANTI_CHERRYPICKING_VIOLATION: Experiment '{experiment_id}' cannot be deleted. "
+            "All tested hypotheses must remain in the audit trail."
+        )
+
+    def remove(self, experiment_id: str) -> None:
+        """Alias for delete_experiment to prevent dictionary deletion."""
+        self.delete_experiment(experiment_id)
 
     def get_family_counts(self) -> Dict[str, int]:
         counts: Dict[str, int] = {}

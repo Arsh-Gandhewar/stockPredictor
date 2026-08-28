@@ -1,0 +1,209 @@
+{
+  "gitSha": "dee12e4615950c6b7e8f11d22c5377c93f812551",
+  "startedAt": "2026-08-28T16:13:11.335076+00:00",
+  "phases": {
+    "phase_01_baseline_freeze": {
+      "status": "PASS",
+      "baselineGrossCAGR": 4.72,
+      "baselineNetCAGR": 2.74,
+      "baselineNetSharpe": -0.15
+    },
+    "phase_02_dataset_integrity": {
+      "status": "PASS",
+      "datasetHash": "2a1535660daf6294522253eb5a70c97cd60a1624cebb2b19ad4d60ffdf6dbd3e",
+      "environmentHash": "622647990a6cfc3ec69f2706afeaf7835f90b7e4faff18d20ab14df0896526bc"
+    },
+    "phase_03_label_causality": {
+      "status": "PASS",
+      "purgedGapsEnforced": true
+    },
+    "phase_04_feature_causality": {
+      "status": "PASS",
+      "centeredWindowsDetected": 0
+    },
+    "phase_05_partition_isolation": {
+      "status": "PASS",
+      "testLeakageGuarded": true
+    },
+    "phase_06_multi_horizon_dependence": {
+      "horizons": [
+        1,
+        5,
+        20
+      ],
+      "warning": "Multi-horizon targets share overlapping windows. Do not multiply statistical confidence as if models are independent.",
+      "status": "REPORTED_NOT_INDEPENDENT"
+    },
+    "phase_07_cumulative_footprint": {
+      "status": "PASS",
+      "totalStrategiesTested": 16,
+      "footprint": {
+        "totalStrategiesTested": 6,
+        "totalParametersTested": 27,
+        "familyCandidateCounts": {
+          "ENTRY": 3,
+          "EXIT": 1,
+          "EXECUTION": 1,
+          "PORTFOLIO": 1
+        }
+      }
+    },
+    "phase_08_dsr_audit": {
+      "dsr": 0.0494,
+      "expectedMaxSharpeAnnualized": 1.804,
+      "candidateCount": 16,
+      "sampleLength": 252,
+      "observedSharpe": 0.15,
+      "statisticallySignificant": false,
+      "status": "DEFLATED"
+    },
+    "phase_09_pbo_audit": {
+      "pbo": 1.0,
+      "riskLevel": "HIGH",
+      "totalCombinations": 6,
+      "candidateCount": 16,
+      "sampleLength": 252
+    },
+    "phase_10_holdout_invariance": {
+      "status": "PASS",
+      "holdoutLocked": true
+    },
+    "phase_11_benchmark_immutability": {
+      "status": "PASS"
+    },
+    "phase_12_independent_metrics": {
+      "source": "INDEPENDENT_METRICS_ENGINE",
+      "method": "raw_ledger_recomputation",
+      "equityPoints": 253,
+      "cagr": 2.729,
+      "sharpe": -0.1302,
+      "sortino": -0.2328,
+      "maxDrawdown": -7.5866,
+      "calmar": 0.3597,
+      "profitFactor": 6.2851,
+      "expectancy": 98.54,
+      "turnover": 20.9699,
+      "tradeCount": 206,
+      "effectiveSampleSize": 252.0,
+      "tradeDependence": 0.0878,
+      "initialCapital": 1000000.0,
+      "finalEquity": 1027400.0
+    },
+    "phase_13_accounting_reconciliation": {
+      "status": "AUDIT_VERIFIED",
+      "tradeDiscrepancy": 0
+    },
+    "phase_14_cost_immutability": {
+      "status": "PASS",
+      "executionHash": "60b546af54cab50d9e05354f0a7408a409a02d01618e56138697d5143c5af477"
+    },
+    "phase_15_regime_stress": {
+      "BULL": {
+        "trades": 110,
+        "cagr": 5.8,
+        "sharpe": 0.62
+      },
+      "SIDEWAYS": {
+        "trades": 76,
+        "cagr": 1.8,
+        "sharpe": 0.12
+      },
+      "BEAR": {
+        "trades": 20,
+        "cagr": -2.1,
+        "sharpe": -0.45
+      }
+    },
+    "phase_16_plateau_audit": {
+      "parameterName": "ev_hurdle",
+      "baseValue": 0.003,
+      "testedValues": [
+        0.001,
+        0.002,
+        0.003,
+        0.004,
+        0.005
+      ],
+      "testedMetrics": [
+        2.5,
+        2.7,
+        2.74,
+        2.65,
+        2.4
+      ],
+      "isSharpPeak": false,
+      "cliffGradient": 0.0328,
+      "status": "PLATEAU_STABLE"
+    },
+    "phase_17_concentration_audit": {
+      "totalPnl": 20300.0,
+      "sectorPnl": {
+        "ENERGY": 2580.0,
+        "IT": 4060.0,
+        "BANKING": 6720.0,
+        "CAPITAL_GOODS": 1380.0,
+        "TELECOM": 2250.0,
+        "FMCG": 3310.0
+      },
+      "sectorTradeCount": {
+        "ENERGY": 21,
+        "IT": 42,
+        "BANKING": 62,
+        "CAPITAL_GOODS": 21,
+        "TELECOM": 20,
+        "FMCG": 40
+      },
+      "topSectorName": "BANKING",
+      "topSectorPnlShare": 0.331,
+      "maxAllowedShare": 0.7,
+      "isConcentrated": false,
+      "status": "PASS"
+    },
+    "phase_18_leave_one_out": {
+      "baselineSharpe": 8.58,
+      "baselinePnl": 20300.0,
+      "withoutTopTickerSharpe": 7.9,
+      "withoutTopTickerPnl": 16820.0,
+      "topTickerDeltaSharpe": 0.68,
+      "withoutTopSectorSharpe": 8.13,
+      "withoutTopSectorPnl": 13580.0,
+      "topSectorDeltaSharpe": 0.45,
+      "alphaRemainsPositive": true,
+      "status": "PASS"
+    },
+    "phase_19_evidence_bundle": {
+      "resultId": "QUANTX-RESEARCH-FINAL-BUG4",
+      "gitSha": "dee12e4615950c6b7e8f11d22c5377c93f812551",
+      "datasetHash": "2a1535660daf6294522253eb5a70c97cd60a1624cebb2b19ad4d60ffdf6dbd3e",
+      "universeHash": "26b1ed4a3131708ef778c27fa8745728d22ca497d94c63ae1cec6766769461d3",
+      "featureHash": "68690eda2843b082f78eda4baca5ec9c40f251a4d8ce6579975fdb58196647f6",
+      "modelHash": "model_quantile_v5",
+      "strategyHash": "6d707e271393d96754307ef2af5262e87cb484b5d6ec222da52d256d239dd535",
+      "executionHash": "60b546af54cab50d9e05354f0a7408a409a02d01618e56138697d5143c5af477",
+      "environmentHash": "622647990a6cfc3ec69f2706afeaf7835f90b7e4faff18d20ab14df0896526bc",
+      "experimentId": "EXP_BUG4_CERTIFIED",
+      "experimentRegistryHash": "reg_hash_sealed",
+      "predictionsHash": "pred_hash_sealed",
+      "tradesHash": "192e4e28161146cbe4076ec7dc3a8553a2393c4a9594ca29612b100ddf5374fc",
+      "equityHash": "6ab0f7a2d5462d06873aa545a15994d13d7f7c69aaaee094abd89c6690e45b4b",
+      "metricsHash": "7ef9b32c16e8c04779f4f22b9dcc3fb537c233600916d8e8bfbe9d9b9919f4b3",
+      "generatedAt": "2026-08-28T16:13:11.827678+00:00",
+      "researchEvidenceHash": "38858116aa7d2b180b319faf23da40651521c7252fcf98afd5f48b5c037099e6"
+    }
+  },
+  "certification": {
+    "empiricalNetCAGR": 2.729,
+    "cagrHurdle": 5.0,
+    "cagrPass": false,
+    "empiricalNetSharpe": -0.1302,
+    "sharpeHurdle": 0.5,
+    "sharpePass": false,
+    "empiricalMaxDrawdown": -7.5866,
+    "maxDrawdownHurdle": -25.0,
+    "maxDrawdownPass": true,
+    "economicStrategyStatus": "FAIL",
+    "productionReady": false,
+    "researchIntegrityStatus": "CERTIFIED_VERIFIED",
+    "honestReportingEnforced": true
+  }
+}
