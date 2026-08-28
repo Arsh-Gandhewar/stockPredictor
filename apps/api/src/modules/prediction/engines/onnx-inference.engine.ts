@@ -102,7 +102,7 @@ export class OnnxInferenceEngine implements OnModuleInit {
    * Executes native ONNX runtime inference over 25 point-in-time features.
    * Strictly fails closed (never silently executes heuristic baseline).
    */
-  async evaluate(features: Record<string, number | null>, horizon: '1d' | '5d' | '20d'): Promise<number> {
+  async evaluate(features: Record<string, number | null> | number[], horizon: '1d' | '5d' | '20d'): Promise<number> {
     const session = this.sessions.get(horizon);
     if (!session) {
       throw new Error(`MODEL_UNAVAILABLE: ONNX inference session for horizon ${horizon} is not loaded`);
@@ -110,10 +110,27 @@ export class OnnxInferenceEngine implements OnModuleInit {
 
     try {
       const inputVector = new Float32Array(this.featureSchema.length);
-      for (let i = 0; i < this.featureSchema.length; i++) {
-        const key = this.featureSchema[i];
-        const val = features[key];
-        inputVector[i] = val !== null && val !== undefined && !isNaN(val) ? Number(val) : 0.0;
+
+      if (Array.isArray(features)) {
+        if (features.length !== this.featureSchema.length) {
+          throw new Error(
+            `FEATURE_SCHEMA_MISMATCH: Input array length (${features.length}) does not match expected feature schema count (${this.featureSchema.length})`
+          );
+        }
+        for (let i = 0; i < features.length; i++) {
+          const val = features[i];
+          inputVector[i] = val !== null && val !== undefined && !isNaN(val) ? Number(val) : 0.0;
+        }
+      } else {
+        // Enforce strict feature schema validation: all expected features must be present
+        for (let i = 0; i < this.featureSchema.length; i++) {
+          const key = this.featureSchema[i];
+          if (!(key in features)) {
+            throw new Error(`FEATURE_SCHEMA_MISMATCH: Missing required feature '${key}' in input vector`);
+          }
+          const val = features[key];
+          inputVector[i] = val !== null && val !== undefined && !isNaN(val) ? Number(val) : 0.0;
+        }
       }
 
       const inputTensor = new ort.Tensor('float32', inputVector, [1, this.featureSchema.length]);
@@ -131,7 +148,10 @@ export class OnnxInferenceEngine implements OnModuleInit {
       }
 
       throw new Error('ONNX model produced malformed output');
-    } catch (err) {
+    } catch (err: any) {
+      if (err.message?.startsWith('FEATURE_SCHEMA_MISMATCH')) {
+        throw err;
+      }
       this.logger.error(`ONNX inference execution failed for ${horizon}: ${err}`);
       throw new Error(`MODEL_UNAVAILABLE: ONNX inference failed: ${err.message}`);
     }

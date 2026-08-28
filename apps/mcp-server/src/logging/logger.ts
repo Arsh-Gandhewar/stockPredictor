@@ -24,6 +24,9 @@ export interface StructuredLog {
   status?: string;
   code?: string;
   error?: string;
+  authMethod?: string;
+  callerRole?: string;
+  callerUserId?: string;
   metadata?: Record<string, unknown>;
 }
 

@@ -1,27 +1,92 @@
 import { McpError } from '../errors/mcp-errors.js';
+import * as crypto from 'crypto';
+import * as fs from 'fs';
+import * as path from 'path';
 
-interface CachedExecution {
+export interface StoredExecution {
   result: unknown;
   timestamp: number;
-  hash: string;
+  payloadHash: string;
+  operation: string;
+  userId: string;
 }
 
 export class IdempotencyManager {
-  private cache = new Map<string, CachedExecution>();
+  private cache = new Map<string, StoredExecution>();
+  private inFlight = new Map<string, Promise<any>>();
   private readonly ttlMs: number;
+  private readonly persistenceFile: string;
 
   constructor(ttlMs: number = 24 * 60 * 60 * 1000) {
-    // 24-hour default retention for idempotency keys
     this.ttlMs = ttlMs;
+    this.persistenceFile = path.resolve(process.cwd(), '.quantx/idempotency-store.json');
+    this.loadFromDisk();
 
     setInterval(() => {
-      const now = Date.now();
-      for (const [key, entry] of this.cache.entries()) {
-        if (now - entry.timestamp > this.ttlMs) {
-          this.cache.delete(key);
+      this.purgeExpired();
+    }, 5 * 60 * 1000).unref();
+  }
+
+  private loadFromDisk(): void {
+    try {
+      if (fs.existsSync(this.persistenceFile)) {
+        const raw = fs.readFileSync(this.persistenceFile, 'utf-8');
+        const data = JSON.parse(raw);
+        for (const [k, v] of Object.entries(data)) {
+          this.cache.set(k, v as StoredExecution);
         }
       }
-    }, 5 * 60 * 1000).unref();
+    } catch {
+      // Best-effort local persistence
+    }
+  }
+
+  private saveToDisk(): void {
+    try {
+      const dir = path.dirname(this.persistenceFile);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const obj: Record<string, StoredExecution> = {};
+      for (const [k, v] of this.cache.entries()) {
+        obj[k] = v;
+      }
+      fs.writeFileSync(this.persistenceFile, JSON.stringify(obj, null, 2), 'utf-8');
+    } catch {
+      // Best-effort local persistence
+    }
+  }
+
+  private purgeExpired(): void {
+    const now = Date.now();
+    let changed = false;
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp > this.ttlMs) {
+        this.cache.delete(key);
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.saveToDisk();
+    }
+  }
+
+  /**
+   * Computes deterministic SHA-256 canonical hash of the request payload.
+   */
+  static computePayloadHash(payload: unknown): string {
+    const canonicalString = IdempotencyManager.canonicalize(payload);
+    return crypto.createHash('sha256').update(canonicalString).digest('hex');
+  }
+
+  private static canonicalize(obj: any): string {
+    if (obj === null || obj === undefined) return 'null';
+    if (typeof obj !== 'object') return JSON.stringify(obj);
+    if (Array.isArray(obj)) {
+      return '[' + obj.map((x) => IdempotencyManager.canonicalize(x)).join(',') + ']';
+    }
+    const keys = Object.keys(obj).sort();
+    return '{' + keys.map((k) => JSON.stringify(k) + ':' + IdempotencyManager.canonicalize(obj[k])).join(',') + '}';
   }
 
   /**
@@ -42,30 +107,84 @@ export class IdempotencyManager {
   }
 
   /**
-   * Checks if an idempotency key was previously processed.
-   * If yes, returns the previously saved result.
+   * Checks if an idempotency key was previously processed for this user.
+   * If payload matches -> returns original result.
+   * If payload differs -> throws CONFLICT.
    */
-  getExisting(key: string, userScope: string): unknown | null {
-    const fullKey = `${userScope}:${key}`;
+  getExisting(key: string, userId: string, currentPayloadHash?: string): unknown | null {
+    const fullKey = `${userId}:${key}`;
     const entry = this.cache.get(fullKey);
     if (!entry) return null;
+
+    if (currentPayloadHash && entry.payloadHash && entry.payloadHash !== currentPayloadHash) {
+      throw new McpError(
+        'CONFLICT',
+        `Idempotency Conflict: Key '${key}' was already processed with a different request payload. Reusing keys with different parameters is forbidden.`
+      );
+    }
+
     return entry.result;
   }
 
   /**
-   * Stores the successful execution result against the idempotency key.
+   * Concurrently coalesces identical in-flight requests and returns cached results for duplicates.
    */
-  record(key: string, userScope: string, result: unknown, payloadHash: string = ''): void {
-    const fullKey = `${userScope}:${key}`;
+  async runOnce<T>(
+    key: string,
+    userId: string,
+    payloadHash: string,
+    operation: string,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    const existing = this.getExisting(key, userId, payloadHash);
+    if (existing) {
+      return { ...(existing as any), isDuplicate: true };
+    }
+
+    const fullKey = `${userId}:${key}`;
+    if (this.inFlight.has(fullKey)) {
+      const result = await this.inFlight.get(fullKey);
+      return { ...(result as any), isDuplicate: true };
+    }
+
+    const promise = (async () => {
+      try {
+        const res = await fn();
+        this.record(key, userId, res, payloadHash, operation);
+        return res;
+      } finally {
+        this.inFlight.delete(fullKey);
+      }
+    })();
+
+    this.inFlight.set(fullKey, promise);
+    return promise;
+  }
+
+  /**
+   * Stores execution result durably.
+   */
+  record(key: string, userId: string, result: unknown, payloadHash: string = '', operation: string = 'TRADE'): void {
+    const fullKey = `${userId}:${key}`;
     this.cache.set(fullKey, {
       result,
       timestamp: Date.now(),
-      hash: payloadHash,
+      payloadHash,
+      operation,
+      userId,
     });
+    this.saveToDisk();
   }
 
   clear(): void {
     this.cache.clear();
+    try {
+      if (fs.existsSync(this.persistenceFile)) {
+        fs.unlinkSync(this.persistenceFile);
+      }
+    } catch {
+      // Ignored
+    }
   }
 }
 

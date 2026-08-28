@@ -38,7 +38,7 @@ export class QuantxClient {
       'Authorization': `Bearer ${this.config.apiKey}`,
       'x-api-key': this.config.apiKey,
       'x-request-id': requestId,
-      'x-user-id': userId || this.config.authUserId,
+      'x-user-id': (userId || this.config.authUserId) || '',
     };
 
     const maxRetries = isWriteOperation ? 0 : 2;
@@ -217,6 +217,7 @@ export class QuantxClient {
       type: 'BUY' | 'SELL';
       quantity: number;
       orderType?: 'MARKET' | 'LIMIT';
+      idempotencyKey?: string;
     },
     requestId?: string
   ): Promise<any> {

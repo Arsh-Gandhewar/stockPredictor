@@ -60,7 +60,7 @@ export class CalibrationEngine {
 
     // If uncalibrated, return the uncalibrated probability directly
     if (!this.isFittedFromValidation || knots.length < 2) {
-      return parseFloat(p.toFixed(4));
+      return p;
     }
 
     // Boundary conditions
@@ -75,11 +75,11 @@ export class CalibrationEngine {
         if (x1 === x0) return y0;
         const t = (p - x0) / (x1 - x0);
         const calibrated = y0 + t * (y1 - y0);
-        return parseFloat(Math.max(0.05, Math.min(0.95, calibrated)).toFixed(4));
+        return Math.max(0.05, Math.min(0.95, calibrated));
       }
     }
 
-    return parseFloat(p.toFixed(4));
+    return p;
   }
 
   /**

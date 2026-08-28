@@ -9,7 +9,7 @@ import {
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import { ServerConfig } from './config.js';
 import { QuantxClient } from './adapters/quantx-client.js';
-import { AuthContext, UserRole } from './auth/auth-context.js';
+import { AuthContext, AuthService } from './auth/auth-context.js';
 import { ToolRegistry, createDefaultToolRegistry } from './tools/registry.js';
 import { ResourceRegistry, createDefaultResourceRegistry } from './resources/resource-registry.js';
 import { McpError } from './errors/mcp-errors.js';
@@ -52,13 +52,26 @@ export class QuantxMcpServer {
     this.setupHandlers();
   }
 
-  private createAuthContext(requestId?: string, userRole: UserRole = 'ADMIN'): AuthContext {
-    return {
-      userId: this.config.authUserId,
-      role: userRole,
-      apiKey: this.config.apiKey,
-      requestId: requestId || `mcp_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    };
+  /**
+   * Resolves authentication context per request.
+   * NEVER defaults to ADMIN or default_user.
+   */
+  public createAuthContext(
+    authHeader?: string,
+    apiKeyHeader?: string,
+    requestId?: string
+  ): AuthContext {
+    return AuthService.resolvePrincipal(
+      authHeader,
+      apiKeyHeader,
+      {
+        localTrustMode: this.config.localTrustMode,
+        localTrustUserId: this.config.localTrustUserId,
+        localTrustRole: this.config.localTrustRole,
+        apiKey: this.config.apiKey,
+      },
+      requestId
+    );
   }
 
   private setupHandlers(): void {
@@ -76,16 +89,30 @@ export class QuantxMcpServer {
     // ── Tool Invocation ──
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const toolName = request.params.name;
-      const toolArgs = request.params.arguments || {};
-      const context = this.createAuthContext();
+      const toolArgs = (request.params.arguments || {}) as Record<string, any>;
+
+      // Extract auth token from request meta or special argument if passed
+      const meta = (request.params as any)._meta || {};
+      const authHeader = meta.authorization || toolArgs._authorization;
+      const apiKeyHeader = meta.apiKey || toolArgs._apiKey;
+
+      // Clean metadata out of tool args so schema validation doesn't fail
+      const cleanArgs = { ...toolArgs };
+      delete cleanArgs._authorization;
+      delete cleanArgs._apiKey;
+
+      const context = this.createAuthContext(authHeader, apiKeyHeader);
 
       logger.info(`Received MCP tool call: ${toolName}`, {
         tool: toolName,
         requestId: context.requestId,
+        authMethod: context.principal.authMethod,
+        callerRole: context.role,
+        callerUserId: context.userId,
       });
 
       try {
-        const result = await this.toolRegistry.executeTool(toolName, toolArgs, this.client, context);
+        const result = await this.toolRegistry.executeTool(toolName, cleanArgs, this.client, context);
         return {
           content: [
             {
@@ -103,6 +130,7 @@ export class QuantxMcpServer {
           code: mcpError.code,
         });
 
+        // Strip any sensitive data, database paths, or stack traces from public client response
         return {
           content: [
             {
@@ -111,7 +139,6 @@ export class QuantxMcpServer {
                 {
                   error: mcpError.code,
                   message: mcpError.message,
-                  details: mcpError.details,
                   retryable: mcpError.retryable,
                   timestamp: new Date().toISOString(),
                 },
@@ -140,10 +167,12 @@ export class QuantxMcpServer {
     // ── Resource Reading ──
     this.server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
       const uri = request.params.uri;
-      const context = this.createAuthContext();
+      const meta = (request.params as any)._meta || {};
+      const context = this.createAuthContext(meta.authorization, meta.apiKey);
 
       logger.info(`Received MCP read resource: ${uri}`, {
         requestId: context.requestId,
+        callerRole: context.role,
       });
 
       try {
@@ -174,6 +203,7 @@ export class QuantxMcpServer {
       metadata: {
         serverName: this.config.serverName,
         apiUrl: this.config.apiUrl,
+        localTrustMode: this.config.localTrustMode,
         toolsCount: this.toolRegistry.getAllTools().length,
         resourcesCount: this.resourceRegistry.getAllResources().length,
       },
@@ -207,7 +237,6 @@ export class QuantxMcpServer {
       logger.error(`Uncaught exception in MCP server: ${err.message}`, {
         error: err.stack,
       });
-      // Do not silently crash if recoverable
     });
 
     process.on('unhandledRejection', (reason) => {

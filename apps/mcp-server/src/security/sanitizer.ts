@@ -134,4 +134,17 @@ export class SecuritySanitizer {
 
     return cleaned;
   }
+
+  /**
+   * Redacts sensitive internal details, file paths, database URLs, and stack trace references from client-facing messages.
+   */
+  static sanitizeErrorMessage(rawMessage: string): string {
+    if (!rawMessage) return 'An internal error occurred.';
+    return rawMessage
+      .replace(/(?:[a-zA-Z]:)?[/\\].*?\.(?:ts|js|py|json|prisma)(?::\d+(?::\d+)?)?/g, '[REDACTED_PATH]')
+      .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, '[REDACTED_DB_URL]')
+      .replace(/bearer\s+[a-zA-Z0-9_\-\.]+/gi, 'Bearer [REDACTED]')
+      .replace(/eyJ[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+/g, '[REDACTED_JWT]')
+      .trim();
+  }
 }

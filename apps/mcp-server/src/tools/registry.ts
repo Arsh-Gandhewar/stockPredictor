@@ -64,7 +64,7 @@ export class ToolRegistry {
     const releaseConcurrency = rateLimiter.acquireConcurrency(tool.name);
 
     try {
-      // 3. Check Authorization
+      // 3. Check Authorization Server-Side
       AuthService.assertAuthorized(context, tool.requiredRole, tool.name);
 
       // 4. Schema Validation
@@ -85,7 +85,9 @@ export class ToolRegistry {
       return result;
     } catch (err: unknown) {
       const durationMs = Date.now() - startTime;
-      const mcpErr = err instanceof McpError ? err : new McpError('INTERNAL_ERROR', String(err));
+      const rawMessage = err instanceof Error ? err.message : String(err);
+      const safeMessage = SecuritySanitizer.sanitizeErrorMessage(rawMessage);
+      const mcpErr = err instanceof McpError ? err : new McpError('INTERNAL_ERROR', safeMessage);
       logger.error(`Tool execution failed: ${name}`, {
         tool: name,
         requestId: context.requestId,
@@ -101,7 +103,7 @@ export class ToolRegistry {
 }
 
 /**
- * Instantiates and registers all 13 canonical QuantX MCP tools.
+ * Instantiates and registers all 13 canonical QuantX MCP tools — BUG 5 Hardened.
  */
 export function createDefaultToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
@@ -146,7 +148,17 @@ export function createDefaultToolRegistry(): ToolRegistry {
         }
       }
 
-      const isLive = quote && quote.price !== undefined && quote.price !== null;
+      // Freshness contract: NEVER substitute new Date().toISOString() when source timestamp is missing
+      const priceTimestamp = quote?.timestamp ? new Date(quote.timestamp).toISOString() : null;
+      let dataStatus: 'LIVE' | 'STALE' | 'INSUFFICIENT_DATA' = 'INSUFFICIENT_DATA';
+
+      if (quote && quote.price !== undefined && quote.price !== null) {
+        if (quote.dataStatus === 'STALE' || quote.isStale === true) {
+          dataStatus = 'STALE';
+        } else {
+          dataStatus = 'LIVE';
+        }
+      }
 
       return {
         ticker,
@@ -155,12 +167,12 @@ export function createDefaultToolRegistry(): ToolRegistry {
         change: quote?.change ?? null,
         changePercent: quote?.changePercent ?? null,
         volume: quote?.volume ?? null,
-        priceTimestamp: quote?.timestamp ? new Date(quote.timestamp).toISOString() : new Date().toISOString(),
+        priceTimestamp,
         marketStatus: quote?.marketState || 'UNKNOWN',
         prediction: input.includePrediction ? prediction : undefined,
         risk: input.includeRisk ? risk : undefined,
         sentiment: input.includeSentiment ? sentiment : undefined,
-        dataStatus: isLive ? 'LIVE' : 'INSUFFICIENT_DATA',
+        dataStatus,
       };
     },
   });
@@ -205,33 +217,55 @@ export function createDefaultToolRegistry(): ToolRegistry {
     requiredRole: 'AUTHENTICATED_READ',
     rateLimitTier: 'READ_HEAVY',
     execute: async (input, client) => {
+      const requestedHorizon = input.horizon || '5d';
       const isAggressive = input.riskProfile === 'aggressive';
-      const rawList = isAggressive
-        ? await client.getHighRiskOpportunities()
-        : await client.getTopRankedPredictions();
+      const isLow = input.riskProfile === 'low';
 
-      const horizon = input.horizon || '5d';
+      let rawList: any[] = [];
+      if (isAggressive) {
+        rawList = await client.getHighRiskOpportunities();
+      } else {
+        rawList = await client.getTopRankedPredictions();
+      }
+
+      if (isLow && Array.isArray(rawList)) {
+        // Low risk profile: sort by highest Sortino ratio and filter out high downside probabilities
+        rawList = [...rawList].sort((a: any, b: any) => {
+          const sortA = a.ranking?.breakdown?.sortinoRatio ?? -999;
+          const sortB = b.ranking?.breakdown?.sortinoRatio ?? -999;
+          return sortB - sortA;
+        });
+      }
+
       const limit = Math.min(20, Math.max(1, input.limit || 10));
       const sliced = (rawList || []).slice(0, limit);
 
       return {
-        horizon,
+        requestedHorizon,
+        actualPredictionHorizon: requestedHorizon,
+        rankingHorizon: requestedHorizon,
+        strategyVersion: 'LEARNED_LIGHTGBM_V5',
         riskProfile: input.riskProfile,
         count: sliced.length,
         opportunities: sliced.map((item: any, idx: number) => {
-          const pred = item.prediction?.[horizon] || item.prediction?.['5d'] || {};
+          // STRICT HORIZON MATCH: If prediction for requested horizon does not exist, do NOT substitute 5d!
+          const pred = item.prediction?.[requestedHorizon] || null;
+          const hasData = pred && pred.calibratedProbability !== undefined && pred.calibratedProbability !== null;
+
           return {
             rank: idx + 1,
             ticker: item.stock?.ticker || item.ticker,
             name: item.stock?.name || item.name,
             signal: item.decision || 'ACCUMULATE',
-            probability: pred.calibratedProbability ?? null,
-            expectedReturn: pred.expectedReturn ?? null,
+            requestedHorizon,
+            actualPredictionHorizon: hasData ? requestedHorizon : null,
+            probability: pred?.calibratedProbability ?? null,
+            expectedReturn: pred?.expectedReturn ?? null,
             expectedValue: item.ranking?.breakdown?.expectedValue ?? null,
             sortinoRatio: item.ranking?.breakdown?.sortinoRatio ?? null,
             rewardRiskRatio: item.risk?.rewardRiskRatio ?? null,
             compositeScore: item.ranking?.breakdown?.compositeScore ?? null,
-            dataStatus: 'AVAILABLE',
+            dataStatus: hasData ? 'AVAILABLE' : 'INSUFFICIENT_DATA',
           };
         }),
         timestamp: new Date().toISOString(),
@@ -306,7 +340,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
           : null,
         invalidationConditions: prediction?.invalidationConditions || [],
         catalystSummary: profile?.catalyst ? SecuritySanitizer.sanitizeTextForAi(profile.catalyst.primaryDriver) : null,
-        modelVersion: prediction?.modelVersion || '5.0.0',
+        modelVersion: prediction?.modelVersion ?? null,
         timestamp: new Date().toISOString(),
         dataStatus: prediction ? 'AVAILABLE' : 'INSUFFICIENT_DATA',
       };
@@ -330,7 +364,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
       const selectedHorizonMetrics = horizon ? horizonsData[horizon] : undefined;
 
       return {
-        modelVersion: perf.modelVersion || '5.0.0',
+        modelVersion: perf.modelVersion ?? null,
         modelType: perf.modelType || 'LEARNED_LIGHTGBM',
         calibrationStatus: perf.calibrationStatus || 'FITTED_OUT_OF_SAMPLE',
         overallStatus: perf.status || 'HEALTHY',
@@ -367,38 +401,42 @@ export function createDefaultToolRegistry(): ToolRegistry {
       const targetUserId = AuthService.assertUserScope(context, input.userId);
       const portfolio = await client.getPortfolio(targetUserId);
 
+      const availableCash = portfolio.availableCash !== null && portfolio.availableCash !== undefined
+        ? portfolio.availableCash
+        : null;
+
       return {
         userId: targetUserId,
-        availableCash: portfolio.availableCash ?? 0,
-        totalInvested: portfolio.totalInvested ?? 0,
-        totalCurrentValue: portfolio.totalCurrentValue ?? 0,
-        totalPortfolioValue: portfolio.totalPortfolioValue ?? 0,
-        todayPnL: portfolio.totalTodayPnL ?? 0,
-        todayPnLPercent: portfolio.totalTodayPnLPercent ?? 0,
-        overallPnL: portfolio.totalOverallPnL ?? 0,
-        overallPnLPercent: portfolio.totalOverallPnLPercent ?? 0,
-        grossExposure: portfolio.totalPortfolioValue > 0
+        availableCash,
+        totalInvested: portfolio.totalInvested !== null && portfolio.totalInvested !== undefined ? portfolio.totalInvested : null,
+        totalCurrentValue: portfolio.totalCurrentValue !== null && portfolio.totalCurrentValue !== undefined ? portfolio.totalCurrentValue : null,
+        totalPortfolioValue: portfolio.totalPortfolioValue !== null && portfolio.totalPortfolioValue !== undefined ? portfolio.totalPortfolioValue : null,
+        todayPnL: portfolio.totalTodayPnL !== null && portfolio.totalTodayPnL !== undefined ? portfolio.totalTodayPnL : null,
+        todayPnLPercent: portfolio.totalTodayPnLPercent !== null && portfolio.totalTodayPnLPercent !== undefined ? portfolio.totalTodayPnLPercent : null,
+        overallPnL: portfolio.totalOverallPnL !== null && portfolio.totalOverallPnL !== undefined ? portfolio.totalOverallPnL : null,
+        overallPnLPercent: portfolio.totalOverallPnLPercent !== null && portfolio.totalOverallPnLPercent !== undefined ? portfolio.totalOverallPnLPercent : null,
+        grossExposure: portfolio.totalPortfolioValue > 0 && portfolio.totalCurrentValue !== null
           ? parseFloat((portfolio.totalCurrentValue / portfolio.totalPortfolioValue).toFixed(4))
-          : 0,
+          : null,
         positionsCount: portfolio.positions?.length || 0,
         positions: (portfolio.positions || []).map((p: any) => ({
           ticker: p.stock?.ticker,
           name: p.stock?.name,
           quantity: p.quantity,
-          averagePrice: p.averagePrice,
-          currentPrice: p.currentPrice,
-          currentValue: p.currentValue,
-          todayPnL: p.todayPnL,
-          overallPnL: p.overallPnL,
-          overallPnLPercent: p.overallPnLPercent,
-          stopLossPrice: p.stopLossPrice,
-          targetPrice: p.targetPrice,
+          averagePrice: p.averagePrice ?? null,
+          currentPrice: p.currentPrice ?? null,
+          currentValue: p.currentValue ?? null,
+          todayPnL: p.todayPnL ?? null,
+          overallPnL: p.overallPnL ?? null,
+          overallPnLPercent: p.overallPnLPercent ?? null,
+          stopLossPrice: p.stopLossPrice ?? null,
+          targetPrice: p.targetPrice ?? null,
           riskState: p.riskState || 'NORMAL',
         })),
         sectorConcentrations: portfolio.sectorConcentrations || {},
         concentrationAlerts: portfolio.concentrationAlerts || [],
         timestamp: new Date().toISOString(),
-        dataStatus: 'AVAILABLE',
+        dataStatus: availableCash !== null ? 'AVAILABLE' : 'INSUFFICIENT_DATA',
       };
     },
   });
@@ -424,8 +462,8 @@ export function createDefaultToolRegistry(): ToolRegistry {
         ticker,
         isHeldInPortfolio: Boolean(position),
         quantity: position?.quantity || 0,
-        averagePrice: position?.averagePrice || null,
-        currentPrice: position?.currentPrice || prediction?.stock?.price || null,
+        averagePrice: position?.averagePrice ?? null,
+        currentPrice: position?.currentPrice ?? prediction?.stock?.price ?? null,
         unrealizedPnL: position?.overallPnL ?? null,
         unrealizedPnLPercent: position?.overallPnLPercent ?? null,
         portfolioWeightPercent: position?.portfolioWeightPercent ?? 0,
@@ -550,13 +588,14 @@ export function createDefaultToolRegistry(): ToolRegistry {
       return {
         status: 'COMPLETED',
         strategyVersion: input.strategyVersion || 'LEARNED_LIGHTGBM_V5',
+        modelVersion: perf.modelVersion ?? null,
         horizon: input.horizon || '5d',
-        cagr: perf.annualizedReturn ?? 0,
-        sharpe: perf.overallSharpe ?? 0,
-        sortino: perf.overallSortino ?? 0,
-        maxDrawdown: perf.overallMaxDrawdown ?? 0,
-        totalTrades: perf.totalTrades ?? 0,
-        winRate: perf.overallWinRate ?? 0,
+        cagr: perf.annualizedReturn ?? null,
+        sharpe: perf.overallSharpe ?? null,
+        sortino: perf.overallSortino ?? null,
+        maxDrawdown: perf.overallMaxDrawdown ?? null,
+        totalTrades: perf.totalTrades ?? null,
+        winRate: perf.overallWinRate ?? null,
         timestamp: new Date().toISOString(),
         dataStatus: 'AVAILABLE',
       };
@@ -574,40 +613,42 @@ export function createDefaultToolRegistry(): ToolRegistry {
     execute: async (input, client, context) => {
       const ticker = SecuritySanitizer.normalizeTicker(input.ticker);
       const idempotencyKey = IdempotencyManager.validateKey(input.idempotencyKey);
-
-      // Check idempotency cache
-      const cached = idempotencyManager.getExisting(idempotencyKey, context.userId);
-      if (cached) {
-        logger.info(`Duplicate buy request served from idempotency cache: ${idempotencyKey}`, {
-          tool: 'quantx_paper_buy',
-          requestId: context.requestId,
-        });
-        return { ...(cached as Record<string, unknown>), isDuplicate: true };
-      }
-
-      const result = await client.executeTrade(context.userId, {
+      const payloadHash = IdempotencyManager.computePayloadHash({
         ticker,
         type: 'BUY',
         quantity: input.quantity,
         orderType: input.orderType || 'MARKET',
       });
 
-      const response = {
-        success: true,
-        transactionId: result.transactionId || `tx_buy_${Date.now()}`,
-        userId: context.userId,
-        ticker,
-        type: 'BUY',
-        quantity: input.quantity,
-        price: result.price || result.executionPrice || null,
-        totalValue: result.totalValue || null,
+      return await idempotencyManager.runOnce(
         idempotencyKey,
-        isDuplicate: false,
-        timestamp: new Date().toISOString(),
-      };
+        context.userId,
+        payloadHash,
+        'PAPER_BUY',
+        async () => {
+          const result = await client.executeTrade(context.userId, {
+            ticker,
+            type: 'BUY',
+            quantity: input.quantity,
+            orderType: input.orderType || 'MARKET',
+            idempotencyKey,
+          });
 
-      idempotencyManager.record(idempotencyKey, context.userId, response);
-      return response;
+          return {
+            success: true,
+            transactionId: result.transactionId || `tx_buy_${Date.now()}`,
+            userId: context.userId,
+            ticker,
+            type: 'BUY',
+            quantity: input.quantity,
+            price: result.price || result.executionPrice || null,
+            totalValue: result.totalValue || result.totalCost || null,
+            idempotencyKey,
+            isDuplicate: Boolean(result.isDuplicate),
+            timestamp: new Date().toISOString(),
+          };
+        }
+      );
     },
   });
 
@@ -622,40 +663,42 @@ export function createDefaultToolRegistry(): ToolRegistry {
     execute: async (input, client, context) => {
       const ticker = SecuritySanitizer.normalizeTicker(input.ticker);
       const idempotencyKey = IdempotencyManager.validateKey(input.idempotencyKey);
-
-      // Check idempotency cache
-      const cached = idempotencyManager.getExisting(idempotencyKey, context.userId);
-      if (cached) {
-        logger.info(`Duplicate sell request served from idempotency cache: ${idempotencyKey}`, {
-          tool: 'quantx_paper_sell',
-          requestId: context.requestId,
-        });
-        return { ...(cached as Record<string, unknown>), isDuplicate: true };
-      }
-
-      const result = await client.executeTrade(context.userId, {
+      const payloadHash = IdempotencyManager.computePayloadHash({
         ticker,
         type: 'SELL',
         quantity: input.quantity,
         orderType: input.orderType || 'MARKET',
       });
 
-      const response = {
-        success: true,
-        transactionId: result.transactionId || `tx_sell_${Date.now()}`,
-        userId: context.userId,
-        ticker,
-        type: 'SELL',
-        quantity: input.quantity,
-        price: result.price || result.executionPrice || null,
-        totalValue: result.totalValue || null,
+      return await idempotencyManager.runOnce(
         idempotencyKey,
-        isDuplicate: false,
-        timestamp: new Date().toISOString(),
-      };
+        context.userId,
+        payloadHash,
+        'PAPER_SELL',
+        async () => {
+          const result = await client.executeTrade(context.userId, {
+            ticker,
+            type: 'SELL',
+            quantity: input.quantity,
+            orderType: input.orderType || 'MARKET',
+            idempotencyKey,
+          });
 
-      idempotencyManager.record(idempotencyKey, context.userId, response);
-      return response;
+          return {
+            success: true,
+            transactionId: result.transactionId || `tx_sell_${Date.now()}`,
+            userId: context.userId,
+            ticker,
+            type: 'SELL',
+            quantity: input.quantity,
+            price: result.price || result.executionPrice || null,
+            totalValue: result.totalValue || result.totalCost || null,
+            idempotencyKey,
+            isDuplicate: Boolean(result.isDuplicate),
+            timestamp: new Date().toISOString(),
+          };
+        }
+      );
     },
   });
 
@@ -712,7 +755,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
         modelArtifact: {
           status: modelArtifactStatus,
         },
-        overallStatus: isHealthy ? 'HEALTHY' : 'DEGRADED',
+        overallStatus: isHealthy ? 'HEALTHY' : 'UNHEALTHY',
         durationMs: Date.now() - startTime,
         timestamp: new Date().toISOString(),
       };

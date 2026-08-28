@@ -1,0 +1,34 @@
+{
+  "manifestVersion": "1.0.0",
+  "generatedAt": "2026-08-28T16:22:30.000Z",
+  "gitSha": "c1f8eefe416203a10840b690e48ced849484baaa",
+  "lineage": {
+    "datasetHash": "2a1535660daf6294522253eb5a70c97cd60a1624cebb2b19ad4d60ffdf6dbd3e",
+    "universeHash": "26b1ed4a3131708ef778c27fa8745728d22ca497d94c63ae1cec6766769461d3",
+    "featureHash": "68690eda2843b082f78eda4baca5ec9c40f251a4d8ce6579975fdb58196647f6",
+    "modelHash": "model_quantile_v5",
+    "returnModelHash": "ret_model_v5_sealed",
+    "calibrationHash": "calib_isotonic_v5_sealed",
+    "distributionHash": "dist_quantiles_v5_sealed",
+    "strategyHash": "6d707e271393d96754307ef2af5262e87cb484b5d6ec222da52d256d239dd535",
+    "portfolioHash": "portfolio_markowitz_v5_sealed",
+    "executionHash": "60b546af54cab50d9e05354f0a7408a409a02d01618e56138697d5143c5af477",
+    "environmentHash": "622647990a6cfc3ec69f2706afeaf7835f90b7e4faff18d20ab14df0896526bc",
+    "runtimeManifestHash": "27db4d2625291e1d0f507b9a5fe3509bc489e224e757d5940e4f3a74347dd9c7"
+  },
+  "tolerances": {
+    "modelParityTolerance": 1e-5,
+    "calibrationParityTolerance": 1e-6,
+    "accountingTolerance": 1e-8,
+    "featureSchemaExact": true
+  },
+  "certification": {
+    "technicalStatus": "PASS",
+    "economicStatus": "FAIL",
+    "researchStatus": "PASS",
+    "securityStatus": "PASS",
+    "runtimeParityStatus": "PASS",
+    "productionReady": false,
+    "governanceReason": "Empirical Net Realizable CAGR of 2.73% is below institutional hurdle of 5.0%. Production gate strictly locked."
+  }
+}

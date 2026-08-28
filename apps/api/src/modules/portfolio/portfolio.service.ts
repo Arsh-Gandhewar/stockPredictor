@@ -1,4 +1,5 @@
-import { Injectable, BadRequestException, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { DatabaseService } from '../../database/database.service';
 import { StockService } from '../stock/stock.service';
 import { AiService } from '../ai/ai.service';
@@ -284,7 +285,8 @@ export class PortfolioService {
     rawTicker: string,
     type: TransactionType,
     quantity: number,
-    orderType: OrderType = OrderType.MARKET
+    orderType: OrderType = OrderType.MARKET,
+    idempotencyKey?: string,
   ) {
     if (!quantity || quantity <= 0) {
       throw new BadRequestException('Order quantity must be a positive integer');
@@ -293,6 +295,38 @@ export class PortfolioService {
     const ticker = (!rawTicker.startsWith('^') && !rawTicker.endsWith('.NS') && !rawTicker.endsWith('.BO'))
       ? `${rawTicker.trim().toUpperCase()}.NS`
       : rawTicker.trim().toUpperCase();
+
+    // 0. Idempotency Pre-flight Verification
+    let canonicalPayloadHash = '';
+    if (idempotencyKey) {
+      const payloadStr = JSON.stringify({
+        ticker,
+        type,
+        quantity,
+        orderType,
+      });
+      canonicalPayloadHash = crypto.createHash('sha256').update(payloadStr).digest('hex');
+
+      const existingRecord = await this.db.client.idempotencyRecord.findUnique({
+        where: {
+          userId_idempotencyKey: {
+            userId,
+            idempotencyKey,
+          },
+        },
+      });
+
+      if (existingRecord) {
+        if (existingRecord.canonicalPayloadHash !== canonicalPayloadHash) {
+          throw new ConflictException(
+            `Idempotency Conflict: Key '${idempotencyKey}' was already executed with a different trade payload.`
+          );
+        }
+        if (existingRecord.status === 'COMPLETED' && existingRecord.result) {
+          return { ...(existingRecord.result as any), isDuplicate: true };
+        }
+      }
+    }
 
     // 1. Fetch live market price
     const quote = await this.stockService.getQuote(ticker);
@@ -462,7 +496,7 @@ export class PortfolioService {
         },
       });
 
-      return {
+      const responseData = {
         success: true,
         message: `Simulated ${type} order for ${quantity} shares of ${ticker} executed successfully at ₹${executionPrice.toFixed(2)}`,
         transactionId: transaction.id,
@@ -472,6 +506,35 @@ export class PortfolioService {
         executionPrice,
         totalCost,
       };
+
+      if (idempotencyKey) {
+        await tx.idempotencyRecord.upsert({
+          where: {
+            userId_idempotencyKey: {
+              userId,
+              idempotencyKey,
+            },
+          },
+          update: {
+            status: 'COMPLETED',
+            transactionId: transaction.id,
+            completedAt: new Date(),
+            result: responseData,
+          },
+          create: {
+            userId,
+            idempotencyKey,
+            operation: `PAPER_${type}`,
+            canonicalPayloadHash,
+            transactionId: transaction.id,
+            status: 'COMPLETED',
+            completedAt: new Date(),
+            result: responseData,
+          },
+        });
+      }
+
+      return responseData;
     }, { maxWait: 15000, timeout: 30000 });
   }
 

@@ -11,7 +11,7 @@ export class PortfolioController {
 
   @Get()
   async getPortfolio(@Req() req: any) {
-    const userId = req.userId || 'default_user';
+    const userId = req.userId;
     return this.portfolioService.getPortfolio(userId);
   }
 
@@ -23,7 +23,7 @@ export class PortfolioController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ): Promise<any[]> {
-    const userId = req.userId || 'default_user';
+    const userId = req.userId;
     const pageNum = page ? parseInt(page, 10) : 1;
     const limitNum = limit ? parseInt(limit, 10) : 50;
     return this.portfolioService.getAllTrades(userId, ticker, type, pageNum, limitNum);
@@ -34,25 +34,26 @@ export class PortfolioController {
     @Req() req: any,
     @Body() tradeData: ExecuteTradeDto
   ) {
-    const userId = req.userId || 'default_user';
+    const userId = req.userId;
     return this.portfolioService.executeTrade(
       userId,
       tradeData.ticker,
       tradeData.type,
       tradeData.quantity,
-      tradeData.orderType
+      tradeData.orderType,
+      tradeData.idempotencyKey
     );
   }
 
   @Get('sell-signals')
   async getPortfolioSellSignals(@Req() req: any) {
-    const userId = req.userId || 'default_user';
+    const userId = req.userId;
     return this.portfolioService.getPortfolioSellSignals(userId);
   }
 
   @Post('reset')
   async resetPortfolio(@Req() req: any) {
-    const userId = req.userId || 'default_user';
+    const userId = req.userId;
     return this.portfolioService.resetPortfolio(userId);
   }
 }

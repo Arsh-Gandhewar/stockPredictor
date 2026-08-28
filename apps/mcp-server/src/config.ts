@@ -1,5 +1,6 @@
 import { config as loadDotenv } from 'dotenv';
 import { resolve } from 'path';
+import { UserRole, AuthService } from './auth/auth-context.js';
 
 // Load .env files safely
 try {
@@ -16,7 +17,10 @@ export interface ServerConfig {
   serverVersion: string;
   logLevel: 'debug' | 'info' | 'warn' | 'error';
   requestTimeoutMs: number;
-  authUserId: string;
+  localTrustMode: boolean;
+  localTrustUserId?: string;
+  localTrustRole: UserRole;
+  authUserId?: string;
 }
 
 export class ConfigError extends Error {
@@ -72,6 +76,21 @@ export function validateConfig(env: NodeJS.ProcessEnv = process.env): ServerConf
     errors.push(`MCP_LOG_LEVEL must be one of [debug, info, warn, error] (received: "${rawLogLevel}")`);
   }
 
+  // 5. Validate Local Trust Mode (STDIO process binding)
+  const localTrustMode = env.LOCAL_TRUST_MODE === 'true';
+  const localTrustUserId = env.MCP_LOCAL_TRUST_USER_ID?.trim() || env.MCP_AUTH_USER_ID?.trim();
+  let localTrustRole: UserRole = 'AUTHENTICATED_READ';
+
+  if (localTrustMode) {
+    if (!localTrustUserId) {
+      errors.push('LOCAL_TRUST_MODE is enabled but MCP_LOCAL_TRUST_USER_ID is missing. Explicit user binding is required.');
+    }
+    const requestedRole = env.MCP_LOCAL_TRUST_ROLE?.trim();
+    if (requestedRole) {
+      localTrustRole = AuthService.sanitizeRole(requestedRole);
+    }
+  }
+
   if (errors.length > 0) {
     throw new ConfigError(errors.join('; '));
   }
@@ -83,7 +102,10 @@ export function validateConfig(env: NodeJS.ProcessEnv = process.env): ServerConf
     serverVersion: env.MCP_SERVER_VERSION?.trim() || '1.0.0',
     logLevel: rawLogLevel as 'debug' | 'info' | 'warn' | 'error',
     requestTimeoutMs,
-    authUserId: env.MCP_AUTH_USER_ID?.trim() || 'default_user',
+    localTrustMode,
+    localTrustUserId: localTrustUserId || undefined,
+    localTrustRole,
+    authUserId: localTrustUserId || undefined,
   };
 }
 

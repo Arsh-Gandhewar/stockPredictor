@@ -204,6 +204,23 @@ model Transaction {
   @@index([timestamp])
 }
 
+model IdempotencyRecord {
+  id                   String    @id @default(cuid())
+  userId               String
+  idempotencyKey       String
+  operation            String
+  canonicalPayloadHash String
+  transactionId        String?
+  status               String    @default("PENDING")
+  result               Json?
+  createdAt            DateTime  @default(now())
+  completedAt          DateTime?
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId])
+  @@index([createdAt])
+}
+
 model Alert {
   id          String          @id @default(cuid())
   userId      String

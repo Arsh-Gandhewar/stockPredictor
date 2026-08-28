@@ -23,4 +23,8 @@ export class ExecuteTradeDto {
   @IsNumber({}, { message: 'Limit price must be numeric' })
   @IsPositive({ message: 'Limit price must be greater than zero' })
   limitPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
 }
