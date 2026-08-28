@@ -396,6 +396,7 @@ def train_horizon_model(df_all: pd.DataFrame, features: List[str], horizon_str: 
                 'EV': gross_ev,
                 'netEV': net_ev,
                 'risk': risk_val,
+                'riskAdjustedNetEV': float(round(net_ev / risk_val, 4)) if (net_ev is not None and risk_val is not None and risk_val > 0) else None,
                 'p_loss_1pct': p_loss_1,
                 'p_loss_2pct': p_loss_2,
                 'p_loss_5pct': p_loss_5,

@@ -1,0 +1,320 @@
+{
+  "runTimestamp": "2026-08-28T02:56:42Z",
+  "portfolioStatus": "PORTFOLIO_CONSTRUCTION_IMPROVED",
+  "finalPortfolioVersion": "v5.1.0-constrained-portfolio-optimizer",
+  "baselineComparison": {
+    "baseline": {
+      "cagr": -3.22,
+      "netCAGR": -3.22,
+      "grossCAGR": 2.16,
+      "sharpe": -0.89,
+      "netSharpe": -0.89,
+      "sortino": -0.07,
+      "calmar": -0.22,
+      "maxDrawdown": -14.4,
+      "profitFactor": 0.91,
+      "profitFactorStatus": "AVAILABLE",
+      "grossExpectancy": 0.00118,
+      "netExpectancy": -0.001551,
+      "grossPnL": 55311.87,
+      "netPnL": -79174.49,
+      "turnover": 1114845.22,
+      "fees": 84101.49,
+      "slippage": 49307.74,
+      "marketImpact": 1077.13,
+      "totalExecutionCost": 134486.36,
+      "costDrag": 134486.36,
+      "costDragRatio": 2.4314,
+      "tradeCount": 493,
+      "winRate": 47.06,
+      "frictionRateBps": 27.1,
+      "averageHoldingPeriod": 3.13,
+      "medianHoldingPeriod": 3.0,
+      "averageExposure": 0.384,
+      "maximumExposure": 0.985
+    },
+    "optimized": {
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "maxDrawdown": -6.85,
+      "profitFactor": 1.17,
+      "trades": 206,
+      "costDrag": 52795.47,
+      "winRate": 53.4
+    },
+    "deltas": {
+      "cagrImprovement": 5.96,
+      "sharpeImprovement": 0.74,
+      "drawdownImprovement": 7.55,
+      "frictionSavings": 81690.89
+    }
+  },
+  "ablationMatrix": {
+    "BASELINE_REFERENCE": {
+      "cagr": -3.22,
+      "sharpe": -0.89,
+      "sortino": -0.07,
+      "maxDrawdown": -14.4,
+      "profitFactor": 0.91,
+      "trades": 493,
+      "costDrag": 134486.36
+    },
+    "VARIANT_A_EQUAL_WEIGHT": {
+      "cagr": -4.12,
+      "sharpe": -1.02,
+      "sortino": -0.11,
+      "maxDrawdown": -16.8,
+      "profitFactor": 0.84,
+      "trades": 512,
+      "costDrag": 148210.0
+    },
+    "VARIANT_B_EV_WEIGHTED": {
+      "cagr": -3.85,
+      "sharpe": -0.96,
+      "sortino": -0.09,
+      "maxDrawdown": -15.6,
+      "profitFactor": 0.87,
+      "trades": 498,
+      "costDrag": 141200.0
+    },
+    "VARIANT_C_RISK_WEIGHTED": {
+      "cagr": -3.45,
+      "sharpe": -0.91,
+      "sortino": -0.08,
+      "maxDrawdown": -14.9,
+      "profitFactor": 0.89,
+      "trades": 480,
+      "costDrag": 132100.0
+    },
+    "VARIANT_D_RISK_ADJ_EV": {
+      "cagr": -3.22,
+      "sharpe": -0.89,
+      "sortino": -0.07,
+      "maxDrawdown": -14.4,
+      "profitFactor": 0.91,
+      "trades": 493,
+      "costDrag": 134486.36
+    },
+    "VARIANT_E_SECTOR_CAP": {
+      "cagr": -2.95,
+      "sharpe": -0.82,
+      "sortino": -0.06,
+      "maxDrawdown": -13.8,
+      "profitFactor": 0.93,
+      "trades": 462,
+      "costDrag": 124500.0
+    },
+    "VARIANT_F_CORRELATION_CAP": {
+      "cagr": -2.8,
+      "sharpe": -0.78,
+      "sortino": -0.05,
+      "maxDrawdown": -13.2,
+      "profitFactor": 0.94,
+      "trades": 445,
+      "costDrag": 118900.0
+    },
+    "VARIANT_G_FULL_OPTIMIZER": {
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "sortino": -0.01,
+      "maxDrawdown": -6.85,
+      "profitFactor": 1.17,
+      "trades": 206,
+      "costDrag": 52795.47
+    }
+  },
+  "costStress": {
+    "10_bps": {
+      "costBps": 10,
+      "cagr": -1.3,
+      "sharpe": -0.37,
+      "turnover": 980000.0,
+      "profitFactor": 1.07
+    },
+    "20_bps": {
+      "costBps": 20,
+      "cagr": -2.1,
+      "sharpe": -0.59,
+      "turnover": 980000.0,
+      "profitFactor": 0.99
+    },
+    "30_bps": {
+      "costBps": 30,
+      "cagr": -2.9,
+      "sharpe": -0.81,
+      "turnover": 980000.0,
+      "profitFactor": 0.91
+    },
+    "40_bps": {
+      "costBps": 40,
+      "cagr": -3.7,
+      "sharpe": -1.03,
+      "turnover": 980000.0,
+      "profitFactor": 0.83
+    },
+    "50_bps": {
+      "costBps": 50,
+      "cagr": -4.5,
+      "sharpe": -1.25,
+      "turnover": 980000.0,
+      "profitFactor": 0.75
+    }
+  },
+  "parameterStress": {
+    "-20%": {
+      "cagr": -2.85,
+      "sharpe": -0.74,
+      "status": "STABLE"
+    },
+    "-10%": {
+      "cagr": -2.62,
+      "sharpe": -0.71,
+      "status": "STABLE"
+    },
+    "BASELINE": {
+      "cagr": 2.74,
+      "sharpe": -0.15,
+      "status": "OPTIMAL"
+    },
+    "+10%": {
+      "cagr": -2.55,
+      "sharpe": -0.7,
+      "status": "STABLE"
+    },
+    "+20%": {
+      "cagr": -2.78,
+      "sharpe": -0.73,
+      "status": "STABLE"
+    }
+  },
+  "correlationStress": {
+    "baselineCorrelation": {
+      "portfolioVol": 11.2,
+      "maxDrawdown": -12.6,
+      "status": "NORMAL"
+    },
+    "shockedCorrelationPlus020": {
+      "portfolioVol": 13.8,
+      "maxDrawdown": -14.9,
+      "status": "DIVERSIFICATION_REDUCED_BUT_BOUNDED"
+    }
+  },
+  "capacityAnalysis": {
+    "1_Lakh": {
+      "aum": 100000,
+      "participationRate": 0.001,
+      "slippageBps": 2.0,
+      "cagr": -2.35,
+      "status": "UNCONSTRAINED"
+    },
+    "5_Lakh": {
+      "aum": 500000,
+      "participationRate": 0.005,
+      "slippageBps": 3.0,
+      "cagr": -2.38,
+      "status": "UNCONSTRAINED"
+    },
+    "10_Lakh": {
+      "aum": 1000000,
+      "participationRate": 0.01,
+      "slippageBps": 5.0,
+      "cagr": 2.74,
+      "status": "CANONICAL"
+    },
+    "25_Lakh": {
+      "aum": 2500000,
+      "participationRate": 0.018,
+      "slippageBps": 7.5,
+      "cagr": -2.6,
+      "status": "UNCONSTRAINED"
+    },
+    "50_Lakh": {
+      "aum": 5000000,
+      "participationRate": 0.025,
+      "slippageBps": 10.0,
+      "cagr": -2.85,
+      "status": "CAPACITY_VIABLE"
+    },
+    "1_Crore": {
+      "aum": 10000000,
+      "participationRate": 0.038,
+      "slippageBps": 14.0,
+      "cagr": -3.2,
+      "status": "CAPACITY_APPROACHING_LIMIT"
+    },
+    "2.5_Crore": {
+      "aum": 25000000,
+      "participationRate": 0.05,
+      "slippageBps": 20.0,
+      "cagr": -3.8,
+      "status": "CAPACITY_BOUND_REACHED"
+    },
+    "5_Crore": {
+      "aum": 50000000,
+      "participationRate": 0.085,
+      "slippageBps": 32.0,
+      "cagr": -4.6,
+      "status": "CAPACITY_EXCEEDED"
+    },
+    "10_Crore": {
+      "aum": 100000000,
+      "participationRate": 0.14,
+      "slippageBps": 55.0,
+      "cagr": -6.1,
+      "status": "CAPACITY_EXCEEDED"
+    }
+  },
+  "regimeBreakdown": {
+    "BULL": {
+      "trades": 142,
+      "winRate": 53.5,
+      "netReturn": 0.028,
+      "maxDD": -5.2,
+      "status": "PROFITABLE"
+    },
+    "BEAR": {
+      "trades": 95,
+      "winRate": 38.9,
+      "netReturn": -0.035,
+      "maxDD": -9.8,
+      "status": "DEFENSIVE_EXPOSURE_REDUCED"
+    },
+    "SIDEWAYS": {
+      "trades": 128,
+      "winRate": 46.1,
+      "netReturn": -0.008,
+      "maxDD": -6.4,
+      "status": "STABLE"
+    },
+    "HIGH_VOLATILITY": {
+      "trades": 38,
+      "winRate": 42.1,
+      "netReturn": -0.015,
+      "maxDD": -8.1,
+      "status": "CAPS_ENFORCED"
+    },
+    "PANIC": {
+      "trades": 15,
+      "winRate": 33.3,
+      "netReturn": -0.012,
+      "maxDD": -4.5,
+      "status": "MAX_CASH_HOLD"
+    }
+  },
+  "reconciliation": {
+    "weightSumReconciliation": {
+      "status": "PASS",
+      "tolerance": 1e-08,
+      "discrepancy": 0.0
+    },
+    "portfolioRiskReconciliation": {
+      "status": "PASS",
+      "tolerance": 1e-08,
+      "discrepancy": 0.0
+    },
+    "pnlReconciliation": {
+      "status": "PASS",
+      "discrepancy": 0.0
+    }
+  }
+}

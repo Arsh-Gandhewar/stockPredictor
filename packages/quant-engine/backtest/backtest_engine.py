@@ -989,7 +989,9 @@ def run_portfolio_backtest(
             'PRODUCTION_EXPECTED_VALUE',
             'PRODUCTION_DISTRIBUTION_PAYOFF',
             'CROSS_SECTIONAL_ALPHA_RANK',
-            'CROSS_SECTIONAL_EV_RANK'
+            'CROSS_SECTIONAL_EV_RANK',
+            'PRODUCTION_PORTFOLIO_OPTIMIZER',
+            'PORTFOLIO_OPTIMIZER_CONSTRAINED'
         ]
         
         if is_cross_sectional:
@@ -1010,6 +1012,7 @@ def run_portfolio_backtest(
             for opp in opp_table:
                 opportunity_ledger.append(opp.to_dict())
                 
+            alloc_mode = 'CONSTRAINED_OPTIMIZER' if strategy_mode in ['PRODUCTION_PORTFOLIO_OPTIMIZER', 'PORTFOLIO_OPTIMIZER_CONSTRAINED'] else 'DEFAULT'
             selected_opps, rejected_opps = select_and_allocate_portfolio(
                 opportunities=opp_table,
                 open_positions=open_positions,
@@ -1023,7 +1026,8 @@ def run_portfolio_backtest(
                 max_sector_weight=MAX_SECTOR_WEIGHT,
                 max_gross_exposure=MAX_GROSS_EXPOSURE,
                 max_cluster_exposure=MAX_CLUSTER_EXPOSURE,
-                round_trip_cost=round_trip_cost
+                round_trip_cost=round_trip_cost,
+                allocation_mode=alloc_mode
             )
             
             for rej in rejected_opps:

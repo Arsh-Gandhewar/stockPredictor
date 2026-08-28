@@ -68,6 +68,13 @@ class OpportunityRecord:
     sizedNotional: float = 0.0
     universeVersion: Optional[str] = None
     universeHash: Optional[str] = None
+    grossEV: Optional[float] = None
+    netEV: Optional[float] = None
+    riskAdjustedNetEV: Optional[float] = None
+    estimatedExecutionCost: float = 0.0013
+    p_up: Optional[float] = None
+    p_down: Optional[float] = None
+    signalTimestamp: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -412,7 +419,14 @@ def build_daily_opportunity_table(
             distributionVersion=profile.distributionVersion,
             distributionFitStart=profile.fitStart,
             distributionFitEnd=profile.fitEnd,
-            executionPrice=exec_price
+            executionPrice=exec_price,
+            grossEV=ev_before_cost,
+            netEV=ev_after_cost,
+            riskAdjustedNetEV=risk_adj_ev,
+            estimatedExecutionCost=round_trip_cost,
+            p_up=p_up,
+            p_down=p_down,
+            signalTimestamp=date_str
         )
         opportunities.append(rec)
         
@@ -456,13 +470,71 @@ def select_and_allocate_portfolio(
     max_sector_weight: float = MAX_SECTOR_WEIGHT,
     max_gross_exposure: float = MAX_GROSS_EXPOSURE,
     max_cluster_exposure: float = 0.50,
-    round_trip_cost: float = BASE_ROUND_TRIP_FRICTION
+    round_trip_cost: float = BASE_ROUND_TRIP_FRICTION,
+    allocation_mode: str = 'DEFAULT',
+    portfolio_optimizer: Optional[Any] = None
 ) -> Tuple[List[OpportunityRecord], List[OpportunityRecord]]:
     """
     Selects Top-N opportunities and computes risk-budgeted, exposure-capped capital allocation.
     Returns:
     (selected_orders, rejected_opportunities)
     """
+    total_eq = portfolio_equity if portfolio_equity > 0 else 1_000_000.0
+    
+    if allocation_mode in ['CONSTRAINED_OPTIMIZER', 'PRODUCTION_PORTFOLIO_OPTIMIZER']:
+        from portfolio.portfolio_optimizer import PortfolioOptimizer
+        opt = portfolio_optimizer or PortfolioOptimizer(
+            max_pos_weight=max_position_weight,
+            max_sec_weight=max_sector_weight,
+            max_cluster_exp=max_cluster_exposure,
+            max_gross_exp=max_gross_exposure
+        )
+        current_holdings = {}
+        for p in open_positions:
+            pval = p['notional'] * (p['currentPrice'] / p['entryPrice'])
+            current_holdings[p['ticker']] = pval / total_eq if total_eq > 0 else 0.0
+            
+        target_weights, cash_w, trade_deltas, decision_log = opt.execute_daily_portfolio_cycle(
+            date_str=as_of_date,
+            opportunity_universe=opportunities,
+            current_holdings=current_holdings,
+            historical_candles=historical_candles,
+            portfolio_equity=total_eq
+        )
+        
+        selected_orders: List[OpportunityRecord] = []
+        rejected: List[OpportunityRecord] = []
+        
+        for cand in opportunities:
+            if cand.ticker in target_weights and target_weights[cand.ticker] > 0:
+                tgt_w = target_weights[cand.ticker]
+                curr_w = current_holdings.get(cand.ticker, 0.0)
+                delta_w = max(0.0, tgt_w - curr_w)
+                if delta_w > 0.01 and not any(p['ticker'] == cand.ticker for p in open_positions):
+                    sized_notional = min(delta_w * total_eq, available_cash)
+                    if sized_notional > 0:
+                        cand.sizedNotional = sized_notional
+                        cand.targetWeight = tgt_w
+                        cand.selectionReason = f"OPTIMIZER_TARGET_WEIGHT_{tgt_w:.4f}"
+                        cand.tradeEligible = True
+                        selected_orders.append(cand)
+                    else:
+                        cand.tradeEligible = False
+                        cand.ineligibilityReason = 'INSUFFICIENT_CASH'
+                        rejected.append(cand)
+                elif any(p['ticker'] == cand.ticker for p in open_positions):
+                    cand.tradeEligible = False
+                    cand.ineligibilityReason = 'ALREADY_IN_PORTFOLIO'
+                    rejected.append(cand)
+            elif not cand.tradeEligible:
+                rejected.append(cand)
+            else:
+                cand.tradeEligible = False
+                cand.ineligibilityReason = decision_log.rejectionReasons.get(cand.ticker, 'OPTIMIZER_ZERO_WEIGHT')
+                rejected.append(cand)
+                
+        return selected_orders, rejected
+
     eligible_cands = [o for o in opportunities if o.tradeEligible and o.alphaRank is not None]
     eligible_cands.sort(key=lambda x: x.alphaRank or 9999)
     
