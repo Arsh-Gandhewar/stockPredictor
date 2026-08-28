@@ -14,6 +14,10 @@
     "mcp:start:prod": "npm run start:prod --prefix apps/mcp-server",
     "mcp:dev": "npm run dev --prefix apps/mcp-server",
     "mcp:build": "npm run build --prefix apps/mcp-server",
-    "mcp:test": "npm run test --prefix apps/mcp-server"
+    "mcp:test": "npm run test --prefix apps/mcp-server",
+    "mcp:eng:start": "npm run start --prefix apps/mcp-engineering",
+    "mcp:eng:dev": "npm run dev --prefix apps/mcp-engineering",
+    "mcp:eng:build": "npm run build --prefix apps/mcp-engineering",
+    "mcp:eng:test": "npm run test --prefix apps/mcp-engineering"
   }
 }
