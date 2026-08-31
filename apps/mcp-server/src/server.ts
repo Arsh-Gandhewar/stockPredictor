@@ -91,15 +91,19 @@ export class QuantxMcpServer {
       const toolName = request.params.name;
       const toolArgs = (request.params.arguments || {}) as Record<string, any>;
 
-      // Extract auth token from request meta or special argument if passed
+      // Extract auth token strictly from request transport metadata (_meta)
       const meta = (request.params as any)._meta || {};
-      const authHeader = meta.authorization || toolArgs._authorization;
-      const apiKeyHeader = meta.apiKey || toolArgs._apiKey;
+      const authHeader = meta.authorization;
+      const apiKeyHeader = meta.apiKey;
 
-      // Clean metadata out of tool args so schema validation doesn't fail
+      // Ensure toolArgs contains only intended domain arguments
       const cleanArgs = { ...toolArgs };
-      delete cleanArgs._authorization;
-      delete cleanArgs._apiKey;
+      if ('_authorization' in cleanArgs) {
+        delete cleanArgs._authorization;
+      }
+      if ('_apiKey' in cleanArgs) {
+        delete cleanArgs._apiKey;
+      }
 
       const context = this.createAuthContext(authHeader, apiKeyHeader);
 

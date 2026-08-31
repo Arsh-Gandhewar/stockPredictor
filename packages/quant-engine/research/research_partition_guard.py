@@ -12,7 +12,7 @@ BUG 4 Additions:
   - enforce_partition now enforces per operation type
   - Benchmark and period immutability registry
 """
-from typing import Optional, Set, Dict
+from typing import Optional, Set, Dict, Any, Union
 from enum import Enum
 import threading
 
@@ -26,7 +26,7 @@ class OptimizationLeakageError(Exception):
     pass
 
 
-class HoldoutMutationError(Exception):
+class HoldoutMutationError(OptimizationLeakageError):
     """Raised when model, strategy, or config is mutated after HOLDOUT has begun."""
     pass
 
@@ -136,7 +136,7 @@ class ResearchPartitionGuard:
     def enforce_partition(
         cls,
         partition: Optional[str],
-        operation_type: OperationType = OperationType.OPTIMIZE,
+        operation_type: Any = OperationType.OPTIMIZE,
         operation_name: str = 'Operation'
     ) -> bool:
         """
@@ -144,26 +144,33 @@ class ResearchPartitionGuard:
         executed on TEST or HOLDOUT partitions.
 
         - Selection or FIT on TEST  → OptimizationLeakageError
-        - Any mutation on HOLDOUT → HoldoutMutationError (if active)
+        - Any mutation on HOLDOUT → HoldoutMutationError (subclass of OptimizationLeakageError)
         - FIT on HOLDOUT → HoldoutMutationError
         """
         if partition is None:
             return True
+
+        if isinstance(operation_type, str) and not isinstance(operation_type, OperationType):
+            operation_name = operation_type
+            operation_type = OperationType.OPTIMIZE
+
         p_str = partition.value if hasattr(partition, 'value') else str(partition)
         p_upper = p_str.upper().strip()
 
+        op_val = operation_type.value if hasattr(operation_type, 'value') else str(operation_type)
+
         if p_upper == 'HOLDOUT':
-            if operation_type in _FORBIDDEN_ON_HOLDOUT:
+            if operation_type in _FORBIDDEN_ON_HOLDOUT or operation_type == OperationType.OPTIMIZE:
                 raise HoldoutMutationError(
-                    f"HOLDOUT VIOLATION: {operation_type.value} '{operation_name}' is strictly "
+                    f"CRITICAL RESEARCH LEAKAGE: {op_val} '{operation_name}' is strictly "
                     "forbidden on HOLDOUT partition. HOLDOUT is immutable once activated."
                 )
             return True  # EVALUATE is allowed on HOLDOUT
 
         if p_upper == 'TEST':
-            if operation_type in _SELECTION_OPERATIONS or operation_type == OperationType.FIT:
+            if operation_type in _SELECTION_OPERATIONS or operation_type == OperationType.FIT or operation_type == OperationType.OPTIMIZE:
                 raise OptimizationLeakageError(
-                    f"CRITICAL RESEARCH LEAKAGE: {operation_type.value} '{operation_name}' is "
+                    f"CRITICAL RESEARCH LEAKAGE: {op_val} '{operation_name}' is "
                     "strictly forbidden on TEST partition. Selection must be done on VALIDATION only."
                 )
         return True
@@ -195,7 +202,7 @@ class ResearchPartitionGuard:
         with cls._lock:
             if cls._holdout_active:
                 raise HoldoutMutationError(
-                    f"HOLDOUT LOCK VIOLATION: '{operation_name}' is prohibited after HOLDOUT has begun!"
+                    f"CRITICAL HOLDOUT LOCK VIOLATION: '{operation_name}' is prohibited after HOLDOUT has begun!"
                 )
 
     # ------------------------------------------------------------------

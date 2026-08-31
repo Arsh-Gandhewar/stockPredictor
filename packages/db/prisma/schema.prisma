@@ -269,6 +269,7 @@ model WatchlistStock {
 enum Role {
   USER
   ADMIN
+  SERVICE
 }
 
 enum Sentiment {

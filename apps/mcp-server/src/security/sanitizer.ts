@@ -139,12 +139,28 @@ export class SecuritySanitizer {
    * Redacts sensitive internal details, file paths, database URLs, and stack trace references from client-facing messages.
    */
   static sanitizeErrorMessage(rawMessage: string): string {
-    if (!rawMessage) return 'An internal error occurred.';
-    return rawMessage
-      .replace(/(?:[a-zA-Z]:)?[/\\].*?\.(?:ts|js|py|json|prisma)(?::\d+(?::\d+)?)?/g, '[REDACTED_PATH]')
-      .replace(/postgres(?:ql)?:\/\/[^\s]+/gi, '[REDACTED_DB_URL]')
-      .replace(/bearer\s+[a-zA-Z0-9_\-\.]+/gi, 'Bearer [REDACTED]')
-      .replace(/eyJ[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+\.[a-zA-Z0-9_\-]+/g, '[REDACTED_JWT]')
-      .trim();
+    if (!rawMessage || typeof rawMessage !== 'string') return 'An internal error occurred.';
+
+    let cleaned = rawMessage;
+
+    // 1. Redact JWT tokens
+    cleaned = cleaned.replace(/eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+/g, '[REDACTED_JWT]');
+
+    // 2. Redact Authorization Bearer headers
+    cleaned = cleaned.replace(/Bearer\s+[a-zA-Z0-9_\-.]+/gi, 'Bearer [REDACTED]');
+
+    // 3. Redact connection URIs
+    cleaned = cleaned.replace(/[a-zA-Z0-9+.-]+:\/\/[^\s"'<>]+/gi, (match) => {
+      if (match.startsWith('http://') || match.startsWith('https://')) {
+        return match; // preserve standard web URLs
+      }
+      return '[REDACTED_URI]';
+    });
+
+    // 4. Redact filesystem paths & stack frames
+    cleaned = cleaned.replace(/(?:[a-zA-Z]:)?[/\\](?:[\w.-]+[/\\])+[\w.-]+\.(?:ts|js|py|json|prisma)(?::\d+(?::\d+)?)?/g, '[REDACTED_PATH]');
+    cleaned = cleaned.replace(/\s+at\s+.*?\((?:[a-zA-Z]:)?[^)]+\)/g, '');
+
+    return cleaned.trim() || 'An internal error occurred.';
   }
 }

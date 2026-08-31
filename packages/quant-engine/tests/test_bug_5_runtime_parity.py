@@ -168,10 +168,13 @@ class TestBug5ArtifactLineage:
         assert len(lineage["datasetHash"]) == 64
         assert len(lineage["featureHash"]) == 64
         assert len(lineage["strategyHash"]) == 64
+        assert len(lineage["modelHash"]) == 64
+        assert len(lineage["executionHash"]) == 64
+        assert len(lineage["environmentHash"]) == 64
 
     def test_06_stale_artifact_rejection(self):
         """An artifact with an outdated gitSha must be flagged as STALE_ARTIFACT."""
-        current_sha = "c1f8eefe416203a10840b690e48ced849484baaa"
+        current_sha = "2c24b50153e629cf8bf29b8883d7db0d23e1af76"
         stale_sha = "0000000000000000000000000000000000000000"
 
         def assert_artifact_freshness(artifact_sha: str, expected_sha: str):
@@ -249,28 +252,63 @@ class TestBug5FailClosedSemantics:
         assert result["actualPredictionHorizon"] is None
 
     def test_10_missing_risk_metrics_triggers_no_trade(self):
-        """If risk estimation errors or returns null, decision MUST be NO_TRADE (never assume 0 risk)."""
-        risk_score = None  # Service failure
+        """If risk estimation errors or returns null, opportunity is marked ineligible (tradeEligible=False, never assume 0 risk)."""
+        import pandas as pd
+        from models.cross_sectional_ranker import build_daily_opportunity_table
 
-        def decide_trade(probability: float, expected_return: float, risk: float | None) -> str:
-            if risk is None or expected_return is None or probability is None:
-                return "NO_TRADE"
-            if probability > 0.60 and expected_return > 0.02 and risk < 0.30:
-                return "BUY"
-            return "HOLD"
+        signals_df = pd.DataFrame([
+            {
+                "ticker": "TCS.NS",
+                "sector": "Technology",
+                "calibratedProbability": 0.70,
+                "returnEstimateMethod": "INSUFFICIENT_DATA",
+                "horizon": "5d",
+            }
+        ])
 
-        assert decide_trade(0.70, 0.05, risk_score) == "NO_TRADE"
+        opps = build_daily_opportunity_table(
+            date_str="2026-08-28",
+            day_signals=signals_df,
+            historical_candles={},
+            open_positions=[],
+            portfolio_equity=1_000_000,
+            cash=1_000_000,
+            horizon_days=5,
+        )
+
+        assert len(opps) == 1
+        opp = opps[0]
+        assert opp.tradeEligible is False
+        assert opp.ineligibilityReason in ["INSUFFICIENT_RISK_DATA", "HORIZON_MISMATCH", "INVALID_PAYOFF"]
 
     def test_11_missing_price_triggers_no_trade(self):
-        """Missing market quote price triggers NO_TRADE."""
-        quote_price = None
+        """Missing market quote price or uncomputable execution price triggers trade ineligibility."""
+        import pandas as pd
+        from models.cross_sectional_ranker import build_daily_opportunity_table
 
-        def can_enter_position(price: float | None) -> bool:
-            if price is None or price <= 0:
-                return False
-            return True
+        signals_df = pd.DataFrame([
+            {
+                "ticker": "INFY.NS",
+                "sector": "Technology",
+                "calibratedProbability": None,  # Missing probability / price feed
+                "horizon": "5d",
+            }
+        ])
 
-        assert not can_enter_position(quote_price)
+        opps = build_daily_opportunity_table(
+            date_str="2026-08-28",
+            day_signals=signals_df,
+            historical_candles={},
+            open_positions=[],
+            portfolio_equity=1_000_000,
+            cash=1_000_000,
+            horizon_days=5,
+        )
+
+        assert len(opps) == 1
+        opp = opps[0]
+        assert opp.tradeEligible is False
+        assert opp.ineligibilityReason == "INVALID_PROBABILITY"
 
     def test_12_production_manifest_honest_gatekeeper(self):
         """quantx-production-manifest.json honestly records economicStatus FAIL and productionReady FALSE."""

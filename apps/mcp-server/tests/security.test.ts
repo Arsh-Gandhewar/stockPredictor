@@ -133,9 +133,11 @@ describe('BUG 5 Mandatory Security & Red-Team Test Suite', () => {
       iss: 'https://evil-attacker.io',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
-    const verified = AuthService.verifyJwt(badToken);
-    expect(verified.iss).not.toBe(process.env.JWT_ISSUER);
-    delete process.env.JWT_ISSUER;
+    try {
+      expect(() => AuthService.verifyJwt(badToken)).toThrow(/issuer/i);
+    } finally {
+      delete process.env.JWT_ISSUER;
+    }
   });
 
   // 4. Wrong Audience
@@ -146,9 +148,11 @@ describe('BUG 5 Mandatory Security & Red-Team Test Suite', () => {
       aud: 'wrong-audience',
       exp: Math.floor(Date.now() / 1000) + 3600,
     });
-    const verified = AuthService.verifyJwt(badToken);
-    expect(verified.aud).not.toBe(process.env.JWT_AUDIENCE);
-    delete process.env.JWT_AUDIENCE;
+    try {
+      expect(() => AuthService.verifyJwt(badToken)).toThrow(/audience/i);
+    } finally {
+      delete process.env.JWT_AUDIENCE;
+    }
   });
 
   // 5. Tampered Payload

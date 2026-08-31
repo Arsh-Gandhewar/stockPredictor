@@ -1,14 +1,28 @@
 import { McpError } from '../errors/mcp-errors.js';
 import * as crypto from 'crypto';
 
-export type UserRole = 'PUBLIC_READ' | 'AUTHENTICATED_READ' | 'PAPER_TRADING' | 'ADMIN';
+export type UserRole = 'PUBLIC_READ' | 'AUTHENTICATED_READ' | 'SERVICE' | 'PAPER_TRADING' | 'ADMIN';
 
 export const ROLE_HIERARCHY: Record<UserRole, number> = {
   PUBLIC_READ: 0,
   AUTHENTICATED_READ: 1,
+  SERVICE: 2,
   PAPER_TRADING: 2,
   ADMIN: 3,
 };
+
+export interface DecodedJwtPayload {
+  sub?: string;
+  userId?: string;
+  role?: string;
+  iss?: string;
+  aud?: string;
+  exp?: number;
+  nbf?: number;
+  iat?: number;
+  email?: string;
+  scopes?: string[];
+}
 
 export interface AuthenticatedPrincipal {
   principalId: string;
@@ -136,15 +150,15 @@ export class AuthService {
   /**
    * Cryptographically verifies JWT token.
    */
-  static verifyJwt(token: string): any {
+  static verifyJwt(token: string): DecodedJwtPayload {
     const parts = token.split('.');
     if (parts.length !== 3) {
       throw new McpError('UNAUTHORIZED', 'Malformed JWT token format');
     }
 
     const [headerB64, payloadB64, signatureB64] = parts;
-    let header: any;
-    let payload: any;
+    let header: { alg?: string; typ?: string };
+    let payload: DecodedJwtPayload;
 
     try {
       header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf-8'));
@@ -153,9 +167,15 @@ export class AuthService {
       throw new McpError('UNAUTHORIZED', 'Invalid JSON in JWT token');
     }
 
+    // Strict algorithm allowlist
+    const alg = header.alg;
+    const allowedAlgorithms = ['HS256', 'RS256'];
+    if (!alg || !allowedAlgorithms.includes(alg)) {
+      throw new McpError('UNAUTHORIZED', `Unsupported or insecure JWT algorithm: ${alg || 'none'}`);
+    }
+
     const jwtSecret = process.env.JWT_SECRET || process.env.CLERK_SECRET_KEY || 'quantx-dev-test-secret-key-do-not-use-in-prod';
     const clerkPublicKey = process.env.CLERK_PEM_PUBLIC_KEY;
-    const alg = header.alg || 'HS256';
     const signingInput = `${headerB64}.${payloadB64}`;
     const signatureBuffer = Buffer.from(signatureB64, 'base64url');
 
@@ -165,7 +185,7 @@ export class AuthService {
         const verifier = crypto.createVerify('RSA-SHA256');
         verifier.update(signingInput);
         isValid = verifier.verify(clerkPublicKey, signatureBuffer);
-      } else {
+      } else if (alg === 'HS256') {
         const hmac = crypto.createHmac('sha256', jwtSecret);
         hmac.update(signingInput);
         const expected = hmac.digest();
@@ -183,12 +203,28 @@ export class AuthService {
 
     // Expiry check
     const nowSec = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp <= nowSec) {
+    if (payload.exp !== undefined && (typeof payload.exp !== 'number' || payload.exp <= nowSec)) {
       throw new McpError('UNAUTHORIZED', 'Authentication JWT token has expired');
     }
 
-    if (payload.nbf && payload.nbf > nowSec) {
+    if (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || payload.nbf > nowSec)) {
       throw new McpError('UNAUTHORIZED', 'Authentication JWT token is not yet valid (nbf)');
+    }
+
+    // Validate issuer if configured
+    const expectedIssuer = process.env.CLERK_JWT_ISSUER || process.env.JWT_ISSUER;
+    if (expectedIssuer) {
+      if (!payload.iss || payload.iss !== expectedIssuer) {
+        throw new McpError('UNAUTHORIZED', `Invalid or missing token issuer '${payload.iss || 'none'}'`);
+      }
+    }
+
+    // Validate audience if configured
+    const expectedAudience = process.env.CLERK_JWT_AUDIENCE || process.env.JWT_AUDIENCE;
+    if (expectedAudience) {
+      if (!payload.aud || payload.aud !== expectedAudience) {
+        throw new McpError('UNAUTHORIZED', `Invalid or missing token audience '${payload.aud || 'none'}'`);
+      }
     }
 
     return payload;

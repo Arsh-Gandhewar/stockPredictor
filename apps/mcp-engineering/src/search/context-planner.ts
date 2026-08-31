@@ -58,8 +58,28 @@ const MODULE_HINTS: ModuleHint[] = [
       'packages/quant-engine/models/cross_sectional_ranker.py',
     ],
     symbols: ['calculateEV', 'SignalToAlphaEngine', 'rank_cross_sectional_opportunities'],
-    testFiles: ['packages/quant-engine/tests/test_bug_1_signal_to_alpha.py'],
-    bugIds: ['BUG-01'],
+    testFiles: [
+      'packages/quant-engine/tests/test_bug_1_signal_to_alpha.py',
+      'packages/quant-engine/tests/test_bug_2_portfolio_construction.py',
+    ],
+    bugIds: ['BUG-01', 'BUG-02'],
+  },
+  {
+    keywords: ['runtime parity', 'parity', 'bug 5', 'auth guard', 'impersonation', 'idempotency'],
+    files: [
+      'apps/api/src/common/guards/auth.guard.ts',
+      'apps/api/src/modules/portfolio/portfolio.service.ts',
+      'apps/mcp-server/src/auth/auth-context.ts',
+      'apps/mcp-server/src/server.ts',
+      'apps/mcp-engineering/src/search/context-planner.ts',
+      'packages/quant-engine/tests/test_bug_5_runtime_parity.py',
+    ],
+    symbols: ['AuthGuard', 'AuthService', 'PortfolioService', 'ContextPlanner'],
+    testFiles: [
+      'packages/quant-engine/tests/test_bug_5_runtime_parity.py',
+      'apps/mcp-server/tests/security.test.ts',
+    ],
+    bugIds: ['BUG-05'],
   },
   {
     keywords: ['portfolio', 'risk', 'optimizer', 'allocation', 'exposure'],
@@ -227,16 +247,27 @@ export class ContextPlanner {
       }
     }
 
-    // 5. Dependencies (bounded depth 1)
+    // 5. Dependencies (bounded depth 1 across all primary files)
     const allFiles = this.store.getAllFiles();
     const depGraph = new DepGraph(allFiles);
     let dependencies: DependencyGraph = { nodes: [], edges: [], reverseDeps: {} };
 
-    const primaryFile = Array.from(primaryFilesSet)[0];
-    if (primaryFile) {
+    const initialPrimaryFiles = Array.from(primaryFilesSet);
+    for (const primaryFile of initialPrimaryFiles) {
       const depResult = depGraph.getDependencies(primaryFile, 1);
-      dependencies = depResult.graph;
-      // Add dependency files to primary context
+      // Merge nodes
+      for (const node of depResult.graph.nodes) {
+        if (!dependencies.nodes.some((n) => n.file === node.file)) {
+          dependencies.nodes.push(node);
+        }
+      }
+      // Merge edges
+      for (const edge of depResult.graph.edges) {
+        if (!dependencies.edges.some((e) => e.from === edge.from && e.to === edge.to)) {
+          dependencies.edges.push(edge);
+        }
+      }
+      // Add dependency files to primary context (bounded to top 3 per primary file)
       for (const node of depResult.graph.nodes.slice(0, 3)) {
         primaryFilesSet.add(node.file);
       }
@@ -264,14 +295,20 @@ export class ContextPlanner {
       Array.from(relatedTestsSet),
     );
 
-    // 8. Token estimates
+    // 8. Token estimates & dynamic full repo baseline calculation
     const planText = JSON.stringify({
       primaryFiles: Array.from(primaryFilesSet),
       primarySymbols: Array.from(primarySymbolsSet),
       relatedTests: Array.from(relatedTestsSet),
     });
     const estimatedTokens = estimateTokens(planText) + auditFindings.length * 200;
-    const compressionRatio = estimatedTokens / FULL_REPO_ESTIMATED_TOKENS;
+
+    let dynamicRepoTokens = 0;
+    for (const file of allFiles) {
+      dynamicRepoTokens += Math.ceil((file.sizeBytes || 0) / CHARS_PER_TOKEN);
+    }
+    const fullRepositoryEstimatedTokens = dynamicRepoTokens > 0 ? dynamicRepoTokens : FULL_REPO_ESTIMATED_TOKENS;
+    const compressionRatio = estimatedTokens / fullRepositoryEstimatedTokens;
 
     // 9. Interpretation
     const taskInterpretation = this.interpretTask(task, matchedHints);

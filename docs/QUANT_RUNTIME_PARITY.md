@@ -34,14 +34,14 @@ $$|\text{Cash}_{\text{Ledger}} - \text{Cash}_{\text{Calculated}}| \le 10^{-8}$$
 To prevent schema drift, column permutation, or missing feature degradation, the feature schema is frozen across both Python and TypeScript:
 
 ```
- 0: rsi_14               1: roc_5                2: roc_20
- 3: vol_20d              4: macd_diff            5: bbands_pct
- 6: atr_norm             7: fip_score            8: ret_skew_60
- 9: ret_kurt_60         10: max_dd_60           11: downside_dev_20
-12: price_to_high_52w   13: price_to_low_52w    14: dollar_vol_log
-15: amihud_liq          16: volume_zscore       17: adv_ratio_20d
-18: market_cap_log      19: regime_bull_prob    20: regime_vol_ratio
-21: sector_rel_mom_20d  22: beta_60d            23: iv_surface_skew
+ 0: rsi_14               1: macd_hist            2: sma_20_dist
+ 3: sma_50_dist          4: ema_20_dist          5: atr_percent
+ 6: bb_width             7: stoch_k              8: volume_z_score
+ 9: annualized_volatility 10: downside_deviation  11: beta_nifty
+12: relative_strength_nifty 13: momentum_5       14: momentum_20
+15: ret_1d              16: ret_5d              17: ret_20d
+18: gap_pct             19: dist_52w_high       20: dist_52w_low
+21: roc_12              22: rel_volume          23: vol_20d
 24: vol_60d
 ```
 

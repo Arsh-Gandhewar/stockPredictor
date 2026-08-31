@@ -17,7 +17,7 @@ export interface VerifiedJwtPayload {
   exp?: number;
   nbf?: number;
   iat?: number;
-  [key: string]: any;
+  email?: string;
 }
 
 /**
@@ -43,7 +43,9 @@ export class AuthGuard implements CanActivate {
 
     // Service-to-Service API Key authentication (e.g. MCP server adapter with shared secret)
     if (apiKeyHeader && configuredApiKey && apiKeyHeader === configuredApiKey) {
-      const targetUserId = userIdHeader ? String(userIdHeader).replace(/[^a-zA-Z0-9_-]/g, '').trim() : 'quantx_service';
+      // Caller authenticated as service principal. If acting on behalf of a specific user, sanitize and audit.
+      const sanitizedDelegatedUser = userIdHeader ? String(userIdHeader).replace(/[^a-zA-Z0-9_-]/g, '').trim() : '';
+      const targetUserId = sanitizedDelegatedUser || 'quantx_service';
       request.userId = targetUserId;
       request.user = { id: targetUserId, sub: targetUserId, role: 'SERVICE' };
       request.userRole = 'SERVICE';
@@ -120,7 +122,12 @@ export class AuthGuard implements CanActivate {
     }
 
     // Alg check
-    const alg = header.alg || 'HS256';
+    const alg = header.alg;
+    const allowedAlgorithms = ['HS256', 'RS256'];
+    if (!alg || !allowedAlgorithms.includes(alg)) {
+      throw new UnauthorizedException(`UNAUTHENTICATED: Unsupported or insecure JWT algorithm '${alg || 'none'}'`);
+    }
+
     const signingInput = `${headerB64}.${payloadB64}`;
 
     // Verify signature
@@ -146,14 +153,18 @@ export class AuthGuard implements CanActivate {
 
     // Validate issuer if configured
     const expectedIssuer = process.env.CLERK_JWT_ISSUER || process.env.JWT_ISSUER;
-    if (expectedIssuer && payload.iss && payload.iss !== expectedIssuer) {
-      throw new UnauthorizedException(`UNAUTHENTICATED: Invalid token issuer '${payload.iss}'`);
+    if (expectedIssuer) {
+      if (!payload.iss || payload.iss !== expectedIssuer) {
+        throw new UnauthorizedException(`UNAUTHENTICATED: Invalid or missing token issuer '${payload.iss || 'none'}'`);
+      }
     }
 
     // Validate audience if configured
     const expectedAudience = process.env.CLERK_JWT_AUDIENCE || process.env.JWT_AUDIENCE;
-    if (expectedAudience && payload.aud && payload.aud !== expectedAudience) {
-      throw new UnauthorizedException(`UNAUTHENTICATED: Invalid token audience '${payload.aud}'`);
+    if (expectedAudience) {
+      if (!payload.aud || payload.aud !== expectedAudience) {
+        throw new UnauthorizedException(`UNAUTHENTICATED: Invalid or missing token audience '${payload.aud || 'none'}'`);
+      }
     }
 
     return payload;

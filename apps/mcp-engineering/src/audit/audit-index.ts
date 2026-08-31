@@ -101,6 +101,33 @@ const BUILT_IN_FINDINGS: AuditFinding[] = [
     regressionTests: ['packages/quant-engine/tests/test_bug_4_research_integrity.py'],
   },
   {
+    bugId: 'BUG-05',
+    description: 'Runtime parity, auth security, and context planner integrity failure: divergence between Python quant engine and TypeScript API/MCP servers, caller-controlled user impersonation in API key trust path, loose JWT claim validation, auto-sell cash clobbering, and single-file context planner limitation.',
+    severity: 'critical',
+    affectedFiles: [
+      'apps/api/src/common/guards/auth.guard.ts',
+      'apps/api/src/modules/portfolio/portfolio.service.ts',
+      'apps/mcp-server/src/auth/auth-context.ts',
+      'apps/mcp-server/src/server.ts',
+      'apps/mcp-server/src/security/sanitizer.ts',
+      'apps/mcp-engineering/src/search/context-planner.ts',
+      'packages/quant-engine/tests/test_bug_5_runtime_parity.py',
+    ],
+    affectedSymbols: [
+      'AuthGuard',
+      'AuthService',
+      'PortfolioService',
+      'ContextPlanner',
+      'SecuritySanitizer',
+    ],
+    status: 'resolved',
+    fixCommit: '2c24b50',
+    regressionTests: [
+      'packages/quant-engine/tests/test_bug_5_runtime_parity.py',
+      'apps/mcp-server/tests/security.test.ts',
+    ],
+  },
+  {
     bugId: 'ECON-02',
     description: 'Economic repair 2: conditional return model did not produce calibrated probability estimates. IsotonicCalibrator applied incorrectly.',
     severity: 'high',

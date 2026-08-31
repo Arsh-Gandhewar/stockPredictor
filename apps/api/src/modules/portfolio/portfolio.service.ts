@@ -108,12 +108,18 @@ export class PortfolioService {
 
     // ── DATABASE-HARDENED AUTOMATED STOP-LOSS & TARGET AUTO-EXECUTION ENGINE ──
     const activePositions: typeof portfolio.positions = [];
-    let cashAddedFromAutoSells = 0;
+    let cumulativeCash = Number(portfolio.availableCash);
     const cooldownCutoff = new Date(Date.now() - 60_000); // 1 minute database cooldown
 
     for (const pos of portfolio.positions) {
       const quote = quoteMap.get(pos.stock.ticker);
-      const currentPrice = quote?.price || Number(pos.averagePrice);
+      // If quote is missing, fail-closed: do not evaluate auto-sell using averagePrice
+      if (!quote || typeof quote.price !== 'number' || quote.price <= 0) {
+        activePositions.push(pos);
+        continue;
+      }
+
+      const currentPrice = quote.price;
       const stopLoss = pos.stopLossPrice ? Number(pos.stopLossPrice) : null;
       const target = pos.targetPrice ? Number(pos.targetPrice) : null;
 
@@ -137,7 +143,7 @@ export class PortfolioService {
           this.autoSellExecutionTracker.add(memoryKey);
           const reason = isStopLossHit ? 'AUTO_STOP_LOSS' : 'AUTO_TARGET_PROFIT';
           const totalProceeds = Money.multiply(pos.quantity, currentPrice);
-          cashAddedFromAutoSells = Money.add(cashAddedFromAutoSells, totalProceeds);
+          const nextCash = Money.add(cumulativeCash, totalProceeds);
 
           try {
             await this.db.client.$transaction([
@@ -147,7 +153,7 @@ export class PortfolioService {
               this.db.client.portfolio.update({
                 where: { id: portfolio.id },
                 data: {
-                  availableCash: Money.add(Number(portfolio.availableCash), totalProceeds),
+                  availableCash: nextCash,
                 },
               }),
               this.db.client.transaction.create({
@@ -162,6 +168,7 @@ export class PortfolioService {
               }),
             ]);
 
+            cumulativeCash = nextCash;
             this.logger.log(`🛡️ Auto-Executed ${reason} for ${pos.stock.ticker}: Sold ${pos.quantity} shares @ ₹${currentPrice}`);
           } catch (err) {
             this.logger.error(`Failed to auto-execute ${reason} for ${pos.stock.ticker}:`, err);
@@ -175,27 +182,21 @@ export class PortfolioService {
       }
     }
 
-    const currentCash = Money.add(Number(portfolio.availableCash), cashAddedFromAutoSells);
+    const currentCash = cumulativeCash;
 
     const hydratedPositions: PortfolioPositionWithLiveMetrics[] = activePositions.map((pos) => {
-      let currentPrice = Number(pos.averagePrice);
-      let dayChange = 0;
-      let dayChangePercent = 0;
-      let prevClose = Number(pos.averagePrice);
-
       const quote = quoteMap.get(pos.stock.ticker);
-      if (quote) {
-        currentPrice = quote.price;
-        dayChange = quote.change;
-        dayChangePercent = quote.changePercent;
-        prevClose = quote.prevClose || quote.price - quote.change;
-      }
+      const isQuoteAvailable = Boolean(quote && typeof quote.price === 'number' && quote.price > 0);
+      const currentPrice = isQuoteAvailable ? quote!.price : Number(pos.averagePrice);
+      const dayChange = isQuoteAvailable ? quote!.change : 0;
+      const dayChangePercent = isQuoteAvailable ? quote!.changePercent : 0;
+      const prevClose = isQuoteAvailable ? (quote!.prevClose || quote!.price - quote!.change) : Number(pos.averagePrice);
 
       const investedValue = Money.multiply(pos.quantity, Number(pos.averagePrice));
-      const currentValue = Money.multiply(pos.quantity, currentPrice);
-      const overallPnL = Money.subtract(currentValue, investedValue);
-      const overallPnLPercent = Money.calculateReturnPercent(currentValue, investedValue);
-      const todayPnL = Money.multiply(pos.quantity, currentPrice - prevClose);
+      const currentValue = isQuoteAvailable ? Money.multiply(pos.quantity, currentPrice) : investedValue;
+      const overallPnL = isQuoteAvailable ? Money.subtract(currentValue, investedValue) : 0;
+      const overallPnLPercent = isQuoteAvailable ? Money.calculateReturnPercent(currentValue, investedValue) : 0;
+      const todayPnL = isQuoteAvailable ? Money.multiply(pos.quantity, currentPrice - prevClose) : 0;
 
       totalInvested = Money.add(totalInvested, investedValue);
       totalCurrentValue = Money.add(totalCurrentValue, currentValue);
@@ -243,8 +244,9 @@ export class PortfolioService {
       const sec = p.stock.sector || 'General';
       sectorTotals[sec] = (sectorTotals[sec] || 0) + p.currentValue;
 
-      // Marginal Risk Contribution proxy: Weight% * Estimated Asset Volatility
-      p.marginalRiskContribution = parseFloat(((weight / 100) * 0.20 * 100).toFixed(2));
+      // Marginal Risk Contribution requires covariance matrix / realized asset volatility.
+      // Do NOT substitute an arbitrary 20% constant as volatility.
+      p.marginalRiskContribution = undefined;
 
       if (weight >= MODEL_CONFIG.RISK.POSITION_CONCENTRATION_LIMIT * 100) {
         concentrationAlerts.push(`High position concentration in ${p.stock.ticker} (${weight.toFixed(1)}% of total portfolio)`);
@@ -355,9 +357,9 @@ export class PortfolioService {
       });
     }
 
-    // 3. Auto Calculate Quantitative Stop-Loss & Target if BUY order
-    let autoStopLossPrice = Money.round(executionPrice * 0.95);
-    let autoTargetPrice = Money.round(executionPrice * 1.08);
+    // 3. Quantitative Stop-Loss & Target if BUY order
+    let autoStopLossPrice: number | null = null;
+    let autoTargetPrice: number | null = null;
 
     if (type === TransactionType.BUY) {
       try {
@@ -369,7 +371,7 @@ export class PortfolioService {
           autoTargetPrice = prediction.risk.targetPrice;
         }
       } catch {
-        this.logger.warn(`Could not compute live prediction for ${ticker}, using fallback 5% ATR stop.`);
+        this.logger.warn(`Could not compute live prediction risk bounds for ${ticker}.`);
       }
     }
 
@@ -381,6 +383,45 @@ export class PortfolioService {
 
     // 5. Atomic Execution inside Prisma Transaction
     return await this.db.client.$transaction(async (tx) => {
+      // Cross-process atomic reservation of idempotency key
+      if (idempotencyKey) {
+        const existingRecord = await tx.idempotencyRecord.findUnique({
+          where: {
+            userId_idempotencyKey: {
+              userId,
+              idempotencyKey,
+            },
+          },
+        });
+
+        if (existingRecord) {
+          if (existingRecord.canonicalPayloadHash !== canonicalPayloadHash) {
+            throw new ConflictException(
+              `Idempotency Conflict: Key '${idempotencyKey}' was already executed with a different trade payload.`
+            );
+          }
+          if (existingRecord.status === 'COMPLETED' && existingRecord.result) {
+            return { ...(existingRecord.result as any), isDuplicate: true };
+          }
+          if (existingRecord.status === 'PENDING') {
+            throw new ConflictException(
+              `Idempotency In-Flight: Request with key '${idempotencyKey}' is currently processing.`
+            );
+          }
+        } else {
+          // Atomically insert PENDING state
+          await tx.idempotencyRecord.create({
+            data: {
+              userId,
+              idempotencyKey,
+              operation: `PAPER_${type}`,
+              canonicalPayloadHash,
+              status: 'PENDING',
+            },
+          });
+        }
+      }
+
       const portfolio = await tx.portfolio.findUnique({
         where: { userId: user.id },
         include: { positions: { include: { stock: true } } },
