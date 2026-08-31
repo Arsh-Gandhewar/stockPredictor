@@ -193,11 +193,11 @@ model Transaction {
   type        TransactionType
   orderType   OrderType
   quantity    Int
-  price       Decimal         @db.Decimal(14, 2)
-  reason      String?
-  timestamp   DateTime        @default(now())
-  portfolio   Portfolio       @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
-  stock       Stock           @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  price       Decimal            @db.Decimal(14, 2)
+  reason      TransactionReason?
+  timestamp   DateTime           @default(now())
+  portfolio   Portfolio          @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+  stock       Stock              @relation(fields: [stockId], references: [id], onDelete: Cascade)
 
   @@index([portfolioId, timestamp])
   @@index([portfolioId])
@@ -304,6 +304,15 @@ enum Horizon {
 enum TransactionType {
   BUY
   SELL
+}
+
+enum TransactionReason {
+  MANUAL_TRADE
+  AUTO_STOP_LOSS
+  AUTO_TARGET_PROFIT
+  PORTFOLIO_REBALANCE
+  RISK_LIQUIDATION
+  SYSTEM_INITIALIZATION
 }
 
 enum OrderType {

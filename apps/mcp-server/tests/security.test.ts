@@ -13,7 +13,8 @@ process.env.JWT_SECRET = TEST_SECRET;
 
 function createTestJwt(payload: Record<string, any>, secret: string = TEST_SECRET, alterSignature = false): string {
   const header = { alg: 'HS256', typ: 'JWT' };
-  const fullPayload = { exp: Math.floor(Date.now() / 1000) + 3600, ...payload };
+  const nowSec = Math.floor(Date.now() / 1000);
+  const fullPayload = { iat: nowSec, exp: nowSec + 3600, ...payload };
   const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
   const payloadB64 = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
   const signingInput = `${headerB64}.${payloadB64}`;

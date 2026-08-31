@@ -18,6 +18,8 @@
     "mcp:eng:start": "npm run start --prefix apps/mcp-engineering",
     "mcp:eng:dev": "npm run dev --prefix apps/mcp-engineering",
     "mcp:eng:build": "npm run build --prefix apps/mcp-engineering",
-    "mcp:eng:test": "npm run test --prefix apps/mcp-engineering"
+    "mcp:eng:test": "npm run test --prefix apps/mcp-engineering",
+    "sync:manifests": "node scripts/sync-manifests.js",
+    "verify:manifests": "node scripts/sync-manifests.js --verify"
   }
 }

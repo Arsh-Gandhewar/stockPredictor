@@ -6,9 +6,10 @@ const TEST_SECRET = 'quantx-dev-test-secret-key-do-not-use-in-prod';
 process.env.JWT_SECRET = TEST_SECRET;
 
 function createTestToken(role: string = 'AUTHENTICATED_READ', userId: string = 'test_user'): string {
+  const nowSec = Math.floor(Date.now() / 1000);
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const payload = Buffer.from(
-    JSON.stringify({ sub: userId, role, exp: Math.floor(Date.now() / 1000) + 3600 })
+    JSON.stringify({ sub: userId, role, iat: nowSec, exp: nowSec + 3600 })
   ).toString('base64url');
   const sig = crypto.createHmac('sha256', TEST_SECRET).update(`${header}.${payload}`).digest('base64url');
   return `${header}.${payload}.${sig}`;

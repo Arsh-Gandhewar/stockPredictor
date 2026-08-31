@@ -23,7 +23,15 @@ export class OnnxInferenceEngine implements OnModuleInit {
       );
     }
     try {
-      const raw = JSON.parse(fs.readFileSync(canonicalPath, 'utf-8'));
+      const content = fs.readFileSync(canonicalPath, 'utf-8');
+      const hash = crypto.createHash('sha256').update(content).digest('hex');
+      const EXPECTED_HASH = '592a15cf6ca35659ae322b1e3694ebffd6c5f610a1a489137a01640731d90ee7';
+      if (hash !== EXPECTED_HASH) {
+        throw new Error(
+          `CANONICAL_SCHEMA_HASH_MISMATCH: Canonical features hash ${hash} does not match runtime lineage hash ${EXPECTED_HASH}`
+        );
+      }
+      const raw = JSON.parse(content);
       if (Array.isArray(raw.features) && raw.features.length === 25) {
         return raw.features;
       }

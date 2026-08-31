@@ -62,6 +62,10 @@ export interface PortfolioSummary {
   id: string;
   userId: string;
   availableCash: number;
+  cashStatus: 'AVAILABLE';
+  valuationStatus: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE';
+  portfolioValueStatus: 'VALUED' | 'UNAVAILABLE';
+  unvaluedPositionsCount: number;
   positions: PortfolioPositionWithLiveMetrics[];
   totalInvested: number;
   totalCurrentValue: number | null;
@@ -253,10 +257,23 @@ export class PortfolioService {
       }
     }
 
+    const valuationStatus: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE' =
+      unvaluedPositionsCount === 0
+        ? 'COMPLETE'
+        : unvaluedPositionsCount === hydratedPositions.length
+        ? 'UNAVAILABLE'
+        : 'PARTIAL';
+
+    const portfolioValueStatus: 'VALUED' | 'UNAVAILABLE' = isCompleteValuation ? 'VALUED' : 'UNAVAILABLE';
+
     return {
       id: portfolio.id,
       userId: portfolio.userId,
       availableCash: Money.round(currentCash),
+      cashStatus: 'AVAILABLE',
+      valuationStatus,
+      portfolioValueStatus,
+      unvaluedPositionsCount,
       positions: hydratedPositions,
       totalInvested: Money.round(totalInvested),
       totalCurrentValue: isCompleteValuation ? Money.round(totalCurrentValue) : null,
@@ -329,7 +346,8 @@ export class PortfolioService {
       // Calculate side-specific execution costs (brokerage, STT, exchange, GST, sebi, slippage)
       const costExecution = this.costEngine.calculateSellExecution(pos.quantity, currentPrice);
       const executionTimestamp = new Date();
-      const idempotencyKey = `AUTO_SELL_${pos.id}_${reason}_${Math.floor(executionTimestamp.getTime() / 60000)}`;
+      // Event-based idempotency key bound to the discrete economic trigger event
+      const idempotencyKey = `AUTO_SELL_${pos.id}_${reason}_${pos.quantity}`;
 
       try {
         const tradeResult = await this.db.client.$transaction(async (tx) => {
@@ -352,15 +370,19 @@ export class PortfolioService {
                 operation: `AUTO_SELL_${reason}`,
                 canonicalPayloadHash: crypto
                   .createHash('sha256')
-                  .update(`${pos.id}:${pos.quantity}:${currentPrice}:${reason}`)
+                  .update(`${pos.id}:${pos.quantity}:${costExecution.executionPrice}:${reason}`)
                   .digest('hex'),
                 status: 'PENDING',
               },
             });
           } catch (err: any) {
-            // Already processing or processed
-            this.logger.warn(`AUTO_SELL_IDEMPOTENT_BLOCK: Auto-sell ${idempotencyKey} already registered.`);
-            return null;
+            // Treat Prisma unique constraint violation (P2002) as already registered/processing
+            if (err?.code === 'P2002') {
+              this.logger.warn(`AUTO_SELL_IDEMPOTENT_BLOCK: Auto-sell ${idempotencyKey} already registered.`);
+              return null;
+            }
+            // Fail closed on any other unexpected DB or connectivity error
+            throw err;
           }
 
           // 3. Remove position
@@ -377,7 +399,7 @@ export class PortfolioService {
             },
           });
 
-          // 5. Create transaction record with lineage
+          // 5. Create transaction record with lineage - storing realized adverse executionPrice
           const txRecord = await tx.transaction.create({
             data: {
               portfolioId: portfolio.id,
@@ -385,7 +407,7 @@ export class PortfolioService {
               type: TransactionType.SELL,
               orderType: OrderType.MARKET,
               quantity: pos.quantity,
-              price: currentPrice,
+              price: costExecution.executionPrice,
               reason,
             },
           });
@@ -405,13 +427,16 @@ export class PortfolioService {
               result: {
                 stock: pos.stock.ticker,
                 quantity: pos.quantity,
-                executionPrice: currentPrice,
+                quotePrice: currentPrice,
+                executionPrice: costExecution.executionPrice,
+                slippageRate: costExecution.slippageRate,
+                slippage: costExecution.slippage,
                 grossProceeds: costExecution.notional,
                 totalCosts: costExecution.totalCosts,
                 netProceeds,
                 reason,
                 triggerCondition,
-                quoteTimestamp: quoteTimestamp.toISOString(),
+                quoteTimestamp: (quote as any).timestamp ? quoteTimestamp.toISOString() : null,
                 executionTimestamp: executionTimestamp.toISOString(),
               },
             },

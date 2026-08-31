@@ -222,10 +222,27 @@ export class ContextPlanner {
     }
 
     // 3. Supplement with dynamic symbol index search from store
-    const terms = task.split(/[\s_\-/,]+/).filter((t) => t.length > 2);
+    const STOPWORDS = new Set([
+      'the', 'and', 'for', 'with', 'fix', 'bug', 'issue', 'test', 'error', 'model',
+      'code', 'file', 'from', 'this', 'that', 'into', 'when', 'what', 'where', 'how',
+    ]);
+    const terms = task
+      .split(/[\s_\-/,]+/)
+      .map((t) => t.trim().toLowerCase())
+      .filter((t) => t.length >= 3 && !STOPWORDS.has(t));
+
     for (const term of terms) {
-      const symbols = this.store.findSymbolsByNamePartial(term);
-      for (const sym of symbols.slice(0, 3)) {
+      const candidates = this.store.findSymbolsByNamePartial(term);
+      // Rank: exact match first, then prefix match, then substring
+      candidates.sort((a, b) => {
+        const aName = a.name.toLowerCase();
+        const bName = b.name.toLowerCase();
+        const aExact = aName === term ? 2 : aName.startsWith(term) ? 1 : 0;
+        const bExact = bName === term ? 2 : bName.startsWith(term) ? 1 : 0;
+        return bExact - aExact;
+      });
+
+      for (const sym of candidates.slice(0, 3)) {
         primaryFilesSet.add(sym.file);
         primarySymbolsSet.add(sym.symbolId);
       }

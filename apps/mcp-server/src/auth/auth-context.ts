@@ -214,33 +214,37 @@ export class AuthService {
       throw new McpError('UNAUTHORIZED', 'Authentication token is missing valid expiration (exp) or is expired');
     }
 
-    // Issued-at check - MANDATORY
-    if (payload.iat !== undefined) {
-      if (typeof payload.iat !== 'number') {
-        throw new McpError('UNAUTHORIZED', 'Authentication token has invalid issued-at (iat) claim');
-      }
-      if (payload.iat > nowSec + 60) {
-        throw new McpError('UNAUTHORIZED', 'Authentication token issued in the future (clock skew violation)');
-      }
-      if (payload.iat > payload.exp) {
-        throw new McpError('UNAUTHORIZED', 'Authentication token issued-at (iat) cannot be after expiration (exp)');
-      }
+    // Issued-at check - STRICTLY MANDATORY
+    if (payload.iat === undefined || typeof payload.iat !== 'number') {
+      throw new McpError('UNAUTHORIZED', 'Authentication token is missing mandatory issued-at (iat) claim');
+    }
+    if (payload.iat > nowSec + 60) {
+      throw new McpError('UNAUTHORIZED', 'Authentication token issued in the future (clock skew violation)');
+    }
+    if (payload.iat > payload.exp) {
+      throw new McpError('UNAUTHORIZED', 'Authentication token issued-at (iat) cannot be after expiration (exp)');
     }
 
     if (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || payload.nbf > nowSec)) {
       throw new McpError('UNAUTHORIZED', 'Authentication JWT token is not yet valid (nbf)');
     }
 
-    // Validate issuer if configured
+    // Validate issuer - MANDATORY in production
     const expectedIssuer = process.env.CLERK_JWT_ISSUER || process.env.JWT_ISSUER;
+    if (isProd && !expectedIssuer) {
+      throw new McpError('UNAUTHORIZED', 'Mandatory JWT issuer configuration missing in production');
+    }
     if (expectedIssuer) {
       if (!payload.iss || payload.iss !== expectedIssuer) {
         throw new McpError('UNAUTHORIZED', `Invalid or missing token issuer '${payload.iss || 'none'}'`);
       }
     }
 
-    // Validate audience if configured
+    // Validate audience - MANDATORY in production
     const expectedAudience = process.env.CLERK_JWT_AUDIENCE || process.env.JWT_AUDIENCE;
+    if (isProd && !expectedAudience) {
+      throw new McpError('UNAUTHORIZED', 'Mandatory JWT audience configuration missing in production');
+    }
     if (expectedAudience) {
       if (!payload.aud || payload.aud !== expectedAudience) {
         throw new McpError('UNAUTHORIZED', `Invalid or missing token audience '${payload.aud || 'none'}'`);

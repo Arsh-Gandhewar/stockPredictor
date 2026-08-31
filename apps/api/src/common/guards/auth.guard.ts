@@ -43,23 +43,12 @@ export class AuthGuard implements CanActivate {
 
     // Service-to-Service API Key authentication (e.g. MCP server adapter with shared secret)
     if (apiKeyHeader && configuredApiKey && apiKeyHeader === configuredApiKey) {
-      const allowDelegation = process.env.ALLOW_SERVICE_USER_DELEGATION === 'true';
-      const delegatedHeader = request.headers['x-delegated-user-id'] || '';
-
-      if (delegatedHeader && allowDelegation) {
-        const sanitized = String(delegatedHeader).replace(/[^a-zA-Z0-9_-]/g, '').trim();
-        request.userId = sanitized;
-        request.user = { id: sanitized, sub: sanitized, role: 'USER', servicePrincipal: 'quantx_service' };
-        request.userRole = 'USER';
-        return true;
-      }
-
       // Caller authenticated as service principal. Strict non-impersonation:
-      // Inbound x-user-id header is disallowed to prevent arbitrary caller-controlled user impersonation.
+      // Arbitrary caller-controlled identity selection via headers is completely disallowed.
       if (userIdHeader && userIdHeader !== 'quantx_service') {
         this.logger.warn(`API_KEY_IMPERSONATION_BLOCKED: API key caller attempted to select x-user-id '${userIdHeader}'`);
         throw new ForbiddenException(
-          'API_KEY_IMPERSONATION_BLOCKED: Service API key requests cannot select arbitrary user identity via x-user-id header'
+          'API_KEY_IMPERSONATION_BLOCKED: Service API key requests cannot select arbitrary user identity via headers'
         );
       }
       const targetUserId = 'quantx_service';
@@ -164,17 +153,15 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('UNAUTHENTICATED: Authentication token is missing valid expiration (exp) or is expired');
     }
 
-    // Validate issued-at (iat) - MANDATORY: reject if missing, non-numeric, in future, or after exp
-    if (payload.iat !== undefined) {
-      if (typeof payload.iat !== 'number') {
-        throw new UnauthorizedException('UNAUTHENTICATED: Invalid iat (issued-at) claim in token');
-      }
-      if (payload.iat > nowSec + 60) {
-        throw new UnauthorizedException('UNAUTHENTICATED: Token issued in the future (clock skew violation)');
-      }
-      if (payload.iat > payload.exp) {
-        throw new UnauthorizedException('UNAUTHENTICATED: Token issued-at (iat) cannot be after expiration (exp)');
-      }
+    // Validate issued-at (iat) - STRICTLY MANDATORY
+    if (payload.iat === undefined || typeof payload.iat !== 'number') {
+      throw new UnauthorizedException('UNAUTHENTICATED: Authentication token is missing mandatory issued-at (iat) claim');
+    }
+    if (payload.iat > nowSec + 60) {
+      throw new UnauthorizedException('UNAUTHENTICATED: Token issued in the future (clock skew violation)');
+    }
+    if (payload.iat > payload.exp) {
+      throw new UnauthorizedException('UNAUTHENTICATED: Token issued-at (iat) cannot be after expiration (exp)');
     }
 
     // Validate not-before (nbf)
@@ -184,16 +171,24 @@ export class AuthGuard implements CanActivate {
       }
     }
 
-    // Validate issuer if configured
+    const isProd = process.env.NODE_ENV === 'production';
+
+    // Validate issuer - MANDATORY in production
     const expectedIssuer = process.env.CLERK_JWT_ISSUER || process.env.JWT_ISSUER;
+    if (isProd && !expectedIssuer) {
+      throw new UnauthorizedException('UNAUTHENTICATED: Mandatory JWT issuer configuration missing in production');
+    }
     if (expectedIssuer) {
       if (!payload.iss || payload.iss !== expectedIssuer) {
         throw new UnauthorizedException(`UNAUTHENTICATED: Invalid or missing token issuer '${payload.iss || 'none'}'`);
       }
     }
 
-    // Validate audience if configured
+    // Validate audience - MANDATORY in production
     const expectedAudience = process.env.CLERK_JWT_AUDIENCE || process.env.JWT_AUDIENCE;
+    if (isProd && !expectedAudience) {
+      throw new UnauthorizedException('UNAUTHENTICATED: Mandatory JWT audience configuration missing in production');
+    }
     if (expectedAudience) {
       if (!payload.aud || payload.aud !== expectedAudience) {
         throw new UnauthorizedException(`UNAUTHENTICATED: Invalid or missing token audience '${payload.aud || 'none'}'`);

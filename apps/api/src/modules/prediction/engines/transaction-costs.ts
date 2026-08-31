@@ -3,6 +3,8 @@
  * Unified fee calculator matching packages/quant-engine/costs.py exactly.
  */
 
+import { Money } from '../../../common/utils/money.util';
+
 export type CostRegime = 'LOW_COST' | 'BASE_COST' | 'HIGH_COST';
 
 export interface TransactionCostConfig {
@@ -94,10 +96,13 @@ export class TransactionCostEngine {
 
     const totalCosts = brokerage + exchange + gst + stt + sebi + slippage;
     const netProceeds = Math.max(0, notional - totalCosts);
+    const executionPrice = Money.round(price * (1.0 - slippageRate));
 
     return {
       quantity,
       price,
+      executionPrice,
+      slippageRate,
       notional,
       brokerage,
       exchange,

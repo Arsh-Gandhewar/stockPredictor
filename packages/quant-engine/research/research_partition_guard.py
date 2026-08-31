@@ -13,6 +13,7 @@ BUG 4 Additions:
   - Benchmark and period immutability registry
 """
 import os
+import json
 import threading
 from typing import Optional, Set, Dict, Any, Union
 from enum import Enum
@@ -195,8 +196,8 @@ class ResearchPartitionGuard:
         if not os.path.exists(lock_dir):
             try:
                 os.makedirs(lock_dir, exist_ok=True)
-            except OSError:
-                pass
+            except OSError as exc:
+                raise RuntimeError(f"LOCK_DIR_CREATION_FAILURE: {exc}") from exc
 
     @classmethod
     def activate_holdout(cls) -> None:
@@ -209,8 +210,8 @@ class ResearchPartitionGuard:
                 fd = os.open(cls._LOCK_FILE, os.O_CREAT | os.O_WRONLY | os.O_TRUNC)
                 os.write(fd, b'LOCKED')
                 os.close(fd)
-            except OSError:
-                pass
+            except OSError as exc:
+                raise RuntimeError(f"HOLDOUT_LOCK_FAILURE: Failed to persist holdout lock file: {exc}") from exc
 
     @classmethod
     def release_holdout(cls) -> None:
@@ -220,8 +221,8 @@ class ResearchPartitionGuard:
             if os.path.exists(cls._LOCK_FILE):
                 try:
                     os.remove(cls._LOCK_FILE)
-                except OSError:
-                    pass
+                except OSError as exc:
+                    raise RuntimeError(f"HOLDOUT_RELEASE_FAILURE: Failed to remove holdout lock file: {exc}") from exc
 
     @classmethod
     def is_holdout_active(cls) -> bool:
@@ -252,8 +253,10 @@ class ResearchPartitionGuard:
                     data = json.load(f)
                     if isinstance(data, list):
                         experiments.update(data)
-            except Exception:
-                pass
+            except Exception as exc:
+                raise RuntimeError(
+                    f"RESEARCH_PERSISTENCE_FAILURE: Failed to parse durable test experiments file: {exc}"
+                ) from exc
         return experiments
 
     @classmethod
@@ -269,8 +272,10 @@ class ResearchPartitionGuard:
                 with open(temp_file, 'w', encoding='utf-8') as f:
                     json.dump(sorted(list(all_exps)), f)
                 os.replace(temp_file, cls._TEST_EXPERIMENTS_FILE)
-            except Exception:
-                pass
+            except Exception as exc:
+                raise RuntimeError(
+                    f"RESEARCH_PERSISTENCE_FAILURE: Failed to write durable test experiment '{experiment_id}': {exc}"
+                ) from exc
 
     @classmethod
     def assert_test_not_repeated(cls, experiment_id: str) -> None:
@@ -360,6 +365,10 @@ class ResearchPartitionGuard:
     @classmethod
     def reset_locks(cls) -> None:
         """Full reset for isolated regression testing."""
+        env = os.environ.get('NODE_ENV', '') or os.environ.get('QUANTX_ENVIRONMENT', '')
+        if env.lower() == 'production':
+            raise PermissionError("ILLEGAL_GOVERNANCE_RESET: reset_locks() cannot be invoked in a production environment.")
+
         with cls._lock:
             cls._holdout_active = False
             cls._evaluated_test_experiments.clear()

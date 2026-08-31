@@ -1,7 +1,7 @@
 {
   "manifestVersion": "1.0.0",
   "generatedAt": "2026-08-31T03:30:00.000Z",
-  "gitSha": "bd4b7da99cb4443b348673a16c65b062b9a48b9d",
+  "gitSha": "ba452bfce97c7f6b243de3481cce94913fb8d4fd",
   "modelVersion": "5.0.0",
   "returnModelVersion": "v5.0.0-empirical-quantiles",
   "featureVersion": "v5.0.0-multi-factor-25",
@@ -13,18 +13,30 @@
   "lineageHashes": {
     "datasetHash": "2a1535660daf6294522253eb5a70c97cd60a1624cebb2b19ad4d60ffdf6dbd3e",
     "universeHash": "26b1ed4a3131708ef778c27fa8745728d22ca497d94c63ae1cec6766769461d3",
-    "featureHash": "68690eda2843b082f78eda4baca5ec9c40f251a4d8ce6579975fdb58196647f6",
+    "featureHash": "592a15cf6ca35659ae322b1e3694ebffd6c5f610a1a489137a01640731d90ee7",
     "modelHash": "1fc0fce0502df27d1c86ea47bde131d3e67c7101ecfb1e994580fe6ea2da9b99",
     "strategyHash": "6d707e271393d96754307ef2af5262e87cb484b5d6ec222da52d256d239dd535",
     "executionHash": "60b546af54cab50d9e05354f0a7408a409a02d01618e56138697d5143c5af477",
     "environmentHash": "622647990a6cfc3ec69f2706afeaf7835f90b7e4faff18d20ab14df0896526bc"
   },
   "compatibilityMatrix": {
-    "supportedModelVersions": ["5.0.0"],
-    "supportedFeatureVersions": ["v5.0.0-multi-factor-25"],
-    "supportedStrategyVersions": ["LEARNED_LIGHTGBM_V5"],
-    "supportedExecutionVersions": ["v5.0.0-statutory-frictions"],
-    "supportedHorizons": ["1d", "5d", "20d"]
+    "supportedModelVersions": [
+      "5.0.0"
+    ],
+    "supportedFeatureVersions": [
+      "v5.0.0-multi-factor-25"
+    ],
+    "supportedStrategyVersions": [
+      "LEARNED_LIGHTGBM_V5"
+    ],
+    "supportedExecutionVersions": [
+      "v5.0.0-statutory-frictions"
+    ],
+    "supportedHorizons": [
+      "1d",
+      "5d",
+      "20d"
+    ]
   },
   "runtimeManifestHash": "27db4d2625291e1d0f507b9a5fe3509bc489e224e757d5940e4f3a74347dd9c7"
 }

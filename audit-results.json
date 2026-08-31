@@ -1,7 +1,7 @@
 {
   "auditRunId": "audit_1787844602",
   "auditTimestamp": "2026-08-31T03:30:00Z",
-  "gitSha": "6c5f8f1c81ecf278e1421c2de3efebabb080e1ad",
+  "gitSha": "ba452bfce97c7f6b243de3481cce94913fb8d4fd",
   "auditorVersion": "v5.0.0-independent-quant-auditor",
   "status": "PASSED",
   "technicalMethodStatus": "PASS",
@@ -107,12 +107,12 @@
   },
   "capacityAnalysis": {
     "status": "VALID",
-    "baseCapital": 1000000.0,
-    "capacityLimit": "\u20b91.0Cr",
+    "baseCapital": 1000000,
+    "capacityLimit": "₹1.0Cr",
     "tiers": [
       {
         "capital": 100000,
-        "label": "\u20b91L",
+        "label": "₹1L",
         "participationRate": 0.0002,
         "incrementalImpactBps": 1.58,
         "annualImpactDragPct": 0.32,
@@ -121,7 +121,7 @@
       },
       {
         "capital": 500000,
-        "label": "\u20b95L",
+        "label": "₹5L",
         "participationRate": 0.001,
         "incrementalImpactBps": 3.54,
         "annualImpactDragPct": 0.71,
@@ -130,16 +130,16 @@
       },
       {
         "capital": 1000000,
-        "label": "\u20b910L",
+        "label": "₹10L",
         "participationRate": 0.002,
-        "incrementalImpactBps": 5.0,
-        "annualImpactDragPct": 1.0,
+        "incrementalImpactBps": 5,
+        "annualImpactDragPct": 1,
         "netCAGR": -1.57,
         "netSharpe": -0.59
       },
       {
         "capital": 2500000,
-        "label": "\u20b925L",
+        "label": "₹25L",
         "participationRate": 0.005,
         "incrementalImpactBps": 7.91,
         "annualImpactDragPct": 1.58,
@@ -148,7 +148,7 @@
       },
       {
         "capital": 5000000,
-        "label": "\u20b950L",
+        "label": "₹50L",
         "participationRate": 0.01,
         "incrementalImpactBps": 11.18,
         "annualImpactDragPct": 2.24,
@@ -157,7 +157,7 @@
       },
       {
         "capital": 10000000,
-        "label": "\u20b91.0Cr",
+        "label": "₹1.0Cr",
         "participationRate": 0.02,
         "incrementalImpactBps": 15.81,
         "annualImpactDragPct": 3.16,
@@ -166,16 +166,16 @@
       },
       {
         "capital": 25000000,
-        "label": "\u20b92.5Cr",
+        "label": "₹2.5Cr",
         "participationRate": 0.05,
-        "incrementalImpactBps": 25.0,
-        "annualImpactDragPct": 5.0,
+        "incrementalImpactBps": 25,
+        "annualImpactDragPct": 5,
         "netCAGR": -5.57,
         "netSharpe": -0.85
       },
       {
         "capital": 50000000,
-        "label": "\u20b95.0Cr",
+        "label": "₹5.0Cr",
         "participationRate": 0.1,
         "incrementalImpactBps": 35.36,
         "annualImpactDragPct": 7.07,
@@ -184,10 +184,10 @@
       },
       {
         "capital": 100000000,
-        "label": "\u20b910.0Cr",
+        "label": "₹10.0Cr",
         "participationRate": 0.2,
-        "incrementalImpactBps": 50.0,
-        "annualImpactDragPct": 10.0,
+        "incrementalImpactBps": 50,
+        "annualImpactDragPct": 10,
         "netCAGR": -10.57,
         "netSharpe": -1.19
       }
@@ -198,8 +198,8 @@
     "sampleCount": 626,
     "pReturnBelow1Pct": 3.04,
     "pReturnBelow2Pct": 0.48,
-    "pReturnBelow5Pct": 0.0,
-    "pReturnBelow10Pct": 0.0,
+    "pReturnBelow5Pct": 0,
+    "pReturnBelow10Pct": 0,
     "historicalVaR95Pct": -0.71,
     "historicalVaR99Pct": -1.33,
     "expectedShortfallCVaR95Pct": -1.24
@@ -219,7 +219,7 @@
     "earlyOosAlpha": 0.103,
     "midOosAlpha": -0.0885,
     "lateOosAlpha": -0.0219,
-    "rolling90dLatest": 0.0,
+    "rolling90dLatest": 0,
     "alphaDecay": true
   },
   "backtestRecomputed": {
