@@ -187,6 +187,7 @@ class ResearchPartitionGuard:
     # ------------------------------------------------------------------
 
     _LOCK_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'research_holdout.lock')
+    _TEST_EXPERIMENTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'evaluated_test_experiments.json')
 
     @classmethod
     def _ensure_lock_dir(cls) -> None:
@@ -204,8 +205,10 @@ class ResearchPartitionGuard:
             cls._holdout_active = True
             cls._ensure_lock_dir()
             try:
-                with open(cls._LOCK_FILE, 'w') as f:
-                    f.write('LOCKED')
+                # Atomic file creation using os.open with O_CREAT | O_WRONLY
+                fd = os.open(cls._LOCK_FILE, os.O_CREAT | os.O_WRONLY | os.O_TRUNC)
+                os.write(fd, b'LOCKED')
+                os.close(fd)
             except OSError:
                 pass
 
@@ -237,20 +240,44 @@ class ResearchPartitionGuard:
                 )
 
     # ------------------------------------------------------------------
-    # Test Experiment Lock
+    # Test Experiment Lock (Cross-Process Durable State)
     # ------------------------------------------------------------------
+
+    @classmethod
+    def _load_durable_test_experiments(cls) -> set:
+        experiments = set(cls._evaluated_test_experiments)
+        if os.path.exists(cls._TEST_EXPERIMENTS_FILE):
+            try:
+                with open(cls._TEST_EXPERIMENTS_FILE, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        experiments.update(data)
+            except Exception:
+                pass
+        return experiments
 
     @classmethod
     def record_test_run(cls, experiment_id: str) -> None:
         """Records that an experiment has executed its single allowed TEST evaluation."""
         with cls._lock:
             cls._evaluated_test_experiments.add(experiment_id)
+            cls._ensure_lock_dir()
+            try:
+                all_exps = cls._load_durable_test_experiments()
+                all_exps.add(experiment_id)
+                temp_file = f"{cls._TEST_EXPERIMENTS_FILE}.tmp.{os.getpid()}"
+                with open(temp_file, 'w', encoding='utf-8') as f:
+                    json.dump(sorted(list(all_exps)), f)
+                os.replace(temp_file, cls._TEST_EXPERIMENTS_FILE)
+            except Exception:
+                pass
 
     @classmethod
     def assert_test_not_repeated(cls, experiment_id: str) -> None:
-        """Prevents repeated evaluation/optimization on TEST."""
+        """Prevents repeated evaluation/optimization on TEST across threads and processes."""
         with cls._lock:
-            if experiment_id in cls._evaluated_test_experiments:
+            all_exps = cls._load_durable_test_experiments()
+            if experiment_id in all_exps:
                 raise TestSelectionLockError(
                     f"TEST SELECTION LOCK: Experiment '{experiment_id}' has already been evaluated "
                     "on TEST. Cannot re-tune or re-select. Create a new research cycle."
@@ -343,5 +370,10 @@ class ResearchPartitionGuard:
             if os.path.exists(cls._LOCK_FILE):
                 try:
                     os.remove(cls._LOCK_FILE)
+                except OSError:
+                    pass
+            if os.path.exists(cls._TEST_EXPERIMENTS_FILE):
+                try:
+                    os.remove(cls._TEST_EXPERIMENTS_FILE)
                 except OSError:
                     pass

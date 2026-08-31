@@ -17,41 +17,25 @@ export class OnnxInferenceEngine implements OnModuleInit {
   private sessions: Map<'1d' | '5d' | '20d', ort.InferenceSession> = new Map();
   private featureSchema: string[] = (() => {
     const canonicalPath = path.resolve(__dirname, '../../../../../../packages/quant-engine/research/canonical_features.json');
-    if (fs.existsSync(canonicalPath)) {
-      try {
-        const raw = JSON.parse(fs.readFileSync(canonicalPath, 'utf-8'));
-        if (Array.isArray(raw.features) && raw.features.length === 25) {
-          return raw.features;
-        }
-      } catch {}
+    if (!fs.existsSync(canonicalPath)) {
+      throw new Error(
+        `CANONICAL_SCHEMA_MISSING: Canonical feature schema file not found at ${canonicalPath}. Silent fallback prohibited.`
+      );
     }
-    return [
-      'rsi_14',
-      'macd_hist',
-      'sma_20_dist',
-      'sma_50_dist',
-      'ema_20_dist',
-      'atr_percent',
-      'bb_width',
-      'stoch_k',
-      'volume_z_score',
-      'annualized_volatility',
-      'downside_deviation',
-      'beta_nifty',
-      'relative_strength_nifty',
-      'momentum_5',
-      'momentum_20',
-      'ret_1d',
-      'ret_5d',
-      'ret_20d',
-      'gap_pct',
-      'dist_52w_high',
-      'dist_52w_low',
-      'roc_12',
-      'rel_volume',
-      'vol_20d',
-      'vol_60d',
-    ];
+    try {
+      const raw = JSON.parse(fs.readFileSync(canonicalPath, 'utf-8'));
+      if (Array.isArray(raw.features) && raw.features.length === 25) {
+        return raw.features;
+      }
+      throw new Error(
+        `CANONICAL_SCHEMA_CORRUPT: Expected 25 features in canonical schema, got ${raw.features ? raw.features.length : 'none'}`
+      );
+    } catch (err: any) {
+      if (err.message && err.message.startsWith('CANONICAL_SCHEMA_')) {
+        throw err;
+      }
+      throw new Error(`CANONICAL_SCHEMA_PARSE_ERROR: Failed to parse canonical features JSON: ${err.message}`);
+    }
   })();
 
   private isModelLoaded: boolean = false;

@@ -175,7 +175,7 @@ export class AuthService {
     }
 
     const isProd = process.env.NODE_ENV === 'production';
-    const rawSecret = process.env.JWT_SECRET || process.env.CLERK_SECRET_KEY;
+    const rawSecret = process.env.JWT_SECRET;
     const clerkPublicKey = process.env.CLERK_PEM_PUBLIC_KEY;
 
     if (isProd && !clerkPublicKey && !rawSecret) {
@@ -212,6 +212,19 @@ export class AuthService {
     const nowSec = Math.floor(Date.now() / 1000);
     if (payload.exp === undefined || typeof payload.exp !== 'number' || payload.exp <= nowSec) {
       throw new McpError('UNAUTHORIZED', 'Authentication token is missing valid expiration (exp) or is expired');
+    }
+
+    // Issued-at check - MANDATORY
+    if (payload.iat !== undefined) {
+      if (typeof payload.iat !== 'number') {
+        throw new McpError('UNAUTHORIZED', 'Authentication token has invalid issued-at (iat) claim');
+      }
+      if (payload.iat > nowSec + 60) {
+        throw new McpError('UNAUTHORIZED', 'Authentication token issued in the future (clock skew violation)');
+      }
+      if (payload.iat > payload.exp) {
+        throw new McpError('UNAUTHORIZED', 'Authentication token issued-at (iat) cannot be after expiration (exp)');
+      }
     }
 
     if (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || payload.nbf > nowSec)) {

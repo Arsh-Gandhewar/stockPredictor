@@ -80,6 +80,36 @@ export class TransactionCostEngine {
     return entryTotal + exitTotal;
   }
 
+  public calculateSellExecution(quantity: number, price: number) {
+    const cfg = this.config;
+    const notional = quantity * price;
+
+    const brokerage = Math.min(notional * cfg.brokerageRate, 20.0); // capped at INR 20
+    const exchange = notional * cfg.exchangeRate;
+    const gst = (brokerage + exchange) * cfg.gstRate;
+    const stt = notional * cfg.sttRateSell;
+    const sebi = notional * cfg.sebiRate;
+    const slippageRate = cfg.slippageBps / 10000.0;
+    const slippage = notional * slippageRate;
+
+    const totalCosts = brokerage + exchange + gst + stt + sebi + slippage;
+    const netProceeds = Math.max(0, notional - totalCosts);
+
+    return {
+      quantity,
+      price,
+      notional,
+      brokerage,
+      exchange,
+      gst,
+      stt,
+      sebi,
+      slippage,
+      totalCosts,
+      netProceeds,
+    };
+  }
+
   public computeNetReturn(grossReturn: number): number {
     return grossReturn - this.calculateRoundTripCostRate();
   }
@@ -88,3 +118,4 @@ export class TransactionCostEngine {
     return { ...this.config };
   }
 }
+

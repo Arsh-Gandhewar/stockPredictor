@@ -9,24 +9,43 @@ import { Money } from '../../common/utils/money.util';
 import { MODEL_CONFIG } from '../prediction/engines/model-config';
 import { PositionRiskState } from '../prediction/prediction.types';
 
+import { TransactionCostEngine } from '../prediction/engines/transaction-costs';
+
+export type TransactionReason =
+  | 'MANUAL_TRADE'
+  | 'AUTO_STOP_LOSS'
+  | 'AUTO_TARGET_PROFIT'
+  | 'PORTFOLIO_REBALANCE'
+  | 'RISK_LIQUIDATION'
+  | 'SYSTEM_INITIALIZATION';
+
+export const VALID_TRANSACTION_REASONS = new Set<string>([
+  'MANUAL_TRADE',
+  'AUTO_STOP_LOSS',
+  'AUTO_TARGET_PROFIT',
+  'PORTFOLIO_REBALANCE',
+  'RISK_LIQUIDATION',
+  'SYSTEM_INITIALIZATION',
+]);
+
 export interface PortfolioPositionWithLiveMetrics {
   id: string;
   portfolioId: string;
   stockId: string;
   quantity: number;
   averagePrice: number;
-  currentPrice: number;
+  currentPrice: number | null;
   priceStatus?: 'LIVE' | 'UNAVAILABLE';
-  dayChange: number;
-  dayChangePercent: number;
+  dayChange: number | null;
+  dayChangePercent: number | null;
   investedValue: number;
-  currentValue: number;
-  todayPnL: number;
-  overallPnL: number;
-  overallPnLPercent: number;
+  currentValue: number | null;
+  todayPnL: number | null;
+  overallPnL: number | null;
+  overallPnLPercent: number | null;
   stopLossPrice: number | null;
   targetPrice: number | null;
-  portfolioWeightPercent?: number;
+  portfolioWeightPercent?: number | null;
   compositeRiskScore?: number;
   riskState?: PositionRiskState;
   marginalRiskContribution?: number;
@@ -45,12 +64,12 @@ export interface PortfolioSummary {
   availableCash: number;
   positions: PortfolioPositionWithLiveMetrics[];
   totalInvested: number;
-  totalCurrentValue: number;
-  totalPortfolioValue: number;
-  totalTodayPnL: number;
-  totalTodayPnLPercent: number;
-  totalOverallPnL: number;
-  totalOverallPnLPercent: number;
+  totalCurrentValue: number | null;
+  totalPortfolioValue: number | null;
+  totalTodayPnL: number | null;
+  totalTodayPnLPercent: number | null;
+  totalOverallPnL: number | null;
+  totalOverallPnLPercent: number | null;
   sectorConcentrations?: Record<string, number>;
   concentrationAlerts?: string[];
 }
@@ -58,6 +77,8 @@ export interface PortfolioSummary {
 @Injectable()
 export class PortfolioService {
   private readonly logger = new Logger(PortfolioService.name);
+  private readonly costEngine = new TransactionCostEngine('BASE_COST');
+
   private autoSellExecutionTracker = new Set<string>();
 
   constructor(
@@ -127,17 +148,18 @@ export class PortfolioService {
           stockId: pos.stockId,
           quantity: pos.quantity,
           averagePrice: Number(pos.averagePrice),
-          currentPrice: null as any,
+          currentPrice: null,
           priceStatus: 'UNAVAILABLE',
-          dayChange: null as any,
-          dayChangePercent: null as any,
+          dayChange: null,
+          dayChangePercent: null,
           investedValue,
-          currentValue: null as any,
-          todayPnL: null as any,
-          overallPnL: null as any,
-          overallPnLPercent: null as any,
+          currentValue: null,
+          todayPnL: null,
+          overallPnL: null,
+          overallPnLPercent: null,
           stopLossPrice: pos.stopLossPrice ? Number(pos.stopLossPrice) : null,
           targetPrice: pos.targetPrice ? Number(pos.targetPrice) : null,
+          portfolioWeightPercent: null,
           stock: {
             id: pos.stock.id,
             ticker: pos.stock.ticker,
@@ -188,37 +210,46 @@ export class PortfolioService {
       };
     });
 
-    const totalOverallPnL = unvaluedPositionsCount === 0 ? Money.subtract(totalCurrentValue, totalInvested) : null as any;
-    const totalOverallPnLPercent = unvaluedPositionsCount === 0 ? Money.calculateReturnPercent(totalCurrentValue, totalInvested) : null as any;
-    const totalPortfolioValue = Money.add(currentCash, totalCurrentValue);
-    const totalTodayPnLPercent = (unvaluedPositionsCount === 0 && totalPortfolioValue > 0) ? Money.round((totalTodayPnL / totalPortfolioValue) * 100) : null as any;
+    const isCompleteValuation = unvaluedPositionsCount === 0;
+
+    const totalOverallPnL = isCompleteValuation ? Money.subtract(totalCurrentValue, totalInvested) : null;
+    const totalOverallPnLPercent = isCompleteValuation ? Money.calculateReturnPercent(totalCurrentValue, totalInvested) : null;
+    const totalPortfolioValue = isCompleteValuation ? Money.add(currentCash, totalCurrentValue) : null;
+    const totalTodayPnLPercent = (isCompleteValuation && totalPortfolioValue !== null && totalPortfolioValue > 0)
+      ? Money.round((totalTodayPnL / totalPortfolioValue) * 100)
+      : null;
 
     // ── Position-Aware Concentration & Weight Analytics ──
     const sectorTotals: Record<string, number> = {};
     const concentrationAlerts: string[] = [];
 
     hydratedPositions.forEach((p) => {
-      const weight = totalPortfolioValue > 0 ? (p.currentValue / totalPortfolioValue) * 100 : 0;
-      p.portfolioWeightPercent = parseFloat(weight.toFixed(1));
-
-      const sec = p.stock.sector || 'General';
-      sectorTotals[sec] = (sectorTotals[sec] || 0) + p.currentValue;
-
-      // Marginal Risk Contribution requires covariance matrix / realized asset volatility.
-      // Do NOT substitute an arbitrary 20% constant as volatility.
-      p.marginalRiskContribution = undefined;
-
-      if (weight >= MODEL_CONFIG.RISK.POSITION_CONCENTRATION_LIMIT * 100) {
-        concentrationAlerts.push(`High position concentration in ${p.stock.ticker} (${weight.toFixed(1)}% of total portfolio)`);
+      if (totalPortfolioValue !== null && totalPortfolioValue > 0 && p.currentValue !== null) {
+        const weight = (p.currentValue / totalPortfolioValue) * 100;
+        p.portfolioWeightPercent = parseFloat(weight.toFixed(1));
+        if (weight >= MODEL_CONFIG.RISK.POSITION_CONCENTRATION_LIMIT * 100) {
+          concentrationAlerts.push(`High position concentration in ${p.stock.ticker} (${weight.toFixed(1)}% of total portfolio)`);
+        }
+      } else {
+        p.portfolioWeightPercent = null;
       }
+
+      if (p.currentValue !== null) {
+        const sec = p.stock.sector || 'General';
+        sectorTotals[sec] = (sectorTotals[sec] || 0) + p.currentValue;
+      }
+
+      p.marginalRiskContribution = undefined;
     });
 
     const sectorConcentrations: Record<string, number> = {};
-    for (const [sec, val] of Object.entries(sectorTotals)) {
-      const secPct = totalPortfolioValue > 0 ? (val / totalPortfolioValue) * 100 : 0;
-      sectorConcentrations[sec] = parseFloat(secPct.toFixed(1));
-      if (secPct >= MODEL_CONFIG.RISK.SECTOR_CONCENTRATION_LIMIT * 100) {
-        concentrationAlerts.push(`High sector concentration in ${sec} (${secPct.toFixed(1)}% of total portfolio)`);
+    if (totalPortfolioValue !== null && totalPortfolioValue > 0) {
+      for (const [sec, val] of Object.entries(sectorTotals)) {
+        const secPct = (val / totalPortfolioValue) * 100;
+        sectorConcentrations[sec] = parseFloat(secPct.toFixed(1));
+        if (secPct >= MODEL_CONFIG.RISK.SECTOR_CONCENTRATION_LIMIT * 100) {
+          concentrationAlerts.push(`High sector concentration in ${sec} (${secPct.toFixed(1)}% of total portfolio)`);
+        }
       }
     }
 
@@ -228,11 +259,11 @@ export class PortfolioService {
       availableCash: Money.round(currentCash),
       positions: hydratedPositions,
       totalInvested: Money.round(totalInvested),
-      totalCurrentValue: Money.round(totalCurrentValue),
-      totalPortfolioValue: Money.round(totalPortfolioValue),
-      totalTodayPnL: Money.round(totalTodayPnL),
+      totalCurrentValue: isCompleteValuation ? Money.round(totalCurrentValue) : null,
+      totalPortfolioValue: totalPortfolioValue !== null ? Money.round(totalPortfolioValue) : null,
+      totalTodayPnL: isCompleteValuation ? Money.round(totalTodayPnL) : null,
       totalTodayPnLPercent,
-      totalOverallPnL: Money.round(totalOverallPnL),
+      totalOverallPnL: totalOverallPnL !== null ? Money.round(totalOverallPnL) : null,
       totalOverallPnLPercent,
       sectorConcentrations,
       concentrationAlerts,
@@ -279,6 +310,7 @@ export class PortfolioService {
       }
 
       const currentPrice = quote.price;
+      const quoteTimestamp = (quote as any).timestamp ? new Date((quote as any).timestamp) : new Date();
       const stopLoss = pos.stopLossPrice ? Number(pos.stopLossPrice) : null;
       const target = pos.targetPrice ? Number(pos.targetPrice) : null;
 
@@ -289,22 +321,64 @@ export class PortfolioService {
         continue;
       }
 
-      const reason = isStopLossHit ? 'AUTO_STOP_LOSS' : 'AUTO_TARGET_PROFIT';
-      const totalProceeds = Money.multiply(pos.quantity, currentPrice);
-      const nextCash = Money.add(cumulativeCash, totalProceeds);
+      const reason: TransactionReason = isStopLossHit ? 'AUTO_STOP_LOSS' : 'AUTO_TARGET_PROFIT';
+      const triggerCondition = isStopLossHit
+        ? `PRICE_${currentPrice} <= STOP_LOSS_${stopLoss}`
+        : `PRICE_${currentPrice} >= TARGET_${target}`;
+
+      // Calculate side-specific execution costs (brokerage, STT, exchange, GST, sebi, slippage)
+      const costExecution = this.costEngine.calculateSellExecution(pos.quantity, currentPrice);
+      const executionTimestamp = new Date();
+      const idempotencyKey = `AUTO_SELL_${pos.id}_${reason}_${Math.floor(executionTimestamp.getTime() / 60000)}`;
 
       try {
-        await this.db.client.$transaction([
-          this.db.client.position.delete({
+        const tradeResult = await this.db.client.$transaction(async (tx) => {
+          // 1. Verify position exists and has not already been liquidated by another concurrent worker
+          const currentPos = await tx.position.findUnique({
             where: { id: pos.id },
-          }),
-          this.db.client.portfolio.update({
+          });
+
+          if (!currentPos || currentPos.quantity <= 0) {
+            this.logger.warn(`AUTO_SELL_SKIPPED: Position ${pos.id} (${pos.stock.ticker}) was already closed.`);
+            return null;
+          }
+
+          // 2. Register durable idempotency reservation
+          try {
+            await tx.idempotencyRecord.create({
+              data: {
+                userId: portfolio.userId,
+                idempotencyKey,
+                operation: `AUTO_SELL_${reason}`,
+                canonicalPayloadHash: crypto
+                  .createHash('sha256')
+                  .update(`${pos.id}:${pos.quantity}:${currentPrice}:${reason}`)
+                  .digest('hex'),
+                status: 'PENDING',
+              },
+            });
+          } catch (err: any) {
+            // Already processing or processed
+            this.logger.warn(`AUTO_SELL_IDEMPOTENT_BLOCK: Auto-sell ${idempotencyKey} already registered.`);
+            return null;
+          }
+
+          // 3. Remove position
+          await tx.position.delete({
+            where: { id: pos.id },
+          });
+
+          // 4. Atomic cash increment (prevents lost updates across concurrent workers)
+          const netProceeds = Money.round(costExecution.netProceeds);
+          await tx.portfolio.update({
             where: { id: portfolio.id },
             data: {
-              availableCash: nextCash,
+              availableCash: { increment: netProceeds },
             },
-          }),
-          this.db.client.transaction.create({
+          });
+
+          // 5. Create transaction record with lineage
+          const txRecord = await tx.transaction.create({
             data: {
               portfolioId: portfolio.id,
               stockId: pos.stock.id,
@@ -314,17 +388,55 @@ export class PortfolioService {
               price: currentPrice,
               reason,
             },
-          }),
-        ]);
+          });
 
-        cumulativeCash = nextCash;
-        executedTrades.push({
-          stock: pos.stock.ticker,
-          quantity: pos.quantity,
-          executionPrice: currentPrice,
-          reason,
+          // 6. Complete idempotency record
+          await tx.idempotencyRecord.update({
+            where: {
+              userId_idempotencyKey: {
+                userId: portfolio.userId,
+                idempotencyKey,
+              },
+            },
+            data: {
+              status: 'COMPLETED',
+              transactionId: txRecord.id,
+              completedAt: executionTimestamp,
+              result: {
+                stock: pos.stock.ticker,
+                quantity: pos.quantity,
+                executionPrice: currentPrice,
+                grossProceeds: costExecution.notional,
+                totalCosts: costExecution.totalCosts,
+                netProceeds,
+                reason,
+                triggerCondition,
+                quoteTimestamp: quoteTimestamp.toISOString(),
+                executionTimestamp: executionTimestamp.toISOString(),
+              },
+            },
+          });
+
+          return {
+            stock: pos.stock.ticker,
+            quantity: pos.quantity,
+            executionPrice: currentPrice,
+            grossProceeds: costExecution.notional,
+            totalCosts: costExecution.totalCosts,
+            netProceeds,
+            reason,
+            triggerCondition,
+            quoteTimestamp: quoteTimestamp.toISOString(),
+            executionTimestamp: executionTimestamp.toISOString(),
+          };
         });
-        this.logger.log(`🛡️ Auto-Executed ${reason} for ${pos.stock.ticker}: Sold ${pos.quantity} shares @ ₹${currentPrice}`);
+
+        if (tradeResult) {
+          executedTrades.push(tradeResult);
+          this.logger.log(
+            `🛡️ Auto-Executed ${reason} for ${pos.stock.ticker}: Sold ${pos.quantity} shares @ ₹${currentPrice} (Net Proceeds: ₹${tradeResult.netProceeds}, Friction: ₹${tradeResult.totalCosts.toFixed(2)})`
+          );
+        }
       } catch (err) {
         this.logger.error(`Failed to auto-execute ${reason} for ${pos.stock.ticker}:`, err);
       }
@@ -592,6 +704,7 @@ export class PortfolioService {
           orderType,
           quantity,
           price: executionPrice,
+          reason: 'MANUAL_TRADE',
         },
       });
 
@@ -735,6 +848,11 @@ export class PortfolioService {
         const prediction = await this.predictionService.getPrediction(pos.stock.ticker);
         const currentPrice = pos.currentPrice;
 
+        if (currentPrice === null || pos.overallPnLPercent === null) {
+          // Live metrics unavailable for this position; cannot evaluate price-based signals safely
+          return null;
+        }
+
         const isSellDecision = prediction.decision === 'SELL' || prediction.decision === 'STRONG_SELL';
         const isHighDownside = prediction.risk.downsideProbability > 0.60;
         const isStopLossTriggered = currentPrice <= prediction.risk.stopLossPrice;
@@ -770,7 +888,7 @@ export class PortfolioService {
               ? 'MEDIUM'
               : 'LOW';
 
-          const targetExitPrice = isStopLossTriggered
+          const targetExitPrice: number | undefined = isStopLossTriggered
             ? currentPrice
             : isTargetReached
             ? currentPrice
@@ -781,7 +899,7 @@ export class PortfolioService {
             ticker: pos.stock.ticker,
             name: pos.stock.name,
             avgPrice: pos.averagePrice,
-            currentPrice: pos.currentPrice,
+            currentPrice,
             unrealizedPnLPercent: pos.overallPnLPercent,
             decision: recommendation,
             urgency,

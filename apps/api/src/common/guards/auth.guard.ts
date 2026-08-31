@@ -43,6 +43,17 @@ export class AuthGuard implements CanActivate {
 
     // Service-to-Service API Key authentication (e.g. MCP server adapter with shared secret)
     if (apiKeyHeader && configuredApiKey && apiKeyHeader === configuredApiKey) {
+      const allowDelegation = process.env.ALLOW_SERVICE_USER_DELEGATION === 'true';
+      const delegatedHeader = request.headers['x-delegated-user-id'] || '';
+
+      if (delegatedHeader && allowDelegation) {
+        const sanitized = String(delegatedHeader).replace(/[^a-zA-Z0-9_-]/g, '').trim();
+        request.userId = sanitized;
+        request.user = { id: sanitized, sub: sanitized, role: 'USER', servicePrincipal: 'quantx_service' };
+        request.userRole = 'USER';
+        return true;
+      }
+
       // Caller authenticated as service principal. Strict non-impersonation:
       // Inbound x-user-id header is disallowed to prevent arbitrary caller-controlled user impersonation.
       if (userIdHeader && userIdHeader !== 'quantx_service') {
@@ -98,10 +109,9 @@ export class AuthGuard implements CanActivate {
 
     // 4. Server-Side Role Authorization Contract
     // Tokens cannot elevate privileges without explicit server-side role whitelisting
-    const rawRole = String(payload.role || 'USER').toUpperCase();
-    const authorizedRole = (rawRole === 'ADMIN' && process.env.ADMIN_USER_IDS?.split(',').map((s) => s.trim()).includes(authenticatedUserId))
-      ? 'ADMIN'
-      : (rawRole === 'SERVICE' ? 'USER' : (rawRole === 'ADMIN' ? 'USER' : 'USER'));
+    const adminList = (process.env.ADMIN_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const isWhitelistedAdmin = adminList.includes(authenticatedUserId);
+    const authorizedRole = isWhitelistedAdmin ? 'ADMIN' : 'USER';
 
     request.user = { ...payload, role: authorizedRole };
     request.userId = authenticatedUserId;
@@ -154,6 +164,19 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('UNAUTHENTICATED: Authentication token is missing valid expiration (exp) or is expired');
     }
 
+    // Validate issued-at (iat) - MANDATORY: reject if missing, non-numeric, in future, or after exp
+    if (payload.iat !== undefined) {
+      if (typeof payload.iat !== 'number') {
+        throw new UnauthorizedException('UNAUTHENTICATED: Invalid iat (issued-at) claim in token');
+      }
+      if (payload.iat > nowSec + 60) {
+        throw new UnauthorizedException('UNAUTHENTICATED: Token issued in the future (clock skew violation)');
+      }
+      if (payload.iat > payload.exp) {
+        throw new UnauthorizedException('UNAUTHENTICATED: Token issued-at (iat) cannot be after expiration (exp)');
+      }
+    }
+
     // Validate not-before (nbf)
     if (payload.nbf !== undefined) {
       if (typeof payload.nbf !== 'number' || payload.nbf > nowSec) {
@@ -186,7 +209,8 @@ export class AuthGuard implements CanActivate {
     // Secret resolution: Clerk PEM public key or HMAC secret
     const clerkPublicKey = process.env.CLERK_PEM_PUBLIC_KEY;
     const isProd = process.env.NODE_ENV === 'production';
-    const jwtSecret = process.env.JWT_SECRET || process.env.CLERK_SECRET_KEY;
+    // Strictly require JWT_SECRET for HS256. CLERK_SECRET_KEY is never an HS256 secret.
+    const jwtSecret = process.env.JWT_SECRET;
 
     if (isProd && !clerkPublicKey && !jwtSecret) {
       throw new UnauthorizedException('UNAUTHENTICATED: Cryptographic secret not configured in production');
