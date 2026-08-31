@@ -189,6 +189,7 @@ class ResearchPartitionGuard:
 
     _LOCK_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'research_holdout.lock')
     _TEST_EXPERIMENTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'evaluated_test_experiments.json')
+    _TEST_LOCK_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'test_registry.lock')
 
     @classmethod
     def _ensure_lock_dir(cls) -> None:
@@ -201,15 +202,21 @@ class ResearchPartitionGuard:
 
     @classmethod
     def activate_holdout(cls) -> None:
-        """Locks the system into immutable HOLDOUT execution state across threads and processes."""
+        """Locks the system into immutable HOLDOUT execution state across threads and processes using atomic exclusion."""
         with cls._lock:
             cls._holdout_active = True
             cls._ensure_lock_dir()
             try:
-                # Atomic file creation using os.open with O_CREAT | O_WRONLY
-                fd = os.open(cls._LOCK_FILE, os.O_CREAT | os.O_WRONLY | os.O_TRUNC)
-                os.write(fd, b'LOCKED')
-                os.close(fd)
+                # Atomic file creation using os.open with O_CREAT | os.O_EXCL | os.O_WRONLY
+                # If already exists, atomic exclusion is preserved without race condition.
+                fd = os.open(cls._LOCK_FILE, os.O_CREAT | os.O_WRONLY | os.O_EXCL)
+                try:
+                    os.write(fd, f"LOCKED_PID_{os.getpid()}".encode('utf-8'))
+                finally:
+                    os.close(fd)
+            except FileExistsError:
+                # Lock file already exists atomically
+                pass
             except OSError as exc:
                 raise RuntimeError(f"HOLDOUT_LOCK_FAILURE: Failed to persist holdout lock file: {exc}") from exc
 
@@ -245,6 +252,32 @@ class ResearchPartitionGuard:
     # ------------------------------------------------------------------
 
     @classmethod
+    def _acquire_process_file_lock(cls, lock_file_path: str, timeout_sec: float = 5.0) -> int:
+        """Acquires a cross-process atomic mutex using O_CREAT | O_EXCL with polling."""
+        import time
+        start_time = time.time()
+        while True:
+            try:
+                fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                return fd
+            except FileExistsError:
+                if time.time() - start_time > timeout_sec:
+                    raise TimeoutError(f"CROSS_PROCESS_LOCK_TIMEOUT: Could not acquire lock {lock_file_path} within {timeout_sec}s")
+                time.sleep(0.05)
+
+    @classmethod
+    def _release_process_file_lock(cls, lock_file_path: str, fd: int) -> None:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+        try:
+            if os.path.exists(lock_file_path):
+                os.remove(lock_file_path)
+        except OSError:
+            pass
+
+    @classmethod
     def _load_durable_test_experiments(cls) -> set:
         experiments = set(cls._evaluated_test_experiments)
         if os.path.exists(cls._TEST_EXPERIMENTS_FILE):
@@ -261,10 +294,13 @@ class ResearchPartitionGuard:
 
     @classmethod
     def record_test_run(cls, experiment_id: str) -> None:
-        """Records that an experiment has executed its single allowed TEST evaluation."""
+        """Records that an experiment has executed its single allowed TEST evaluation with atomic cross-process mutex."""
         with cls._lock:
             cls._evaluated_test_experiments.add(experiment_id)
             cls._ensure_lock_dir()
+
+            # Acquire atomic inter-process mutex
+            lock_fd = cls._acquire_process_file_lock(cls._TEST_LOCK_FILE)
             try:
                 all_exps = cls._load_durable_test_experiments()
                 all_exps.add(experiment_id)
@@ -276,6 +312,8 @@ class ResearchPartitionGuard:
                 raise RuntimeError(
                     f"RESEARCH_PERSISTENCE_FAILURE: Failed to write durable test experiment '{experiment_id}': {exc}"
                 ) from exc
+            finally:
+                cls._release_process_file_lock(cls._TEST_LOCK_FILE, lock_fd)
 
     @classmethod
     def assert_test_not_repeated(cls, experiment_id: str) -> None:
@@ -384,5 +422,10 @@ class ResearchPartitionGuard:
             if os.path.exists(cls._TEST_EXPERIMENTS_FILE):
                 try:
                     os.remove(cls._TEST_EXPERIMENTS_FILE)
+                except OSError:
+                    pass
+            if os.path.exists(cls._TEST_LOCK_FILE):
+                try:
+                    os.remove(cls._TEST_LOCK_FILE)
                 except OSError:
                     pass

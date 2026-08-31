@@ -177,15 +177,27 @@ const MODULE_HINTS: ModuleHint[] = [
     bugIds: [],
   },
   {
-    keywords: ['audit', 'evidence', 'hash', 'lineage', 'integrity'],
+    keywords: ['audit', 'evidence', 'hash', 'lineage', 'integrity', 'manifest', 'treesha', 'gitsha'],
     files: [
       'packages/quant-engine/research/evidence_integrity_engine.py',
       'packages/quant-engine/research/research_lineage_engine.py',
+      'scripts/sync-manifests.js',
       'packages/quant-engine/audit/',
     ],
     symbols: ['EvidenceIntegrityEngine', 'ArtifactLineageRecord', 'IndependentMetricsEngine'],
-    testFiles: ['packages/quant-engine/tests/test_bug_4_research_integrity.py'],
-    bugIds: ['BUG-04'],
+    testFiles: ['packages/quant-engine/tests/test_bug_4_research_integrity.py', 'packages/quant-engine/tests/test_bug_5_runtime_parity.py'],
+    bugIds: ['BUG-04', 'BUG-05'],
+  },
+  {
+    keywords: ['adverse selection', 'statutory fee', 'double counting', 'execution price', 'transaction cost'],
+    files: [
+      'apps/api/src/modules/prediction/engines/transaction-costs.ts',
+      'packages/quant-engine/models/execution_cost_engine.py',
+      'packages/quant-engine/costs.py',
+    ],
+    symbols: ['TransactionCostEngine', 'ExecutionCostEngine', 'calculateSellExecution', 'calculate_sell_costs'],
+    testFiles: ['packages/quant-engine/tests/test_bug_3_execution_realism.py', 'packages/quant-engine/tests/test_bug_5_runtime_parity.py'],
+    bugIds: ['BUG-03', 'BUG-05'],
   },
 ];
 

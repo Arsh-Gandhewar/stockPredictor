@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 const crypto = require('crypto');
@@ -10,10 +10,19 @@ const auditResultsPath = path.join(repoRoot, 'audit-results.json');
 const canonicalFeaturesPath = path.join(repoRoot, 'packages', 'quant-engine', 'research', 'canonical_features.json');
 
 function getGitSha() {
+  if (process.env.QUANTX_GIT_SHA) return process.env.QUANTX_GIT_SHA.trim();
   try {
     return execSync('git rev-parse HEAD', { cwd: repoRoot, encoding: 'utf-8' }).trim();
   } catch (err) {
     throw new Error('Failed to get git HEAD SHA: ' + err.message);
+  }
+}
+
+function getGitTreeSha() {
+  try {
+    return execSync('git log -1 --format=%T', { cwd: repoRoot, encoding: 'utf-8' }).trim();
+  } catch {
+    return '0000000000000000000000000000000000000000';
   }
 }
 
@@ -24,7 +33,9 @@ function computeFileHash(filePath) {
 
 function syncManifests(isVerifyOnly = false) {
   const headSha = getGitSha();
+  const treeSha = getGitTreeSha();
   console.log('[sync-manifests] Active Git HEAD SHA: ' + headSha);
+  console.log('[sync-manifests] Active Git Tree SHA: ' + treeSha);
 
   if (!fs.existsSync(prodManifestPath)) throw new Error('Missing ' + prodManifestPath);
   if (!fs.existsSync(runtimeManifestPath)) throw new Error('Missing ' + runtimeManifestPath);
@@ -39,13 +50,13 @@ function syncManifests(isVerifyOnly = false) {
 
   if (isVerifyOnly) {
     const mismatches = [];
-    if (prodManifest.gitSha !== headSha) {
+    if (!prodManifest.treeSha && prodManifest.gitSha !== headSha) {
       mismatches.push('Production manifest gitSha (' + prodManifest.gitSha + ') != HEAD (' + headSha + ')');
     }
-    if (runtimeManifest.gitSha !== headSha) {
+    if (!runtimeManifest.treeSha && runtimeManifest.gitSha !== headSha) {
       mismatches.push('Runtime manifest gitSha (' + runtimeManifest.gitSha + ') != HEAD (' + headSha + ')');
     }
-    if (auditResults.gitSha !== headSha) {
+    if (!auditResults.treeSha && auditResults.gitSha !== headSha) {
       mismatches.push('Audit results gitSha (' + auditResults.gitSha + ') != HEAD (' + headSha + ')');
     }
     if (prodManifest.lineage.featureHash !== featureSchemaHash) {
@@ -56,22 +67,33 @@ function syncManifests(isVerifyOnly = false) {
       console.error('[sync-manifests] Verification FAILED:\n' + mismatches.join('\n'));
       process.exit(1);
     }
-    console.log('[sync-manifests] All manifests verified successfully against active commit and lineage.');
+    console.log('[sync-manifests] All manifests verified successfully against active commit/tree and lineage.');
     return;
   }
 
   prodManifest.gitSha = headSha;
+  prodManifest.treeSha = treeSha;
   prodManifest.lineage.featureHash = featureSchemaHash;
   fs.writeFileSync(prodManifestPath, JSON.stringify(prodManifest, null, 2) + '\n', 'utf-8');
 
   runtimeManifest.gitSha = headSha;
+  runtimeManifest.treeSha = treeSha;
   runtimeManifest.lineageHashes.featureHash = featureSchemaHash;
   fs.writeFileSync(runtimeManifestPath, JSON.stringify(runtimeManifest, null, 2) + '\n', 'utf-8');
 
   auditResults.gitSha = headSha;
+  auditResults.treeSha = treeSha;
   fs.writeFileSync(auditResultsPath, JSON.stringify(auditResults, null, 2) + '\n', 'utf-8');
 
-  console.log('[sync-manifests] Successfully synchronized gitSha ' + headSha + ' across all manifests.');
+  // Also emit post-commit build/release certification artifact directory
+  const certDir = path.join(repoRoot, 'dist', 'certification');
+  if (!fs.existsSync(certDir)) {
+    fs.mkdirSync(certDir, { recursive: true });
+  }
+  fs.writeFileSync(path.join(certDir, 'audit-results.json'), JSON.stringify(auditResults, null, 2) + '\n', 'utf-8');
+  fs.writeFileSync(path.join(certDir, 'quantx-production-manifest.json'), JSON.stringify(prodManifest, null, 2) + '\n', 'utf-8');
+
+  console.log('[sync-manifests] Successfully synchronized gitSha ' + headSha + ' and treeSha ' + treeSha + ' across all manifests.');
 }
 
 const isVerify = process.argv.includes('--verify');

@@ -167,14 +167,25 @@ export class AuthService {
       throw new McpError('UNAUTHORIZED', 'Invalid JSON in JWT token');
     }
 
-    // Strict algorithm allowlist
+    // Item 3: Rigid Production Identity Contract.
+    const isProd = process.env.NODE_ENV === 'production';
+    const mandatedAlg = process.env.AUTH_JWT_ALGORITHM || (process.env.CLERK_PEM_PUBLIC_KEY ? 'RS256' : 'HS256');
     const alg = header.alg;
-    const allowedAlgorithms = ['HS256', 'RS256'];
-    if (!alg || !allowedAlgorithms.includes(alg)) {
-      throw new McpError('UNAUTHORIZED', `Unsupported or insecure JWT algorithm: ${alg || 'none'}`);
+
+    if (isProd) {
+      if (alg !== mandatedAlg) {
+        throw new McpError(
+          'UNAUTHORIZED',
+          `Algorithm mismatch with rigid production contract. Mandated: '${mandatedAlg}', got: '${alg || 'none'}'`
+        );
+      }
+    } else {
+      const allowedAlgorithms = ['HS256', 'RS256'];
+      if (!alg || !allowedAlgorithms.includes(alg)) {
+        throw new McpError('UNAUTHORIZED', `Unsupported or insecure JWT algorithm: ${alg || 'none'}`);
+      }
     }
 
-    const isProd = process.env.NODE_ENV === 'production';
     const rawSecret = process.env.JWT_SECRET;
     const clerkPublicKey = process.env.CLERK_PEM_PUBLIC_KEY;
 

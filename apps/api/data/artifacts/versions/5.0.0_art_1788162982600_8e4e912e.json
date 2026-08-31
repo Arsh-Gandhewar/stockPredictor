@@ -182,7 +182,7 @@
       "dispersion": 0.0268,
       "sampleCount": 25,
       "uncertainty": 0.0054,
-      "fittedAt": "2026-08-31T07:57:07.037Z"
+      "fittedAt": "2026-08-31T07:56:22.597Z"
     },
     {
       "horizon": "5d",
@@ -194,7 +194,7 @@
       "dispersion": 0.0195,
       "sampleCount": 6,
       "uncertainty": 0.008,
-      "fittedAt": "2026-08-31T07:57:07.037Z"
+      "fittedAt": "2026-08-31T07:56:22.598Z"
     },
     {
       "horizon": "5d",
@@ -206,7 +206,7 @@
       "dispersion": 0.0158,
       "sampleCount": 7,
       "uncertainty": 0.006,
-      "fittedAt": "2026-08-31T07:57:07.038Z"
+      "fittedAt": "2026-08-31T07:56:22.598Z"
     },
     {
       "horizon": "5d",
@@ -218,7 +218,7 @@
       "dispersion": 0.0168,
       "sampleCount": 14,
       "uncertainty": 0.0045,
-      "fittedAt": "2026-08-31T07:57:07.038Z"
+      "fittedAt": "2026-08-31T07:56:22.598Z"
     }
   ],
   "empiricalQuantiles": {
@@ -259,7 +259,7 @@
     "versionCompatibility": true,
     "dateRangeIntegrity": true
   },
-  "createdAt": "2026-08-31T07:57:07.040Z",
-  "id": "art_1788163027040_31a28487",
-  "checksum": "083c2363b4ce1a02d75c6cd175f13b06f113c35b7bfabcaec864ae0ee96080b5"
+  "createdAt": "2026-08-31T07:56:22.599Z",
+  "id": "art_1788162982600_8e4e912e",
+  "checksum": "e5b8affd9c43df1c931a9eb045552be511c92a581831c56801c6df97ba693c71"
 }

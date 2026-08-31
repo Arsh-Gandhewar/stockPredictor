@@ -327,7 +327,18 @@ export class PortfolioService {
       }
 
       const currentPrice = quote.price;
-      const quoteTimestamp = (quote as any).timestamp ? new Date((quote as any).timestamp) : new Date();
+      const quoteTimestamp = (quote as any).timestamp ? new Date((quote as any).timestamp) : null;
+
+      // Item 8: Quote freshness is not equivalent to quote availability.
+      // Do not trigger auto-sell on stale or unverified quotes.
+      const MAX_AUTO_SELL_QUOTE_AGE_MS = 15 * 60 * 1000; // 15 minutes
+      if (!quoteTimestamp || (Date.now() - quoteTimestamp.getTime() > MAX_AUTO_SELL_QUOTE_AGE_MS)) {
+        this.logger.warn(
+          `AUTO_SELL_QUOTE_STALE: Ticker ${pos.stock.ticker} quote is stale or missing timestamp (${quoteTimestamp?.toISOString() || 'none'}). Auto-sell skipped.`
+        );
+        continue;
+      }
+
       const stopLoss = pos.stopLossPrice ? Number(pos.stopLossPrice) : null;
       const target = pos.targetPrice ? Number(pos.targetPrice) : null;
 
@@ -348,6 +359,10 @@ export class PortfolioService {
       const executionTimestamp = new Date();
       // Event-based idempotency key bound to the discrete economic trigger event
       const idempotencyKey = `AUTO_SELL_${pos.id}_${reason}_${pos.quantity}`;
+      const canonicalPayloadHash = crypto
+        .createHash('sha256')
+        .update(`${pos.id}:${pos.quantity}:${costExecution.executionPrice}:${reason}`)
+        .digest('hex');
 
       try {
         const tradeResult = await this.db.client.$transaction(async (tx) => {
@@ -368,18 +383,31 @@ export class PortfolioService {
                 userId: portfolio.userId,
                 idempotencyKey,
                 operation: `AUTO_SELL_${reason}`,
-                canonicalPayloadHash: crypto
-                  .createHash('sha256')
-                  .update(`${pos.id}:${pos.quantity}:${costExecution.executionPrice}:${reason}`)
-                  .digest('hex'),
+                canonicalPayloadHash,
                 status: 'PENDING',
               },
             });
           } catch (err: any) {
-            // Treat Prisma unique constraint violation (P2002) as already registered/processing
+            // Item 7: On unique constraint violation (P2002), verify payload hash against existing record
             if (err?.code === 'P2002') {
-              this.logger.warn(`AUTO_SELL_IDEMPOTENT_BLOCK: Auto-sell ${idempotencyKey} already registered.`);
-              return null;
+              const existingRecord = await tx.idempotencyRecord.findUnique({
+                where: {
+                  userId_idempotencyKey: {
+                    userId: portfolio.userId,
+                    idempotencyKey,
+                  },
+                },
+              });
+
+              if (existingRecord) {
+                if (existingRecord.canonicalPayloadHash !== canonicalPayloadHash) {
+                  throw new ConflictException(
+                    `Idempotency Conflict: Auto-sell key '${idempotencyKey}' was registered with a different payload.`
+                  );
+                }
+                this.logger.warn(`AUTO_SELL_IDEMPOTENT_BLOCK: Auto-sell ${idempotencyKey} already registered with matching payload.`);
+                return null;
+              }
             }
             // Fail closed on any other unexpected DB or connectivity error
             throw err;

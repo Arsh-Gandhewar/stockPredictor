@@ -92,11 +92,19 @@ export class TransactionCostEngine {
     const stt = notional * cfg.sttRateSell;
     const sebi = notional * cfg.sebiRate;
     const slippageRate = cfg.slippageBps / 10000.0;
-    const slippage = notional * slippageRate;
+    const slippage = Money.round(notional * slippageRate);
 
-    const totalCosts = brokerage + exchange + gst + stt + sebi + slippage;
-    const netProceeds = Math.max(0, notional - totalCosts);
+    // Statutory fees (taxes and regulatory charges)
+    const statutoryFees = Money.round(brokerage + exchange + gst + stt + sebi);
+
+    // Adverse execution price incorporating market slippage
     const executionPrice = Money.round(price * (1.0 - slippageRate));
+    const effectiveGrossProceeds = Money.round(quantity * executionPrice);
+
+    // Net proceeds: Gross proceeds after adverse price minus statutory fees
+    // Invariant: netProceeds = (quantity * executionPrice) - statutoryFees = notional - (statutoryFees + slippage)
+    const netProceeds = Math.max(0, Money.round(effectiveGrossProceeds - statutoryFees));
+    const totalFriction = Money.round(statutoryFees + slippage);
 
     return {
       quantity,
@@ -110,7 +118,9 @@ export class TransactionCostEngine {
       stt,
       sebi,
       slippage,
-      totalCosts,
+      statutoryFees,
+      totalCosts: totalFriction, // Total execution drag
+      totalFriction,
       netProceeds,
     };
   }

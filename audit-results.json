@@ -1,7 +1,7 @@
 {
   "auditRunId": "audit_1787844602",
   "auditTimestamp": "2026-08-31T03:30:00Z",
-  "gitSha": "ba452bfce97c7f6b243de3481cce94913fb8d4fd",
+  "gitSha": "0486dcb54231cffeae6ff055604bb37dca923b60",
   "auditorVersion": "v5.0.0-independent-quant-auditor",
   "status": "PASSED",
   "technicalMethodStatus": "PASS",
@@ -230,5 +230,6 @@
     "profitFactor": 0.99,
     "totalTrades": 498,
     "costDrag": 141700.83
-  }
+  },
+  "treeSha": "c293b9229ae454eda6ebb2a7d7414cd5b3830280"
 }

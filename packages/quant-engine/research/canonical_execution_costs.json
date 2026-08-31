@@ -1,0 +1,53 @@
+{
+  "version": "1.0.0",
+  "statutoryRates": {
+    "exchangeRate": 0.0000345,
+    "gstRate": 0.18,
+    "stampDutyRateBuy": 0.00015,
+    "sttRateSell": 0.0010,
+    "sebiRate": 0.000001,
+    "maxBrokeragePerOrder": 20.0
+  },
+  "regimes": {
+    "LOW_COST": {
+      "brokerageRate": 0.0001,
+      "sttRateSell": 0.0010,
+      "exchangeRate": 0.00003,
+      "gstRate": 0.18,
+      "stampDutyRateBuy": 0.00015,
+      "sebiRate": 0.000001,
+      "slippageBps": 2.0,
+      "maxBrokeragePerOrder": 20.0
+    },
+    "BASE_COST": {
+      "brokerageRate": 0.0003,
+      "sttRateSell": 0.0010,
+      "exchangeRate": 0.0000345,
+      "gstRate": 0.18,
+      "stampDutyRateBuy": 0.00015,
+      "sebiRate": 0.000001,
+      "slippageBps": 5.0,
+      "maxBrokeragePerOrder": 20.0
+    },
+    "HIGH_COST": {
+      "brokerageRate": 0.0005,
+      "sttRateSell": 0.0010,
+      "exchangeRate": 0.0000345,
+      "gstRate": 0.18,
+      "stampDutyRateBuy": 0.00015,
+      "sebiRate": 0.000001,
+      "slippageBps": 10.0,
+      "maxBrokeragePerOrder": 20.0
+    },
+    "STRESSED_COST": {
+      "brokerageRate": 0.0005,
+      "sttRateSell": 0.0010,
+      "exchangeRate": 0.0000345,
+      "gstRate": 0.18,
+      "stampDutyRateBuy": 0.00015,
+      "sebiRate": 0.000001,
+      "slippageBps": 15.0,
+      "maxBrokeragePerOrder": 20.0
+    }
+  }
+}

@@ -305,7 +305,7 @@ export default function Dashboard() {
             ) : (
               topPicks.slice(0, 5).map((pick: TopPickItem) => {
                 const prob5d = pick.calibrated5dProb ?? pick.confidenceScore ?? 72;
-                const expRet = pick.expectedReturn ?? (pick.changePercent !== 0 ? pick.changePercent : 3.8);
+                const expRet = pick.expectedReturn ?? (pick.changePercent !== 0 && pick.changePercent !== null ? pick.changePercent : 3.8);
                 const decision = pick.recommendation || 'BUY';
 
                 return (
@@ -345,7 +345,7 @@ export default function Dashboard() {
                     {/* Clean Minimal Metric Line */}
                     <div className="flex items-center justify-between text-xs mt-1 text-muted-foreground font-mono">
                       <span>Win Probability: <strong className="text-emerald-400">{prob5d}%</strong></span>
-                      <span>Expected Profit: <strong className="text-foreground">+{expRet > 0 ? expRet.toFixed(1) : '3.5'}%</strong></span>
+                      <span>Expected Profit: <strong className="text-foreground">+{(expRet ?? 0) > 0 ? (expRet ?? 0).toFixed(1) : '3.5'}%</strong></span>
                       {pick.stopLoss > 0 && (
                         <span>Stop: <strong className="text-muted-foreground">₹{pick.stopLoss.toFixed(1)}</strong></span>
                       )}

@@ -132,11 +132,23 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('UNAUTHENTICATED: Failed to parse JWT token components');
     }
 
-    // Alg check
+    // Item 3: Rigid Production Identity Contract.
+    // In production, the cryptographic algorithm must be unambiguously configured and enforced.
+    const isProd = process.env.NODE_ENV === 'production';
+    const mandatedAlg = process.env.AUTH_JWT_ALGORITHM || (process.env.CLERK_PEM_PUBLIC_KEY ? 'RS256' : 'HS256');
     const alg = header.alg;
-    const allowedAlgorithms = ['HS256', 'RS256'];
-    if (!alg || !allowedAlgorithms.includes(alg)) {
-      throw new UnauthorizedException(`UNAUTHENTICATED: Unsupported or insecure JWT algorithm '${alg || 'none'}'`);
+
+    if (isProd) {
+      if (alg !== mandatedAlg) {
+        throw new UnauthorizedException(
+          `UNAUTHENTICATED: Algorithm mismatch with rigid production contract. Mandated: '${mandatedAlg}', got: '${alg || 'none'}'`
+        );
+      }
+    } else {
+      const allowedAlgorithms = ['HS256', 'RS256'];
+      if (!alg || !allowedAlgorithms.includes(alg)) {
+        throw new UnauthorizedException(`UNAUTHENTICATED: Unsupported or insecure JWT algorithm '${alg || 'none'}'`);
+      }
     }
 
     const signingInput = `${headerB64}.${payloadB64}`;
@@ -170,8 +182,6 @@ export class AuthGuard implements CanActivate {
         throw new UnauthorizedException('UNAUTHENTICATED: Authentication token not yet valid (nbf)');
       }
     }
-
-    const isProd = process.env.NODE_ENV === 'production';
 
     // Validate issuer - MANDATORY in production
     const expectedIssuer = process.env.CLERK_JWT_ISSUER || process.env.JWT_ISSUER;

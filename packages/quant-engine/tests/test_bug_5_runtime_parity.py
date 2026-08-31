@@ -349,3 +349,49 @@ class TestBug5FailClosedSemantics:
         outputs = [float(calibrator.transform(input_p)[0]) for _ in range(100)]
         assert np.std(outputs) <= 1e-15
         assert all(x == outputs[0] for x in outputs)
+
+    def test_15_canonical_execution_cost_rules_parity(self):
+        """Python ExecutionCostEngine and canonical_execution_costs.json share identical fee rates."""
+        from models.execution_cost_engine import COST_REGIME_CONFIGS
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        costs_json_path = os.path.join(repo_root, "packages", "quant-engine", "research", "canonical_execution_costs.json")
+        assert os.path.exists(costs_json_path)
+
+        with open(costs_json_path, "r", encoding="utf-8") as f:
+            rules = json.load(f)
+
+        base_rule = rules["regimes"]["BASE_COST"]
+        py_base = COST_REGIME_CONFIGS["BASE_COST"]
+
+        assert base_rule["brokerageRate"] == py_base.brokerage_rate
+        assert base_rule["exchangeRate"] == py_base.exchange_rate
+        assert base_rule["gstRate"] == py_base.gst_rate
+        assert base_rule["stampDutyRateBuy"] == py_base.stamp_duty_rate_buy
+        assert base_rule["sttRateSell"] == py_base.stt_rate_sell
+        assert base_rule["slippageBps"] == py_base.slippage_bps
+
+    def test_16_adverse_execution_price_mathematical_identity(self):
+        """Net proceeds identity: netProceeds = (qty * executionPrice) - statutoryFees."""
+        from models.execution_cost_engine import ExecutionCostEngine
+        engine = ExecutionCostEngine("BASE_COST")
+        sell = engine.calculate_sell_costs(reference_price=100.0, quantity=1000)
+
+        qty = 1000
+        ref_price = 100.0
+        notional = qty * ref_price
+        exec_price = sell["executionPrice"]
+        statutory_fees = sell["fees"]
+        slippage_cost = sell["slippage"]
+
+        # Net cash proceeds calculated from adverse execution price
+        net_from_exec = (qty * exec_price) - statutory_fees
+        # Net cash proceeds calculated from reference price minus all drag
+        net_from_ref = notional - (statutory_fees + slippage_cost)
+
+        assert abs(net_from_exec - net_from_ref) < 1e-4
+
+    def test_17_build_engine_py_verified_absent(self):
+        """Item 12: Verify build_engine.py is permanently eliminated and not referenced."""
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        build_engine_path = os.path.join(repo_root, "packages", "quant-engine", "build_engine.py")
+        assert not os.path.exists(build_engine_path), "build_engine.py must be deleted."

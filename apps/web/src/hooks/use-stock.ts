@@ -158,8 +158,8 @@ export interface TopPickItem {
   name: string;
   sector: string | null;
   price: number;
-  change: number;
-  changePercent: number;
+  change: number | null;
+  changePercent: number | null;
   volume: number;
   recommendation: string;
   confidenceScore: number;
@@ -180,8 +180,8 @@ export interface HighRiskStockItem {
   ticker: string;
   name: string;
   price: number;
-  change: number;
-  changePercent: number;
+  change: number | null;
+  changePercent: number | null;
   beta: number;
   volatility?: number;
   calibratedAlphaProb?: number;
@@ -296,8 +296,8 @@ export function useTopPicks() {
               name: p.stock.name,
               sector: p.stock.sector,
               price: p.risk?.targetPrice ? Math.round((p.risk.targetPrice / 1.06) * 100) / 100 : 0,
-              change: 0,
-              changePercent: Math.round(pred5d.expectedReturn * 10000) / 100,
+              change: null, // Zero fake data: null when intraday delta is not present in prediction payload
+              changePercent: pred5d?.expectedReturn ? Math.round(pred5d.expectedReturn * 10000) / 100 : null,
               volume: 1250000,
               recommendation: p.decision || 'BUY',
               confidenceScore: Math.round(pred5d.calibratedProbability * 100),
@@ -338,8 +338,8 @@ export function useHighRiskStocks() {
               ticker: p.stock.ticker,
               name: p.stock.name,
               price: estPrice,
-              change: 0,
-              changePercent: Math.round(pred5d.expectedReturn * 10000) / 100,
+              change: null, // Zero fake data: null when intraday delta is not present in prediction payload
+              changePercent: pred5d?.expectedReturn ? Math.round(pred5d.expectedReturn * 10000) / 100 : null,
               beta: p.risk?.volatility ? Math.round((p.risk.volatility * 45) * 10) / 10 : 1.8,
               volatility: p.risk?.volatility || 0.038,
               calibratedAlphaProb: Math.round(pred5d.calibratedProbability * 100),

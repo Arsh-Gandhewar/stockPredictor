@@ -11,6 +11,7 @@ import { OHLCVCandle, MarketQuote, MarketIndexBenchmark } from '../../stock/prov
 import { MODEL_CONFIG } from './model-config';
 import { ModelRegistry } from './model-registry';
 import { TrainingSample } from './learned-model';
+import { Money } from '../../../common/utils/money.util';
 
 export type ExitReason = 'STOP_LOSS' | 'TARGET_PROFIT' | 'HORIZON_EXPIRY';
 export type PositionType = 'LONG' | 'SHORT';
@@ -546,19 +547,24 @@ export class BacktestEngine {
       const benchSlice = benchmarkCandles.slice(0, Math.min(i + 1, benchmarkCandles.length));
       const features = this.featureEngine.calculateFeatures(quote, historicalCandles, 0, benchSlice);
 
-      const dummyIndices: MarketIndexBenchmark[] = [
+      const benchCurr = benchSlice.length > 0 ? benchSlice[benchSlice.length - 1].close : quote.price;
+      const benchPrev = benchSlice.length > 1 ? benchSlice[benchSlice.length - 2].close : benchCurr;
+      const benchDelta = benchCurr - benchPrev;
+      const benchDeltaPct = benchPrev > 0 ? (benchDelta / benchPrev) * 100 : 0;
+
+      const benchmarkIndices: MarketIndexBenchmark[] = [
         {
           symbol: '^NSEI',
           name: 'NIFTY 50',
-          value: benchSlice.length > 0 ? benchSlice[benchSlice.length - 1].close : quote.price,
-          change: 0,
-          changePercent: 0,
-          up: true,
+          value: benchCurr,
+          change: Money.round(benchDelta),
+          changePercent: Money.round(benchDeltaPct),
+          up: benchDelta >= 0,
           marketState: 'CLOSED',
           timestamp: String(candles[i].time),
         },
       ];
-      const regime = this.regimeEngine.detectRegime(dummyIndices, benchSlice);
+      const regime = this.regimeEngine.detectRegime(benchmarkIndices, benchSlice);
 
       // Assign Walk-Forward Partition
       const progressFraction = (i - warmup) / totalWalkForwardCandles;
