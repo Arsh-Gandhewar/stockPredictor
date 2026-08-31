@@ -32,6 +32,7 @@ from research.research_partition_guard import (
     OperationType,
     OptimizationLeakageError,
     HoldoutMutationError,
+    TestSelectionLockError,
     BenchmarkMutationError,
     PeriodMutationError,
     CostAssumptionMutationError,
@@ -688,3 +689,33 @@ class TestProductionCertificationGate:
         assert is_passed is False
         assert status == "FAIL"
         assert production_ready is False
+
+    def test_ownership_safe_file_lock_and_atomic_preclaim(self):
+        """Item 7 & 8: Research file lock ownership, TTL stale breaking, and atomic test evaluation pre-claim."""
+        ResearchPartitionGuard.reset_locks()
+
+        # 1. Pre-claim atomic reservation
+        exp_id = "EXP_PROVENANCE_TEST_01"
+        ResearchPartitionGuard.claim_test_evaluation(exp_id)
+
+        # 2. Conflicting duplicate pre-claim must fail closed
+        with pytest.raises(TestSelectionLockError):
+            ResearchPartitionGuard.claim_test_evaluation(exp_id)
+
+        # 3. Assert test not repeated detects the claim
+        with pytest.raises(TestSelectionLockError):
+            ResearchPartitionGuard.assert_test_not_repeated(exp_id)
+
+        # 4. Holdout lock activation creates ownership-tracked lock file
+        ResearchPartitionGuard.activate_holdout()
+        assert ResearchPartitionGuard.is_holdout_active() is True
+        assert os.path.exists(ResearchPartitionGuard._LOCK_FILE)
+
+        with open(ResearchPartitionGuard._LOCK_FILE, "r", encoding="utf-8") as f:
+            lock_data = json.load(f)
+            assert lock_data["pid"] == os.getpid()
+            assert "timestamp" in lock_data
+
+        ResearchPartitionGuard.release_holdout()
+        assert ResearchPartitionGuard.is_holdout_active() is False
+        ResearchPartitionGuard.reset_locks()

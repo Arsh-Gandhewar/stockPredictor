@@ -50,14 +50,23 @@ function syncManifests(isVerifyOnly = false) {
 
   if (isVerifyOnly) {
     const mismatches = [];
-    if (!prodManifest.treeSha && prodManifest.gitSha !== headSha) {
-      mismatches.push('Production manifest gitSha (' + prodManifest.gitSha + ') != HEAD (' + headSha + ')');
+    if (prodManifest.gitSha !== headSha) {
+      mismatches.push(`Production manifest gitSha (${prodManifest.gitSha}) != HEAD (${headSha})`);
     }
-    if (!runtimeManifest.treeSha && runtimeManifest.gitSha !== headSha) {
-      mismatches.push('Runtime manifest gitSha (' + runtimeManifest.gitSha + ') != HEAD (' + headSha + ')');
+    if (prodManifest.treeSha !== treeSha) {
+      mismatches.push(`Production manifest treeSha (${prodManifest.treeSha}) != HEAD tree (${treeSha})`);
     }
-    if (!auditResults.treeSha && auditResults.gitSha !== headSha) {
-      mismatches.push('Audit results gitSha (' + auditResults.gitSha + ') != HEAD (' + headSha + ')');
+    if (runtimeManifest.gitSha !== headSha) {
+      mismatches.push(`Runtime manifest gitSha (${runtimeManifest.gitSha}) != HEAD (${headSha})`);
+    }
+    if (runtimeManifest.treeSha !== treeSha) {
+      mismatches.push(`Runtime manifest treeSha (${runtimeManifest.treeSha}) != HEAD tree (${treeSha})`);
+    }
+    if (auditResults.gitSha !== headSha) {
+      mismatches.push(`Audit results gitSha (${auditResults.gitSha}) != HEAD (${headSha})`);
+    }
+    if (auditResults.treeSha !== treeSha) {
+      mismatches.push(`Audit results treeSha (${auditResults.treeSha}) != HEAD tree (${treeSha})`);
     }
     if (prodManifest.lineage.featureHash !== featureSchemaHash) {
       mismatches.push('Production manifest featureHash != canonical_features.json hash');

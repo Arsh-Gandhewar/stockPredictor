@@ -162,18 +162,18 @@ export interface TopPickItem {
   changePercent: number | null;
   volume: number;
   recommendation: string;
-  confidenceScore: number;
+  confidenceScore: number | null;
   confidence?: number;
-  calibrated5dProb?: number;
-  calibrated20dProb?: number;
-  expectedReturn?: number;
-  downsideProbability?: number;
+  calibrated5dProb?: number | null;
+  calibrated20dProb?: number | null;
+  expectedReturn?: number | null;
+  downsideProbability?: number | null;
   signalQuality?: SignalQuality;
   dataQuality?: DataQuality;
   reasoning: string;
   target: number;
   stopLoss: number;
-  rewardRiskRatio: number;
+  rewardRiskRatio: number | null;
 }
 
 export interface HighRiskStockItem {
@@ -182,13 +182,13 @@ export interface HighRiskStockItem {
   price: number;
   change: number | null;
   changePercent: number | null;
-  beta: number;
-  volatility?: number;
-  calibratedAlphaProb?: number;
-  rewardRiskRatio: number;
+  beta: number | null;
+  volatility?: number | null;
+  calibratedAlphaProb?: number | null;
+  rewardRiskRatio: number | null;
   targetPrice: number;
   stopLossPrice: number;
-  targetUpsidePercent?: number;
+  targetUpsidePercent?: number | null;
   catalyst: string;
   volatilityRank: string;
 }
@@ -289,8 +289,8 @@ export function useTopPicks() {
         const preds = await fetchTopRankedPredictions();
         if (Array.isArray(preds) && preds.length > 0) {
           return preds.map((p) => {
-            const pred5d = p.prediction?.['5d'] || { calibratedProbability: 0.72, expectedReturn: 0.038 };
-            const pred20d = p.prediction?.['20d'] || { calibratedProbability: 0.75, expectedReturn: 0.08 };
+            const pred5d = p.prediction?.['5d'] || null;
+            const pred20d = p.prediction?.['20d'] || null;
             return {
               ticker: p.stock.ticker,
               name: p.stock.name,
@@ -300,17 +300,17 @@ export function useTopPicks() {
               changePercent: pred5d?.expectedReturn ? Math.round(pred5d.expectedReturn * 10000) / 100 : null,
               volume: 1250000,
               recommendation: p.decision || 'BUY',
-              confidenceScore: Math.round(pred5d.calibratedProbability * 100),
-              calibrated5dProb: Math.round(pred5d.calibratedProbability * 100),
-              calibrated20dProb: Math.round(pred20d.calibratedProbability * 100),
-              expectedReturn: Math.round(pred5d.expectedReturn * 1000) / 10,
-              downsideProbability: p.risk?.downsideProbability ? Math.round(p.risk.downsideProbability * 100) : 21,
+              confidenceScore: pred5d?.calibratedProbability != null ? Math.round(pred5d.calibratedProbability * 100) : null,
+              calibrated5dProb: pred5d?.calibratedProbability != null ? Math.round(pred5d.calibratedProbability * 100) : null,
+              calibrated20dProb: pred20d?.calibratedProbability != null ? Math.round(pred20d.calibratedProbability * 100) : null,
+              expectedReturn: pred5d?.expectedReturn != null ? Math.round(pred5d.expectedReturn * 1000) / 10 : null,
+              downsideProbability: p.risk?.downsideProbability ? Math.round(p.risk.downsideProbability * 100) : null,
               signalQuality: p.signalQuality || 'HIGH',
               dataQuality: p.dataQuality || 'HIGH',
               reasoning: p.evidence?.[0]?.description || 'Quantitative multi-factor confluence with high calibrated directional probability.',
               target: p.risk?.targetPrice || 0,
               stopLoss: p.risk?.stopLossPrice || 0,
-              rewardRiskRatio: p.risk?.rewardRiskRatio ? Math.round(p.risk.rewardRiskRatio * 10) / 10 : 2.5,
+              rewardRiskRatio: p.risk?.rewardRiskRatio ? Math.round(p.risk.rewardRiskRatio * 10) / 10 : null,
             };
           });
         }
@@ -332,7 +332,7 @@ export function useHighRiskStocks() {
         const preds = await fetchHighRiskPredictions();
         if (Array.isArray(preds) && preds.length > 0) {
           return preds.map((p) => {
-            const pred5d = p.prediction?.['5d'] || { calibratedProbability: 0.68, expectedReturn: 0.055 };
+            const pred5d = p.prediction?.['5d'] || null;
             const estPrice = p.risk?.targetPrice ? Math.round((p.risk.targetPrice / 1.12) * 100) / 100 : 0;
             return {
               ticker: p.stock.ticker,
@@ -340,13 +340,13 @@ export function useHighRiskStocks() {
               price: estPrice,
               change: null, // Zero fake data: null when intraday delta is not present in prediction payload
               changePercent: pred5d?.expectedReturn ? Math.round(pred5d.expectedReturn * 10000) / 100 : null,
-              beta: p.risk?.volatility ? Math.round((p.risk.volatility * 45) * 10) / 10 : 1.8,
-              volatility: p.risk?.volatility || 0.038,
-              calibratedAlphaProb: Math.round(pred5d.calibratedProbability * 100),
-              rewardRiskRatio: p.risk?.rewardRiskRatio ? Math.round(p.risk.rewardRiskRatio * 10) / 10 : 3.2,
+              beta: p.risk?.volatility ? Math.round((p.risk.volatility * 45) * 10) / 10 : null,
+              volatility: p.risk?.volatility || null,
+              calibratedAlphaProb: pred5d?.calibratedProbability != null ? Math.round(pred5d.calibratedProbability * 100) : null,
+              rewardRiskRatio: p.risk?.rewardRiskRatio ? Math.round(p.risk.rewardRiskRatio * 10) / 10 : null,
               targetPrice: p.risk?.targetPrice || 0,
               stopLossPrice: p.risk?.stopLossPrice || 0,
-              targetUpsidePercent: Math.round(pred5d.expectedReturn * 1000) / 10,
+              targetUpsidePercent: pred5d?.expectedReturn != null ? Math.round(pred5d.expectedReturn * 1000) / 10 : null,
               catalyst: p.evidence?.[0]?.description || 'High volatility expansion with directional momentum bias',
               volatilityRank: p.risk?.volatility && p.risk.volatility > 0.04 ? 'VERY HIGH' : 'HIGH',
             };

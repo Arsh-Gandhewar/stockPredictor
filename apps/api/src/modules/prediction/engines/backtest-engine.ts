@@ -545,9 +545,14 @@ export class BacktestEngine {
       };
 
       const benchSlice = benchmarkCandles.slice(0, Math.min(i + 1, benchmarkCandles.length));
+      if (benchSlice.length === 0) {
+        throw new Error(
+          'INSUFFICIENT_DATA: Historical benchmark candles for ^NSEI are missing; cannot substitute stock price as benchmark.'
+        );
+      }
       const features = this.featureEngine.calculateFeatures(quote, historicalCandles, 0, benchSlice);
 
-      const benchCurr = benchSlice.length > 0 ? benchSlice[benchSlice.length - 1].close : quote.price;
+      const benchCurr = benchSlice[benchSlice.length - 1].close;
       const benchPrev = benchSlice.length > 1 ? benchSlice[benchSlice.length - 2].close : benchCurr;
       const benchDelta = benchCurr - benchPrev;
       const benchDeltaPct = benchPrev > 0 ? (benchDelta / benchPrev) * 100 : 0;

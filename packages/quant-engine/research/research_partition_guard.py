@@ -14,6 +14,7 @@ BUG 4 Additions:
 """
 import os
 import json
+import time
 import threading
 from typing import Optional, Set, Dict, Any, Union
 from enum import Enum
@@ -190,6 +191,7 @@ class ResearchPartitionGuard:
     _LOCK_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'research_holdout.lock')
     _TEST_EXPERIMENTS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'evaluated_test_experiments.json')
     _TEST_LOCK_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'test_registry.lock')
+    _TEST_CLAIMS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'test_claims')
 
     @classmethod
     def _ensure_lock_dir(cls) -> None:
@@ -199,6 +201,32 @@ class ResearchPartitionGuard:
                 os.makedirs(lock_dir, exist_ok=True)
             except OSError as exc:
                 raise RuntimeError(f"LOCK_DIR_CREATION_FAILURE: {exc}") from exc
+        if not os.path.exists(cls._TEST_CLAIMS_DIR):
+            try:
+                os.makedirs(cls._TEST_CLAIMS_DIR, exist_ok=True)
+            except OSError as exc:
+                raise RuntimeError(f"LOCK_DIR_CREATION_FAILURE: {exc}") from exc
+
+    @classmethod
+    def _is_pid_running(cls, pid: int) -> bool:
+        if pid <= 0:
+            return False
+        import platform
+        try:
+            if platform.system() == "Windows":
+                import ctypes
+                kernel32 = ctypes.windll.kernel32
+                SYNCHRONIZE = 0x00100000
+                process = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+                if process:
+                    kernel32.CloseHandle(process)
+                    return True
+                return False
+            else:
+                os.kill(pid, 0)
+                return True
+        except (OSError, Exception):
+            return False
 
     @classmethod
     def activate_holdout(cls) -> None:
@@ -208,10 +236,10 @@ class ResearchPartitionGuard:
             cls._ensure_lock_dir()
             try:
                 # Atomic file creation using os.open with O_CREAT | os.O_EXCL | os.O_WRONLY
-                # If already exists, atomic exclusion is preserved without race condition.
                 fd = os.open(cls._LOCK_FILE, os.O_CREAT | os.O_WRONLY | os.O_EXCL)
                 try:
-                    os.write(fd, f"LOCKED_PID_{os.getpid()}".encode('utf-8'))
+                    payload = json.dumps({"pid": os.getpid(), "timestamp": time.time()})
+                    os.write(fd, payload.encode('utf-8'))
                 finally:
                     os.close(fd)
             except FileExistsError:
@@ -248,19 +276,40 @@ class ResearchPartitionGuard:
                 )
 
     # ------------------------------------------------------------------
-    # Test Experiment Lock (Cross-Process Durable State)
+    # Test Experiment Lock (Cross-Process Durable State & Atomic Pre-Claim)
     # ------------------------------------------------------------------
 
     @classmethod
-    def _acquire_process_file_lock(cls, lock_file_path: str, timeout_sec: float = 5.0) -> int:
-        """Acquires a cross-process atomic mutex using O_CREAT | O_EXCL with polling."""
-        import time
+    def _acquire_process_file_lock(cls, lock_file_path: str, timeout_sec: float = 5.0, ttl_sec: float = 30.0) -> int:
+        """Acquires a cross-process atomic mutex using O_CREAT | O_EXCL with PID/TTL ownership verification."""
         start_time = time.time()
         while True:
             try:
                 fd = os.open(lock_file_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                payload = json.dumps({"pid": os.getpid(), "timestamp": time.time()})
+                os.write(fd, payload.encode('utf-8'))
                 return fd
             except FileExistsError:
+                # Inspect existing lock for stale process or expired TTL
+                try:
+                    with open(lock_file_path, 'r', encoding='utf-8') as f:
+                        content = f.read().strip()
+                        lock_meta = json.loads(content) if content.startswith('{') else None
+                    if lock_meta:
+                        lock_pid = lock_meta.get("pid", 0)
+                        lock_ts = lock_meta.get("timestamp", 0)
+                        now = time.time()
+                        is_dead = not cls._is_pid_running(lock_pid)
+                        is_expired = (now - lock_ts) > ttl_sec
+                        if is_dead or is_expired:
+                            try:
+                                os.remove(lock_file_path)
+                                continue
+                            except OSError:
+                                pass
+                except Exception:
+                    pass
+
                 if time.time() - start_time > timeout_sec:
                     raise TimeoutError(f"CROSS_PROCESS_LOCK_TIMEOUT: Could not acquire lock {lock_file_path} within {timeout_sec}s")
                 time.sleep(0.05)
@@ -293,11 +342,45 @@ class ResearchPartitionGuard:
         return experiments
 
     @classmethod
+    def claim_test_evaluation(cls, experiment_id: str) -> None:
+        """Atomically pre-claims an experiment ID before TEST evaluation runs to prevent concurrent evaluations."""
+        cls._ensure_lock_dir()
+        cls.assert_test_not_repeated(experiment_id)
+
+        claim_file = os.path.join(cls._TEST_CLAIMS_DIR, f"{experiment_id}.claim")
+        try:
+            fd = os.open(claim_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                payload = json.dumps({"experimentId": experiment_id, "pid": os.getpid(), "timestamp": time.time()})
+                os.write(fd, payload.encode('utf-8'))
+            finally:
+                os.close(fd)
+        except FileExistsError:
+            raise TestSelectionLockError(
+                f"TEST CLAIM CONFLICT: Experiment '{experiment_id}' has already been claimed or evaluated by another process."
+            )
+        except OSError as exc:
+            raise RuntimeError(f"TEST_CLAIM_FAILURE: Failed to create atomic claim for '{experiment_id}': {exc}") from exc
+
+    @classmethod
     def record_test_run(cls, experiment_id: str) -> None:
         """Records that an experiment has executed its single allowed TEST evaluation with atomic cross-process mutex."""
         with cls._lock:
             cls._evaluated_test_experiments.add(experiment_id)
             cls._ensure_lock_dir()
+
+            # Ensure pre-claim exists (or create it)
+            claim_file = os.path.join(cls._TEST_CLAIMS_DIR, f"{experiment_id}.claim")
+            if not os.path.exists(claim_file):
+                try:
+                    fd = os.open(claim_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                    try:
+                        payload = json.dumps({"experimentId": experiment_id, "pid": os.getpid(), "timestamp": time.time()})
+                        os.write(fd, payload.encode('utf-8'))
+                    finally:
+                        os.close(fd)
+                except FileExistsError:
+                    pass
 
             # Acquire atomic inter-process mutex
             lock_fd = cls._acquire_process_file_lock(cls._TEST_LOCK_FILE)
@@ -320,7 +403,8 @@ class ResearchPartitionGuard:
         """Prevents repeated evaluation/optimization on TEST across threads and processes."""
         with cls._lock:
             all_exps = cls._load_durable_test_experiments()
-            if experiment_id in all_exps:
+            claim_file = os.path.join(cls._TEST_CLAIMS_DIR, f"{experiment_id}.claim")
+            if experiment_id in all_exps or os.path.exists(claim_file):
                 raise TestSelectionLockError(
                     f"TEST SELECTION LOCK: Experiment '{experiment_id}' has already been evaluated "
                     "on TEST. Cannot re-tune or re-select. Create a new research cycle."
@@ -427,5 +511,11 @@ class ResearchPartitionGuard:
             if os.path.exists(cls._TEST_LOCK_FILE):
                 try:
                     os.remove(cls._TEST_LOCK_FILE)
+                except OSError:
+                    pass
+            if os.path.exists(cls._TEST_CLAIMS_DIR):
+                try:
+                    for f in os.listdir(cls._TEST_CLAIMS_DIR):
+                        os.remove(os.path.join(cls._TEST_CLAIMS_DIR, f))
                 except OSError:
                     pass

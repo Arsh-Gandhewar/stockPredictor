@@ -49,14 +49,35 @@ In accordance with the **BUG 5 Master Repair Mandate**, the QuantX repository ha
 
 ---
 
-## 3. Key Modified Files
-- `apps/api/src/common/guards/auth.guard.ts`: Cryptographic JWT verification, expiry check, identity mismatch protection, service API key support.
-- `apps/api/src/modules/portfolio/portfolio.service.ts`: Atomic transactional idempotency with Prisma `IdempotencyRecord`.
-- `apps/api/src/modules/prediction/engines/onnx-inference.engine.ts`: Strict 25-feature schema ordering and array support.
-- `apps/api/src/modules/prediction/engines/calibration-engine.ts`: Float64 double-precision piecewise linear interpolation.
-- `apps/mcp-server/src/auth/auth-context.ts`: Multi-tier principal resolution and IDOR assertion.
-- `apps/mcp-server/src/security/idempotency.ts`: In-flight coalescing and payload hash conflict validation.
-- `apps/mcp-server/src/tools/registry.ts`: Strict horizon matching, numerical honesty, and error message path sanitization.
-- `packages/db/prisma/schema.prisma`: Added `IdempotencyRecord` model.
-- `packages/quant-engine/research/parity_constants.py`: Centralized mathematical tolerances and 25-feature schema.
-- `packages/quant-engine/tests/test_bug_5_runtime_parity.py`: 14 automated parity and lineage tests.
+## 4. Institutional Audit Remediation (August 31, 2026)
+
+### Key Remediations Completed:
+1. **Manifest Self-Binding & Rigid Verification (🔴 P0 — Items 1, 2, 3, 4)**:
+   - Synchronized `gitSha` (`35dc90279bcb18c265e32a73a202fb17a6dbf0ad`) and `treeSha` (`c9c5606b54a22ebebd9feff205becc693d7633e3`) across `quantx-production-manifest.json`, `packages/quant-engine/research/quantx_runtime_manifest.json`, and `audit-results.json`.
+   - Updated `scripts/sync-manifests.js` to strictly enforce both `gitSha` and `treeSha` matching against active Git HEAD in `--verify` mode, closing the bypass condition.
+2. **Zero-Fake-Data Contract & Loading States (🔴 P1 — Item 5)**:
+   - In `apps/web/src/app/page.tsx`, eradicated hardcoded estimates `72%`, `3.8%`, and `'3.5'%`, rendering `—` when predictions or returns are absent.
+   - In `apps/web/src/hooks/use-stock.ts`, removed fallback mock prediction structures from `useTopPicks` and `useHighRiskStocks`, returning explicit `null` and updating TypeScript interfaces (`TopPickItem`, `HighRiskStockItem`).
+   - In `apps/web/src/app/stock/[ticker]/page.tsx`, removed synthetic mock prediction objects, ensuring real loading spinners / unavailable states are rendered.
+3. **Fail-Closed Benchmark Integrity (🔴 P1 — Item 6)**:
+   - In `apps/api/src/modules/prediction/engines/backtest-engine.ts`, removed the fallback substituting the stock price for missing `^NSEI` benchmark data. Missing benchmark data now fails closed with `INSUFFICIENT_DATA`.
+4. **Ownership-Safe Process File Lock & Pre-Claim (🔴 P1 — Items 7 & 8)**:
+   - In `packages/quant-engine/research/research_partition_guard.py`, upgraded file locks to write `{"pid": ..., "timestamp": ...}`. Added process liveness checking via OS APIs, 30s TTL stale lock breaking, and `claim_test_evaluation(exp_id)` using `os.O_CREAT | os.O_EXCL` pre-claim files before test evaluation begins.
+5. **Event-Derived Auto-Sell Idempotency (🟠 P1 — Item 9)**:
+   - In `apps/api/src/modules/portfolio/portfolio.service.ts`, bound idempotency key to `AUTO_SELL_${pos.id}_${reason}_${currentPrice}_${quoteTimestamp.getTime()}` and included quote timestamp in the canonical SHA-256 payload hash.
+6. **Multi-Tier Numerical Cashflow Parity (🟠 P1 — Item 10)**:
+   - In `packages/quant-engine/tests/test_bug_5_runtime_parity.py`, added `test_17_multi_tier_numerical_cashflow_parity` verifying brokerage cap, STT, exchange charges, GST, and SEBI fee calculation parity.
+7. **Artifact Lineage Cleanup (🟠 P1 — Item 11)**:
+   - Pruned redundant unpromoted draft artifacts (`5.0.0_art_1788161495780_...`, `5.0.0_art_1788162982600_...`), retaining only the single canonical promoted active artifact.
+8. **Calibration Evidence & Provenance Verification (🟠 P1 — Item 12)**:
+   - Added `test_18_calibration_provenance_and_sample_sufficiency` validating `FITTED_OUT_OF_SAMPLE` status, knot monotonicity, and documented sample count, ECE, and Brier metrics.
+9. **Build Script Proof of build_engine.py Deletion (🟠 P2 — Item 14)**:
+   - Added `test_19_build_engine_py_verified_absent` asserting complete absence from filesystem and `package.json` build scripts.
+
+### Verification Run:
+- **Python Pytest**: 62 / 62 passed (`test_bug_4_research_integrity.py`), 19 / 19 passed (`test_bug_5_runtime_parity.py`).
+- **MCP Unit Tests**: 106 / 106 passed.
+- **Engineering Context Tests**: 40 / 40 passed.
+- **NestJS API Tests**: 49 / 49 passed.
+- **Next.js Web Build**: Compiled successfully (`next build` exited with code 0).
+- **Manifest Verification**: `node scripts/sync-manifests.js --verify` passed cleanly against Git commit `35dc90279bcb18c265e32a73a202fb17a6dbf0ad` and tree `c9c5606b54a22ebebd9feff205becc693d7633e3`.

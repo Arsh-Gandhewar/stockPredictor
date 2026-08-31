@@ -390,8 +390,59 @@ class TestBug5FailClosedSemantics:
 
         assert abs(net_from_exec - net_from_ref) < 1e-4
 
-    def test_17_build_engine_py_verified_absent(self):
-        """Item 12: Verify build_engine.py is permanently eliminated and not referenced."""
+    def test_17_multi_tier_numerical_cashflow_parity(self):
+        """Item 10: Multi-tier transaction simulation numerical parity between Python and TS implementations."""
+        from models.execution_cost_engine import ExecutionCostEngine
+        py_engine = ExecutionCostEngine("BASE_COST")
+
+        # Test Tier 1: Small order (brokerage < 20 INR)
+        # 10 shares @ 250 INR = 2,500 INR notional
+        # Brokerage = 2500 * 0.0003 = 0.75 INR
+        t1 = py_engine.calculate_sell_costs(reference_price=250.0, quantity=10)
+        assert abs(t1["brokerage"] - 0.75) < 1e-2
+        assert abs(t1["stt"] - 2.50) < 1e-2  # 2500 * 0.001
+        assert abs(t1["slippageBps"] - 5.0) < 1e-2
+
+        # Test Tier 2: Institutional large order (brokerage capped at 20 INR)
+        # 400 shares @ 2500 INR = 1,000,000 INR notional
+        # Raw brokerage = 1,000,000 * 0.0003 = 300 INR -> Capped at 20.00 INR
+        t2 = py_engine.calculate_sell_costs(reference_price=2500.0, quantity=400)
+        assert abs(t2["brokerage"] - 20.00) < 1e-2
+        assert abs(t2["stt"] - 1000.00) < 1e-2  # 1,000,000 * 0.001
+        assert abs(t2["exchangeCharges"] - 34.50) < 1e-2  # 1,000,000 * 0.0000345
+        assert abs(t2["gst"] - (20.00 + 34.50) * 0.18) < 1e-2  # 9.81 INR
+        assert abs(t2["sebiCharges"] - 1.00) < 1e-2  # 1,000,000 * 0.000001
+        expected_fees = 20.00 + 1000.00 + 34.50 + 9.81 + 1.00
+        assert abs(t2["fees"] - expected_fees) < 0.1
+
+    def test_18_calibration_provenance_and_sample_sufficiency(self):
+        """Item 12: Validate calibration evidence and sample size sufficiency for active artifact."""
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        artifact_path = os.path.join(repo_root, "apps", "api", "data", "artifacts", "active", "model-artifact.json")
+        assert os.path.exists(artifact_path), "Active model artifact must exist."
+
+        with open(artifact_path, "r", encoding="utf-8") as f:
+            art = json.load(f)
+
+        cal = art.get("calibration", {})
+        cal_5d = cal.get("5d", {})
+        assert cal_5d.get("status") == "FITTED_OUT_OF_SAMPLE", "Calibration must be FITTED_OUT_OF_SAMPLE."
+        assert len(cal_5d.get("knots", [])) >= 5, "Isotonic knots must be defined."
+
+        metrics = cal_5d.get("metrics", {})
+        sample_count = metrics.get("sampleCount", 0)
+        assert sample_count > 0, "Calibration metrics must have documented sampleCount."
+        assert "ece" in metrics, "ECE must be recorded in metrics."
+        assert "brierScore" in metrics, "Brier score must be recorded in metrics."
+
+    def test_19_build_engine_py_verified_absent(self):
+        """Item 14: Verify build_engine.py is permanently eliminated and not referenced in scripts or package.json."""
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         build_engine_path = os.path.join(repo_root, "packages", "quant-engine", "build_engine.py")
         assert not os.path.exists(build_engine_path), "build_engine.py must be deleted."
+
+        # Verify absence in package.json scripts
+        pkg_path = os.path.join(repo_root, "package.json")
+        with open(pkg_path, "r", encoding="utf-8") as f:
+            pkg_content = f.read()
+        assert "build_engine.py" not in pkg_content, "build_engine.py must not be referenced in package.json"

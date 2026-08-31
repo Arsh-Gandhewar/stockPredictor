@@ -357,11 +357,11 @@ export class PortfolioService {
       // Calculate side-specific execution costs (brokerage, STT, exchange, GST, sebi, slippage)
       const costExecution = this.costEngine.calculateSellExecution(pos.quantity, currentPrice);
       const executionTimestamp = new Date();
-      // Event-based idempotency key bound to the discrete economic trigger event
-      const idempotencyKey = `AUTO_SELL_${pos.id}_${reason}_${pos.quantity}`;
+      // Event-based idempotency key bound to the discrete economic trigger event and timestamp
+      const idempotencyKey = `AUTO_SELL_${pos.id}_${reason}_${currentPrice}_${quoteTimestamp.getTime()}`;
       const canonicalPayloadHash = crypto
         .createHash('sha256')
-        .update(`${pos.id}:${pos.quantity}:${costExecution.executionPrice}:${reason}`)
+        .update(`${pos.id}:${pos.quantity}:${costExecution.executionPrice}:${reason}:${quoteTimestamp.getTime()}`)
         .digest('hex');
 
       try {
