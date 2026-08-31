@@ -43,9 +43,15 @@ export class AuthGuard implements CanActivate {
 
     // Service-to-Service API Key authentication (e.g. MCP server adapter with shared secret)
     if (apiKeyHeader && configuredApiKey && apiKeyHeader === configuredApiKey) {
-      // Caller authenticated as service principal. If acting on behalf of a specific user, sanitize and audit.
-      const sanitizedDelegatedUser = userIdHeader ? String(userIdHeader).replace(/[^a-zA-Z0-9_-]/g, '').trim() : '';
-      const targetUserId = sanitizedDelegatedUser || 'quantx_service';
+      // Caller authenticated as service principal. Strict non-impersonation:
+      // Inbound x-user-id header is disallowed to prevent arbitrary caller-controlled user impersonation.
+      if (userIdHeader && userIdHeader !== 'quantx_service') {
+        this.logger.warn(`API_KEY_IMPERSONATION_BLOCKED: API key caller attempted to select x-user-id '${userIdHeader}'`);
+        throw new ForbiddenException(
+          'API_KEY_IMPERSONATION_BLOCKED: Service API key requests cannot select arbitrary user identity via x-user-id header'
+        );
+      }
+      const targetUserId = 'quantx_service';
       request.userId = targetUserId;
       request.user = { id: targetUserId, sub: targetUserId, role: 'SERVICE' };
       request.userRole = 'SERVICE';
@@ -90,10 +96,16 @@ export class AuthGuard implements CanActivate {
       }
     }
 
-    // 4. Attach verified identity to request context
-    request.user = payload;
+    // 4. Server-Side Role Authorization Contract
+    // Tokens cannot elevate privileges without explicit server-side role whitelisting
+    const rawRole = String(payload.role || 'USER').toUpperCase();
+    const authorizedRole = (rawRole === 'ADMIN' && process.env.ADMIN_USER_IDS?.split(',').map((s) => s.trim()).includes(authenticatedUserId))
+      ? 'ADMIN'
+      : (rawRole === 'SERVICE' ? 'USER' : (rawRole === 'ADMIN' ? 'USER' : 'USER'));
+
+    request.user = { ...payload, role: authorizedRole };
     request.userId = authenticatedUserId;
-    request.userRole = payload.role || 'USER';
+    request.userRole = authorizedRole;
 
     return true;
   }
@@ -136,12 +148,10 @@ export class AuthGuard implements CanActivate {
       throw new UnauthorizedException('UNAUTHENTICATED: Cryptographic signature verification failed');
     }
 
-    // Validate expiration (exp)
+    // Validate expiration (exp) - MANDATORY: reject any token without exp
     const nowSec = Math.floor(Date.now() / 1000);
-    if (payload.exp !== undefined) {
-      if (typeof payload.exp !== 'number' || payload.exp <= nowSec) {
-        throw new UnauthorizedException('UNAUTHENTICATED: Authentication token has expired');
-      }
+    if (payload.exp === undefined || typeof payload.exp !== 'number' || payload.exp <= nowSec) {
+      throw new UnauthorizedException('UNAUTHENTICATED: Authentication token is missing valid expiration (exp) or is expired');
     }
 
     // Validate not-before (nbf)
@@ -175,17 +185,27 @@ export class AuthGuard implements CanActivate {
 
     // Secret resolution: Clerk PEM public key or HMAC secret
     const clerkPublicKey = process.env.CLERK_PEM_PUBLIC_KEY;
-    const jwtSecret = process.env.JWT_SECRET || process.env.CLERK_SECRET_KEY || 'quantx-dev-test-secret-key-do-not-use-in-prod';
+    const isProd = process.env.NODE_ENV === 'production';
+    const jwtSecret = process.env.JWT_SECRET || process.env.CLERK_SECRET_KEY;
+
+    if (isProd && !clerkPublicKey && !jwtSecret) {
+      throw new UnauthorizedException('UNAUTHENTICATED: Cryptographic secret not configured in production');
+    }
+
+    const effectiveSecret = jwtSecret || (isProd ? '' : 'quantx-dev-test-secret-key-do-not-use-in-prod');
+    if (!effectiveSecret && !clerkPublicKey) {
+      return false;
+    }
 
     try {
-      if (alg.startsWith('RS') && clerkPublicKey) {
+      if (alg === 'RS256' && clerkPublicKey) {
         // RS256 RSA public key verification
         const verifier = crypto.createVerify('RSA-SHA256');
         verifier.update(signingInput);
         return verifier.verify(clerkPublicKey, signatureBuffer);
-      } else if (alg === 'HS256') {
+      } else if (alg === 'HS256' && effectiveSecret) {
         // HMAC-SHA256 symmetric verification
-        const hmac = crypto.createHmac('sha256', jwtSecret);
+        const hmac = crypto.createHmac('sha256', effectiveSecret);
         hmac.update(signingInput);
         const expectedSignature = hmac.digest();
         if (signatureBuffer.length !== expectedSignature.length) {
@@ -193,12 +213,7 @@ export class AuthGuard implements CanActivate {
         }
         return crypto.timingSafeEqual(signatureBuffer, expectedSignature);
       } else {
-        // Fallback for test fixtures if HMAC secret matches
-        const hmac = crypto.createHmac('sha256', jwtSecret);
-        hmac.update(signingInput);
-        const expectedSignature = hmac.digest();
-        return signatureBuffer.length === expectedSignature.length &&
-          crypto.timingSafeEqual(signatureBuffer, expectedSignature);
+        return false;
       }
     } catch (err) {
       this.logger.error(`Signature verification threw exception: ${err}`);

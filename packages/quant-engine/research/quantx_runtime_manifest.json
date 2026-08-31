@@ -1,7 +1,7 @@
 {
   "manifestVersion": "1.0.0",
   "generatedAt": "2026-08-31T03:30:00.000Z",
-  "gitSha": "2c24b50153e629cf8bf29b8883d7db0d23e1af76",
+  "gitSha": "bd4b7da99cb4443b348673a16c65b062b9a48b9d",
   "modelVersion": "5.0.0",
   "returnModelVersion": "v5.0.0-empirical-quantiles",
   "featureVersion": "v5.0.0-multi-factor-25",

@@ -15,33 +15,44 @@ export interface ScenarioReturnQuantiles {
 export class OnnxInferenceEngine implements OnModuleInit {
   private readonly logger = new Logger(OnnxInferenceEngine.name);
   private sessions: Map<'1d' | '5d' | '20d', ort.InferenceSession> = new Map();
-  private featureSchema: string[] = [
-    'rsi_14',
-    'macd_hist',
-    'sma_20_dist',
-    'sma_50_dist',
-    'ema_20_dist',
-    'atr_percent',
-    'bb_width',
-    'stoch_k',
-    'volume_z_score',
-    'annualized_volatility',
-    'downside_deviation',
-    'beta_nifty',
-    'relative_strength_nifty',
-    'momentum_5',
-    'momentum_20',
-    'ret_1d',
-    'ret_5d',
-    'ret_20d',
-    'gap_pct',
-    'dist_52w_high',
-    'dist_52w_low',
-    'roc_12',
-    'rel_volume',
-    'vol_20d',
-    'vol_60d',
-  ];
+  private featureSchema: string[] = (() => {
+    const canonicalPath = path.resolve(__dirname, '../../../../../../packages/quant-engine/research/canonical_features.json');
+    if (fs.existsSync(canonicalPath)) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(canonicalPath, 'utf-8'));
+        if (Array.isArray(raw.features) && raw.features.length === 25) {
+          return raw.features;
+        }
+      } catch {}
+    }
+    return [
+      'rsi_14',
+      'macd_hist',
+      'sma_20_dist',
+      'sma_50_dist',
+      'ema_20_dist',
+      'atr_percent',
+      'bb_width',
+      'stoch_k',
+      'volume_z_score',
+      'annualized_volatility',
+      'downside_deviation',
+      'beta_nifty',
+      'relative_strength_nifty',
+      'momentum_5',
+      'momentum_20',
+      'ret_1d',
+      'ret_5d',
+      'ret_20d',
+      'gap_pct',
+      'dist_52w_high',
+      'dist_52w_low',
+      'roc_12',
+      'rel_volume',
+      'vol_20d',
+      'vol_60d',
+    ];
+  })();
 
   private isModelLoaded: boolean = false;
   private conditionalReturnsTable: Record<string, Record<string, any>> = {};

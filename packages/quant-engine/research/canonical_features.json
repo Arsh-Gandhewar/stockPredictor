@@ -1,0 +1,33 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "name": "QuantX Canonical Multi-Factor 25-Feature Schema",
+  "version": "v5.0.0-multi-factor-25",
+  "featureCount": 25,
+  "features": [
+    "rsi_14",
+    "macd_hist",
+    "sma_20_dist",
+    "sma_50_dist",
+    "ema_20_dist",
+    "atr_percent",
+    "bb_width",
+    "stoch_k",
+    "volume_z_score",
+    "annualized_volatility",
+    "downside_deviation",
+    "beta_nifty",
+    "relative_strength_nifty",
+    "momentum_5",
+    "momentum_20",
+    "ret_1d",
+    "ret_5d",
+    "ret_20d",
+    "gap_pct",
+    "dist_52w_high",
+    "dist_52w_low",
+    "roc_12",
+    "rel_volume",
+    "vol_20d",
+    "vol_60d"
+  ]
+}

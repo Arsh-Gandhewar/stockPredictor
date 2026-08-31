@@ -49,4 +49,36 @@ describe('ContextPlanner', () => {
     expect(plan.relatedTests).toContain('packages/quant-engine/tests/test_bug_3_execution_realism.py');
     expect(plan.compressionRatio).toBeLessThan(0.05);
   });
+
+  test('dynamically computes repository token baseline from file records', async () => {
+    const storeWithFiles = new IndexStore();
+    storeWithFiles.setFile({
+      filePath: 'packages/quant-engine/research/alpha.py',
+      language: 'python',
+      sizeBytes: 16000,
+      contentHash: 'mock-hash',
+      lastIndexedCommit: 'mock-commit',
+      exports: ['AlphaEngine'],
+      imports: [],
+      isGenerated: false,
+      isSecret: false,
+      symbols: [{
+        symbolId: 'AlphaEngine',
+        name: 'AlphaEngine',
+        kind: 'class',
+        file: 'packages/quant-engine/research/alpha.py',
+        language: 'python',
+        exported: true,
+        startLine: 1,
+        endLine: 50,
+      }],
+    });
+
+    const dynamicPlanner = new ContextPlanner(storeWithFiles, audit, git);
+    const plan = await dynamicPlanner.plan('Refactor AlphaEngine');
+
+    expect(plan.fullRepositoryEstimatedTokens).toBe(4000); // 16000 bytes / 4 chars per token
+    expect(plan.primarySymbols).toContain('AlphaEngine');
+    expect(plan.primaryFiles).toContain('packages/quant-engine/research/alpha.py');
+  });
 });

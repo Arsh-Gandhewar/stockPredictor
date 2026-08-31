@@ -12,9 +12,10 @@ BUG 4 Additions:
   - enforce_partition now enforces per operation type
   - Benchmark and period immutability registry
 """
+import os
+import threading
 from typing import Optional, Set, Dict, Any, Union
 from enum import Enum
-import threading
 
 
 # ---------------------------------------------------------------------------
@@ -126,7 +127,7 @@ class ResearchPartitionGuard:
     _registered_periods: Dict[str, Dict[str, str]] = {} # name -> {start, end}
     _registered_cost_hash: Optional[str] = None
     _cost_frozen: bool = False
-    _lock = threading.Lock()
+    _lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Partition Enforcement (Core BUG 4 operation-type enforcement)
@@ -148,6 +149,12 @@ class ResearchPartitionGuard:
         - FIT on HOLDOUT → HoldoutMutationError
         """
         if partition is None:
+            # Under strict research integrity, partition=None is forbidden for any training, selection, or optimization
+            if operation_type in _SELECTION_OPERATIONS or operation_type in _FORBIDDEN_ON_HOLDOUT or operation_type == OperationType.OPTIMIZE:
+                raise OptimizationLeakageError(
+                    f"CRITICAL RESEARCH LEAKAGE: Operation '{operation_name}' requires an explicit partition. "
+                    "partition=None cannot bypass partition guards."
+                )
             return True
 
         if isinstance(operation_type, str) and not isinstance(operation_type, OperationType):
@@ -176,31 +183,55 @@ class ResearchPartitionGuard:
         return True
 
     # ------------------------------------------------------------------
-    # Holdout Lock
+    # Holdout Lock (In-Memory + Cross-Process File Lock)
     # ------------------------------------------------------------------
+
+    _LOCK_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.quantx', 'research_holdout.lock')
+
+    @classmethod
+    def _ensure_lock_dir(cls) -> None:
+        lock_dir = os.path.dirname(cls._LOCK_FILE)
+        if not os.path.exists(lock_dir):
+            try:
+                os.makedirs(lock_dir, exist_ok=True)
+            except OSError:
+                pass
 
     @classmethod
     def activate_holdout(cls) -> None:
-        """Locks the system into immutable HOLDOUT execution state."""
+        """Locks the system into immutable HOLDOUT execution state across threads and processes."""
         with cls._lock:
             cls._holdout_active = True
+            cls._ensure_lock_dir()
+            try:
+                with open(cls._LOCK_FILE, 'w') as f:
+                    f.write('LOCKED')
+            except OSError:
+                pass
 
     @classmethod
     def release_holdout(cls) -> None:
         """Releases the HOLDOUT lock (for test harness cleanup only)."""
         with cls._lock:
             cls._holdout_active = False
+            if os.path.exists(cls._LOCK_FILE):
+                try:
+                    os.remove(cls._LOCK_FILE)
+                except OSError:
+                    pass
 
     @classmethod
     def is_holdout_active(cls) -> bool:
         with cls._lock:
-            return cls._holdout_active
+            if cls._holdout_active:
+                return True
+            return os.path.exists(cls._LOCK_FILE)
 
     @classmethod
     def assert_not_in_holdout(cls, operation_name: str = 'Parameter modification') -> None:
         """Verifies no state is being mutated after HOLDOUT has begun."""
         with cls._lock:
-            if cls._holdout_active:
+            if cls.is_holdout_active():
                 raise HoldoutMutationError(
                     f"CRITICAL HOLDOUT LOCK VIOLATION: '{operation_name}' is prohibited after HOLDOUT has begun!"
                 )
@@ -309,3 +340,8 @@ class ResearchPartitionGuard:
             cls._registered_periods.clear()
             cls._registered_cost_hash = None
             cls._cost_frozen = False
+            if os.path.exists(cls._LOCK_FILE):
+                try:
+                    os.remove(cls._LOCK_FILE)
+                except OSError:
+                    pass

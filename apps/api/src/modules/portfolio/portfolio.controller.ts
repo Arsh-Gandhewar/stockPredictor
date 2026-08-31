@@ -56,4 +56,10 @@ export class PortfolioController {
     const userId = req.userId;
     return this.portfolioService.resetPortfolio(userId);
   }
+
+  @Post('auto-sell')
+  async executeAutoSell(@Req() req: any) {
+    const userId = req.userId;
+    return this.portfolioService.evaluateAndExecuteAutoSell(userId);
+  }
 }

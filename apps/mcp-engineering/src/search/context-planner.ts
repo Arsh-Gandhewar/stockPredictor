@@ -221,15 +221,13 @@ export class ContextPlanner {
       for (const b of hint.bugIds) bugIds.add(b);
     }
 
-    // 3. Supplement with symbol index search if few results
-    if (primaryFilesSet.size === 0) {
-      const terms = task.split(/\s+/).filter((t) => t.length > 3);
-      for (const term of terms.slice(0, 3)) {
-        const symbols = this.store.findSymbolsByNamePartial(term);
-        for (const sym of symbols.slice(0, 5)) {
-          primaryFilesSet.add(sym.file);
-          primarySymbolsSet.add(sym.symbolId);
-        }
+    // 3. Supplement with dynamic symbol index search from store
+    const terms = task.split(/[\s_\-/,]+/).filter((t) => t.length > 2);
+    for (const term of terms) {
+      const symbols = this.store.findSymbolsByNamePartial(term);
+      for (const sym of symbols.slice(0, 3)) {
+        primaryFilesSet.add(sym.file);
+        primarySymbolsSet.add(sym.symbolId);
       }
     }
 
@@ -323,7 +321,7 @@ export class ContextPlanner {
       recentChanges,
       recommendedReadOrder,
       estimatedTokens,
-      fullRepositoryEstimatedTokens: FULL_REPO_ESTIMATED_TOKENS,
+      fullRepositoryEstimatedTokens,
       compressionRatio: Math.round(compressionRatio * 10000) / 10000,
     };
   }

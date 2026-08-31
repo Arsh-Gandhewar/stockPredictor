@@ -120,7 +120,7 @@ const BUILT_IN_FINDINGS: AuditFinding[] = [
       'ContextPlanner',
       'SecuritySanitizer',
     ],
-    status: 'resolved',
+    status: 'in-progress',
     fixCommit: '2c24b50',
     regressionTests: [
       'packages/quant-engine/tests/test_bug_5_runtime_parity.py',

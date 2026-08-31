@@ -174,18 +174,25 @@ export class AuthService {
       throw new McpError('UNAUTHORIZED', `Unsupported or insecure JWT algorithm: ${alg || 'none'}`);
     }
 
-    const jwtSecret = process.env.JWT_SECRET || process.env.CLERK_SECRET_KEY || 'quantx-dev-test-secret-key-do-not-use-in-prod';
+    const isProd = process.env.NODE_ENV === 'production';
+    const rawSecret = process.env.JWT_SECRET || process.env.CLERK_SECRET_KEY;
     const clerkPublicKey = process.env.CLERK_PEM_PUBLIC_KEY;
+
+    if (isProd && !clerkPublicKey && !rawSecret) {
+      throw new McpError('UNAUTHORIZED', 'Cryptographic secret not configured in production');
+    }
+
+    const jwtSecret = rawSecret || (isProd ? '' : 'quantx-dev-test-secret-key-do-not-use-in-prod');
     const signingInput = `${headerB64}.${payloadB64}`;
     const signatureBuffer = Buffer.from(signatureB64, 'base64url');
 
     let isValid = false;
     try {
-      if (alg.startsWith('RS') && clerkPublicKey) {
+      if (alg === 'RS256' && clerkPublicKey) {
         const verifier = crypto.createVerify('RSA-SHA256');
         verifier.update(signingInput);
         isValid = verifier.verify(clerkPublicKey, signatureBuffer);
-      } else if (alg === 'HS256') {
+      } else if (alg === 'HS256' && jwtSecret) {
         const hmac = crypto.createHmac('sha256', jwtSecret);
         hmac.update(signingInput);
         const expected = hmac.digest();
@@ -201,10 +208,10 @@ export class AuthService {
       throw new McpError('UNAUTHORIZED', 'Invalid cryptographic JWT signature');
     }
 
-    // Expiry check
+    // Expiry check - MANDATORY
     const nowSec = Math.floor(Date.now() / 1000);
-    if (payload.exp !== undefined && (typeof payload.exp !== 'number' || payload.exp <= nowSec)) {
-      throw new McpError('UNAUTHORIZED', 'Authentication JWT token has expired');
+    if (payload.exp === undefined || typeof payload.exp !== 'number' || payload.exp <= nowSec) {
+      throw new McpError('UNAUTHORIZED', 'Authentication token is missing valid expiration (exp) or is expired');
     }
 
     if (payload.nbf !== undefined && (typeof payload.nbf !== 'number' || payload.nbf > nowSec)) {
