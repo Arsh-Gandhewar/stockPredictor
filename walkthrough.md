@@ -53,8 +53,8 @@ In accordance with the **BUG 5 Master Repair Mandate**, the QuantX repository ha
 
 ### Key Remediations Completed:
 1. **Manifest Self-Binding & Rigid Verification (🔴 P0 — Items 1, 2, 3, 4)**:
-   - Synchronized `gitSha` (`35dc90279bcb18c265e32a73a202fb17a6dbf0ad`) and `treeSha` (`c9c5606b54a22ebebd9feff205becc693d7633e3`) across `quantx-production-manifest.json`, `packages/quant-engine/research/quantx_runtime_manifest.json`, and `audit-results.json`.
-   - Updated `scripts/sync-manifests.js` to strictly enforce both `gitSha` and `treeSha` matching against active Git HEAD in `--verify` mode, closing the bypass condition.
+   - Separated in-tree declarative manifest specifications from post-build release certification bundles in `dist/certification/`, resolving the self-referential Git tree hash paradox.
+   - Updated `scripts/sync-manifests.js` to strictly verify all lineage content hashes against canonical files and bind release attestations directly to the active Git revision during release packaging.
 2. **Zero-Fake-Data Contract & Loading States (🔴 P1 — Item 5)**:
    - In `apps/web/src/app/page.tsx`, eradicated hardcoded estimates `72%`, `3.8%`, and `'3.5'%`, rendering `—` when predictions or returns are absent.
    - In `apps/web/src/hooks/use-stock.ts`, removed fallback mock prediction structures from `useTopPicks` and `useHighRiskStocks`, returning explicit `null` and updating TypeScript interfaces (`TopPickItem`, `HighRiskStockItem`).
