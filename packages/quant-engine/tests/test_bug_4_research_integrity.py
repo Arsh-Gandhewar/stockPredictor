@@ -735,7 +735,7 @@ class TestProductionCertificationGate:
             experiment_id=exp_id,
             worker_id=worker_a,
             lease_ttl_seconds=2,
-            lineage_hashes={"datasetHash": "data_hash_abc", "featureHash": "feat_hash_xyz"}
+            lineage_hashes={"datasetHash": "data_hash_abc", "featureHash": "feat_hash_xyz", "modelHash": "model_hash_123"}
         )
         assert claim_a["status"] == "CLAIMED"
         assert claim_a["claim"]["workerId"] == worker_a
@@ -763,7 +763,8 @@ class TestProductionCertificationGate:
             experiment_id=exp_id,
             claim_id=claim_id_a,
             evidence_metrics=evidence,
-            lineage_hashes={"modelHash": "model_hash_123"}
+            lineage_hashes={"datasetHash": "data_hash_abc", "featureHash": "feat_hash_xyz", "modelHash": "model_hash_123"},
+            worker_id=worker_a
         )
         assert committed_rec["status"] == "COMMITTED"
         assert "evidenceHash" in committed_rec["evidence"]
@@ -776,7 +777,6 @@ class TestProductionCertificationGate:
 
         # 6. Test Crash Recovery / Lease Expiry on uncommitted experiment
         exp_crash_id = "EXP_CRASHED_WORKER_002"
-        # Claim with 0s lease so it expires immediately
         claim_crash = ResearchExperimentRegistry.claim_experiment(
             experiment_id=exp_crash_id,
             worker_id="crashed_worker:pid999",
@@ -795,3 +795,134 @@ class TestProductionCertificationGate:
         assert any(h["event"] == "LEASE_EXPIRED_RECLAIMED" for h in reclaimed["history"])
 
         ResearchPartitionGuard.reset_locks()
+
+    def test_registry_corruption_fails_closed(self):
+        """Item 3: Registry corruption MUST fail closed with RegistryCorruptionError and not return empty state."""
+        from research.research_partition_guard import ResearchExperimentRegistry, RegistryCorruptionError
+        ResearchPartitionGuard.reset_locks()
+
+        # Corrupt the registry file with invalid JSON
+        ResearchExperimentRegistry._ensure_dir()
+        with open(ResearchExperimentRegistry._REGISTRY_FILE, "w", encoding="utf-8") as f:
+            f.write("{ INVALID_JSON_DATA_CORRUPTED: true, ")
+
+        with pytest.raises(RegistryCorruptionError) as excinfo:
+            ResearchExperimentRegistry._load_registry()
+        assert "REGISTRY_CORRUPTION" in str(excinfo.value)
+
+        # Attempting to claim or check an experiment when corrupted must fail closed
+        with pytest.raises(RegistryCorruptionError):
+            ResearchExperimentRegistry.claim_experiment("EXP_TEST_CORRUPT")
+
+        # Cleanup
+        os.remove(ResearchExperimentRegistry._REGISTRY_FILE)
+        ResearchPartitionGuard.reset_locks()
+
+    def test_commit_evidence_mandatory_lineage_and_valid_evidence(self):
+        """Item 5 & 6: commit_evidence requires mandatory lineage hashes and valid evidence."""
+        from research.research_partition_guard import (
+            ResearchExperimentRegistry,
+            MissingLineageError,
+            InvalidEvidenceError
+        )
+        ResearchPartitionGuard.reset_locks()
+
+        exp_id = "EXP_LINEAGE_ENFORCEMENT_001"
+        claim = ResearchExperimentRegistry.claim_experiment(exp_id)
+        claim_id = claim["claim"]["claimId"]
+
+        # Missing lineage -> rejected
+        with pytest.raises(MissingLineageError):
+            ResearchExperimentRegistry.commit_evidence(
+                experiment_id=exp_id,
+                claim_id=claim_id,
+                evidence_metrics={"sampleCount": 100, "sharpe": 1.5},
+                lineage_hashes={}  # Empty lineage
+            )
+
+        # Missing mandatory key (e.g. modelHash) -> rejected
+        with pytest.raises(MissingLineageError):
+            ResearchExperimentRegistry.commit_evidence(
+                experiment_id=exp_id,
+                claim_id=claim_id,
+                evidence_metrics={"sampleCount": 100, "sharpe": 1.5},
+                lineage_hashes={"datasetHash": "data_hash", "featureHash": "feat_hash"}  # Missing modelHash
+            )
+
+        # Invalid evidence (sampleCount < 1) -> rejected
+        with pytest.raises(InvalidEvidenceError):
+            ResearchExperimentRegistry.commit_evidence(
+                experiment_id=exp_id,
+                claim_id=claim_id,
+                evidence_metrics={"sampleCount": 0},
+                lineage_hashes={"datasetHash": "d", "featureHash": "f", "modelHash": "m"}
+            )
+
+        ResearchPartitionGuard.reset_locks()
+
+    def test_commit_evidence_unexpired_lease_and_worker_ownership(self):
+        """Item 7: commit_evidence fails closed on expired lease or worker mismatch."""
+        from research.research_partition_guard import (
+            ResearchExperimentRegistry,
+            ExpiredLeaseCommitError,
+            TestSelectionLockError
+        )
+        ResearchPartitionGuard.reset_locks()
+
+        exp_id = "EXP_LEASE_EXPIRY_COMMIT_001"
+        # Claim with 0s lease so it expires immediately
+        claim = ResearchExperimentRegistry.claim_experiment(
+            exp_id,
+            worker_id="worker_alpha",
+            lease_ttl_seconds=0
+        )
+        claim_id = claim["claim"]["claimId"]
+        time.sleep(0.05)
+
+        # Commit on expired lease -> must fail
+        with pytest.raises(ExpiredLeaseCommitError) as excinfo:
+            ResearchExperimentRegistry.commit_evidence(
+                experiment_id=exp_id,
+                claim_id=claim_id,
+                evidence_metrics={"sampleCount": 100, "sharpe": 1.2},
+                lineage_hashes={"datasetHash": "d", "featureHash": "f", "modelHash": "m"},
+                worker_id="worker_alpha"
+            )
+        assert "EXPIRED_LEASE_COMMIT" in str(excinfo.value)
+
+        # Worker ownership mismatch -> must fail
+        exp_id2 = "EXP_WORKER_MISMATCH_002"
+        claim2 = ResearchExperimentRegistry.claim_experiment(
+            exp_id2,
+            worker_id="worker_alpha",
+            lease_ttl_seconds=300
+        )
+        claim_id2 = claim2["claim"]["claimId"]
+
+        with pytest.raises(TestSelectionLockError) as excinfo2:
+            ResearchExperimentRegistry.commit_evidence(
+                experiment_id=exp_id2,
+                claim_id=claim_id2,
+                evidence_metrics={"sampleCount": 100, "sharpe": 1.2},
+                lineage_hashes={"datasetHash": "d", "featureHash": "f", "modelHash": "m"},
+                worker_id="worker_impostor"
+            )
+        assert "WORKER_OWNERSHIP_MISMATCH" in str(excinfo2.value)
+
+        ResearchPartitionGuard.reset_locks()
+
+    def test_guarded_reset_blocks_in_production(self):
+        """Item 9: reset_registry() and reset_locks() must raise PermissionError in production environment."""
+        from research.research_partition_guard import ResearchExperimentRegistry
+        old_env = os.environ.get("QUANTX_ENVIRONMENT")
+        try:
+            os.environ["QUANTX_ENVIRONMENT"] = "production"
+            with pytest.raises(PermissionError):
+                ResearchExperimentRegistry.reset_registry()
+            with pytest.raises(PermissionError):
+                ResearchPartitionGuard.reset_locks()
+        finally:
+            if old_env is not None:
+                os.environ["QUANTX_ENVIRONMENT"] = old_env
+            else:
+                os.environ.pop("QUANTX_ENVIRONMENT", None)

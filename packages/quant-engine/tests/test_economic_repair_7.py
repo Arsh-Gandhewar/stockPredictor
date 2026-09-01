@@ -228,7 +228,11 @@ def test_reg_06_holdout_mutation_blocked():
 def test_reg_07_test_reselection_blocked():
     """7. Re-running candidate search after first TEST run is blocked."""
     ResearchPartitionGuard.reset_locks()
-    ResearchPartitionGuard.record_test_run('STRAT_A')
+    ResearchPartitionGuard.record_test_run(
+        'STRAT_A',
+        evidence_metrics={'sampleCount': 500, 'sharpe': 1.1, 'cagr': 15.2},
+        lineage_hashes={'datasetHash': 'data_01', 'featureHash': 'feat_01', 'modelHash': 'model_01'}
+    )
     with pytest.raises(TestSelectionLockError):
         ResearchPartitionGuard.assert_test_not_repeated('STRAT_A')
     ResearchPartitionGuard.reset_locks()

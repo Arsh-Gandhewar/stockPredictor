@@ -65,6 +65,26 @@ class CalibrationLeakageError(Exception):
     pass
 
 
+class RegistryCorruptionError(Exception):
+    """Raised when authoritative research registry is corrupted or unparseable. Fails closed."""
+    pass
+
+
+class InvalidEvidenceError(Exception):
+    """Raised when research evidence is missing, placeholder, or invalid."""
+    pass
+
+
+class MissingLineageError(Exception):
+    """Raised when research evidence is committed without mandatory lineage binding."""
+    pass
+
+
+class ExpiredLeaseCommitError(Exception):
+    """Raised when an attempt is made to commit evidence with an expired lease."""
+    pass
+
+
 class RegistryDeleteError(Exception):
     """Raised when attempt is made to delete a completed experiment record."""
     pass
@@ -361,15 +381,16 @@ class ResearchPartitionGuard:
             worker_id=worker_id,
             lease_ttl_seconds=lease_ttl
         )
+        active_claim_id = claim_record.get("claim", {}).get("claimId")
 
-        # 2. Local Node Fast Guard (O_EXCL)
+        # 2. Local Node Fast Guard (O_EXCL) with conflict and stale ownership inspection
         claim_file = os.path.join(cls._TEST_CLAIMS_DIR, f"{experiment_id}.claim")
         try:
             fd = os.open(claim_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             try:
                 payload = json.dumps({
                     "experimentId": experiment_id,
-                    "claimId": claim_record.get("claim", {}).get("claimId"),
+                    "claimId": active_claim_id,
                     "pid": os.getpid(),
                     "timestamp": time.time()
                 })
@@ -377,8 +398,30 @@ class ResearchPartitionGuard:
             finally:
                 os.close(fd)
         except FileExistsError:
-            # If claim exists locally, check if it belongs to this exact claim
-            pass
+            # Inspect existing local claim file
+            try:
+                with open(claim_file, 'r', encoding='utf-8') as f:
+                    local_data = json.load(f)
+                if local_data.get("claimId") != active_claim_id:
+                    local_pid = local_data.get("pid", 0)
+                    if cls._is_pid_running(local_pid):
+                        raise TestSelectionLockError(
+                            f"LOCAL_CLAIM_CONFLICT: Experiment '{experiment_id}' local claim owned by active PID {local_pid} (claim {local_data.get('claimId')})."
+                        )
+                    # Stale local process -> replace atomically with active registry claim
+                    temp_claim = f"{claim_file}.tmp.{os.getpid()}_{time.time_ns()}"
+                    with open(temp_claim, 'w', encoding='utf-8') as f:
+                        json.dump({
+                            "experimentId": experiment_id,
+                            "claimId": active_claim_id,
+                            "pid": os.getpid(),
+                            "timestamp": time.time()
+                        }, f)
+                    os.replace(temp_claim, claim_file)
+            except Exception as exc:
+                if isinstance(exc, TestSelectionLockError):
+                    raise
+                raise RuntimeError(f"LOCAL_CLAIM_INSPECTION_FAILURE: {exc}") from exc
         except OSError as exc:
             raise RuntimeError(f"TEST_CLAIM_FAILURE: Failed to create atomic claim for '{experiment_id}': {exc}") from exc
 
@@ -388,26 +431,38 @@ class ResearchPartitionGuard:
     def record_test_run(
         cls,
         experiment_id: str,
-        evidence_metrics: Optional[Dict[str, Any]] = None,
-        lineage_hashes: Optional[Dict[str, str]] = None
+        evidence_metrics: Dict[str, Any],
+        lineage_hashes: Dict[str, str],
+        claim_id: Optional[str] = None
     ) -> None:
-        """Records that an experiment has executed its single allowed TEST evaluation with atomic cross-process mutex and registry commit."""
+        """
+        Records that an experiment has executed its single allowed TEST evaluation with atomic cross-process mutex and registry commit.
+        Fails closed if evidence_metrics or lineage_hashes are missing or invalid.
+        """
+        if not evidence_metrics or not isinstance(evidence_metrics, dict):
+            raise InvalidEvidenceError(
+                f"RECORD_TEST_RUN_EVIDENCE_MANDATORY: record_test_run('{experiment_id}') requires verified evidence_metrics dictionary."
+            )
+        if not lineage_hashes or not isinstance(lineage_hashes, dict):
+            raise MissingLineageError(
+                f"RECORD_TEST_RUN_LINEAGE_MANDATORY: record_test_run('{experiment_id}') requires verified lineage_hashes dictionary."
+            )
+
         with cls._lock:
             cls._evaluated_test_experiments.add(experiment_id)
             cls._ensure_lock_dir()
 
             # Ensure authoritative registry commit
             exp_rec = ResearchExperimentRegistry.get_experiment(experiment_id)
-            claim_id = exp_rec.get("claim", {}).get("claimId", f"auto_claim_{experiment_id}") if exp_rec else f"auto_claim_{experiment_id}"
+            active_claim_id = claim_id or (exp_rec.get("claim", {}).get("claimId") if exp_rec else None)
             if not exp_rec or exp_rec.get("status") != "COMMITTED":
-                if not exp_rec:
-                    ResearchExperimentRegistry.claim_experiment(experiment_id)
-                    exp_rec = ResearchExperimentRegistry.get_experiment(experiment_id)
-                    claim_id = exp_rec.get("claim", {}).get("claimId", f"auto_claim_{experiment_id}")
+                if not exp_rec or exp_rec.get("status") not in ["CLAIMED", "EVALUATING"]:
+                    claim_rec = ResearchExperimentRegistry.claim_experiment(experiment_id, lineage_hashes=lineage_hashes)
+                    active_claim_id = claim_rec.get("claim", {}).get("claimId")
                 ResearchExperimentRegistry.commit_evidence(
                     experiment_id=experiment_id,
-                    claim_id=claim_id,
-                    evidence_metrics=evidence_metrics or {"sampleCount": 1, "status": "EVALUATED"},
+                    claim_id=active_claim_id,
+                    evidence_metrics=evidence_metrics,
                     lineage_hashes=lineage_hashes
                 )
 
@@ -488,13 +543,12 @@ class ResearchPartitionGuard:
 
     @classmethod
     def assert_benchmark_unchanged(cls, name: str, current_hash: str) -> None:
-        """Asserts benchmark has not been changed since registration."""
+        """Assert benchmark has not been modified since registration."""
         with cls._lock:
             if name in cls._registered_benchmarks:
                 if cls._registered_benchmarks[name] != current_hash:
                     raise BenchmarkMutationError(
-                        f"BENCHMARK MUTATION DETECTED: '{name}' benchmark definition changed "
-                        "after initial registration. Research integrity violation."
+                        f"BENCHMARK MUTATION DETECTED for '{name}'. Research integrity violation."
                     )
 
     # ------------------------------------------------------------------
@@ -546,7 +600,7 @@ class ResearchPartitionGuard:
 
     @classmethod
     def reset_locks(cls) -> None:
-        """Full reset for isolated regression testing."""
+        """Full reset for isolated regression testing. Strictly forbidden in production."""
         env = os.environ.get('NODE_ENV', '') or os.environ.get('QUANTX_ENVIRONMENT', '')
         if env.lower() == 'production':
             raise PermissionError("ILLEGAL_GOVERNANCE_RESET: reset_locks() cannot be invoked in a production environment.")
@@ -593,6 +647,8 @@ class ResearchExperimentRegistry:
     Provides distributed atomic claims, lease management with TTL, worker ownership tracking,
     crash recovery with expired lease reclamation, and immutable evidence anchoring for all
     TEST and HOLDOUT evaluations.
+    
+    Fails closed on registry corruption, expired leases, missing evidence, or missing lineage.
     """
     _REGISTRY_DIR = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
@@ -608,14 +664,31 @@ class ResearchExperimentRegistry:
 
     @classmethod
     def _load_registry(cls) -> Dict[str, Any]:
+        """
+        Loads the authoritative experiment registry from disk.
+        Fails closed with RegistryCorruptionError if the file is corrupted or unparseable.
+        """
         cls._ensure_dir()
         if not os.path.exists(cls._REGISTRY_FILE):
             return {"schema": "1.0.0", "experiments": {}}
         try:
             with open(cls._REGISTRY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {"schema": "1.0.0", "experiments": {}}
+                data = json.load(f)
+                if not isinstance(data, dict) or "experiments" not in data:
+                    raise RegistryCorruptionError(
+                        f"REGISTRY_CORRUPTION: Registry file {cls._REGISTRY_FILE} is missing mandatory 'experiments' mapping."
+                    )
+                return data
+        except json.JSONDecodeError as exc:
+            raise RegistryCorruptionError(
+                f"REGISTRY_CORRUPTION: Research experiment registry is unparseable or corrupted ({exc}). Failing closed."
+            ) from exc
+        except Exception as exc:
+            if isinstance(exc, RegistryCorruptionError):
+                raise
+            raise RegistryCorruptionError(
+                f"REGISTRY_CORRUPTION: Failed to read research experiment registry: {exc}"
+            ) from exc
 
     @classmethod
     def _save_registry(cls, data: Dict[str, Any]) -> None:
@@ -638,6 +711,9 @@ class ResearchExperimentRegistry:
         Raises TestSelectionLockError if experiment is already committed or actively claimed.
         """
         import uuid
+        if not experiment_id or not isinstance(experiment_id, str) or not experiment_id.strip():
+            raise ValueError("EXPERIMENT_ID_REQUIRED: experiment_id must be a non-empty string.")
+
         worker = worker_id or f"worker_{os.getpid()}_{time.time_ns()}"
         now_ts = time.time()
         claim_id = f"claim_{uuid.uuid4().hex[:12]}"
@@ -732,14 +808,40 @@ class ResearchExperimentRegistry:
         experiment_id: str,
         claim_id: str,
         evidence_metrics: Dict[str, Any],
-        lineage_hashes: Optional[Dict[str, str]] = None
+        lineage_hashes: Dict[str, str],
+        worker_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Durable, atomic commit of research evidence to registry.
-        Permanently locks the experiment against any subsequent re-evaluation.
+        Fails closed if lease is expired, claim ID or worker ownership mismatches,
+        lineage is missing mandatory hashes, or evidence is invalid.
         """
         import hashlib
         now_ts = time.time()
+
+        # 1. Mandatory Lineage Validation
+        if not lineage_hashes or not isinstance(lineage_hashes, dict):
+            raise MissingLineageError(
+                f"MANDATORY_LINEAGE_REQUIRED: Cannot commit experiment '{experiment_id}' without lineage_hashes dict."
+            )
+        required_lineage = ["datasetHash", "featureHash", "modelHash"]
+        missing_lineage = [k for k in required_lineage if not lineage_hashes.get(k)]
+        if missing_lineage:
+            raise MissingLineageError(
+                f"MISSING_LINEAGE_KEYS: Missing mandatory lineage hashes for '{experiment_id}': {missing_lineage}."
+            )
+
+        # 2. Mandatory Evidence Validation
+        if not evidence_metrics or not isinstance(evidence_metrics, dict):
+            raise InvalidEvidenceError(
+                f"INVALID_EVIDENCE: evidence_metrics for experiment '{experiment_id}' must be a non-empty dictionary."
+            )
+        sample_count = evidence_metrics.get("sampleCount", 0)
+        if not isinstance(sample_count, (int, float)) or sample_count < 1:
+            raise InvalidEvidenceError(
+                f"INVALID_EVIDENCE: evidence_metrics.sampleCount ({sample_count}) must be >= 1."
+            )
+
         with cls._lock:
             lock_fd = ResearchPartitionGuard._acquire_process_file_lock(cls._LOCK_FILE)
             try:
@@ -748,9 +850,27 @@ class ResearchExperimentRegistry:
                 if experiment_id not in exps:
                     raise RuntimeError(f"Experiment '{experiment_id}' must be claimed before committing evidence.")
                 rec = exps[experiment_id]
+                
+                if rec.get("status") not in ["CLAIMED", "EVALUATING"]:
+                    raise TestSelectionLockError(
+                        f"INVALID_CLAIM_STATE: Experiment '{experiment_id}' is in status '{rec.get('status')}', not CLAIMED/EVALUATING."
+                    )
+
                 claim = rec.get("claim", {})
                 if claim.get("claimId") != claim_id:
-                    raise RuntimeError(f"Claim ID mismatch for experiment '{experiment_id}'.")
+                    raise TestSelectionLockError(
+                        f"CLAIM_ID_MISMATCH: Provided claim_id '{claim_id}' does not match active claim '{claim.get('claimId')}'."
+                    )
+
+                if worker_id and claim.get("workerId") != worker_id:
+                    raise TestSelectionLockError(
+                        f"WORKER_OWNERSHIP_MISMATCH: Claim owned by '{claim.get('workerId')}', not '{worker_id}'."
+                    )
+
+                if now_ts > claim.get("leaseExpiryTs", 0):
+                    raise ExpiredLeaseCommitError(
+                        f"EXPIRED_LEASE_COMMIT: Lease expired at {claim.get('leaseExpiry')} (now: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now_ts))}). Cannot commit evidence on expired lease."
+                    )
 
                 evidence_str = json.dumps(evidence_metrics, sort_keys=True)
                 evidence_hash = hashlib.sha256(evidence_str.encode("utf-8")).hexdigest()
@@ -761,8 +881,7 @@ class ResearchExperimentRegistry:
                     "evidenceHash": evidence_hash,
                     "committedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts))
                 }
-                if lineage_hashes:
-                    rec["lineage"] = {**rec.get("lineage", {}), **lineage_hashes}
+                rec["lineage"] = {**rec.get("lineage", {}), **lineage_hashes}
                 rec["history"].append({
                     "event": "COMMITTED",
                     "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts)),
@@ -786,7 +905,11 @@ class ResearchExperimentRegistry:
 
     @classmethod
     def reset_registry(cls) -> None:
-        """Harness reset for test isolation."""
+        """Harness reset for test isolation only. Strictly forbidden in production."""
+        env = os.environ.get('NODE_ENV', '') or os.environ.get('QUANTX_ENVIRONMENT', '')
+        if env.lower() == 'production':
+            raise PermissionError("ILLEGAL_GOVERNANCE_RESET: reset_registry() cannot be invoked in a production environment.")
+
         with cls._lock:
             if os.path.exists(cls._REGISTRY_FILE):
                 try:
