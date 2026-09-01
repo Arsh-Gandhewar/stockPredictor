@@ -86,7 +86,7 @@ export default function ModelPerformancePage() {
               QuantX Quantitative Track Record & Model Governance
             </h1>
             <p className="text-xs text-muted-foreground mt-1">
-              True walk-forward out-of-sample evaluation across {stocksEvaluated > 0 ? stocksEvaluated : '15'} stocks over {datasetPeriod} with direct equity-curve statistics and 0.13% round-trip friction.
+              True walk-forward out-of-sample evaluation across {stocksEvaluated > 0 ? stocksEvaluated : '—'} stocks over {datasetPeriod} with direct equity-curve statistics and 0.13% round-trip friction.
             </p>
           </div>
 
@@ -99,7 +99,7 @@ export default function ModelPerformancePage() {
             )}
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Model {status?.version || 'v4.0.0'} ({status?.modelType || 'BASELINE_HEURISTIC'}): {status?.status || 'ACTIVE'}
+              Model {status?.version || 'v5.0.0'} ({status?.modelType || 'BASELINE_HEURISTIC'}): {status?.status || 'ACTIVE'}
             </span>
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/10 text-primary border border-primary/20">
               <Server className="h-3.5 w-3.5" />
@@ -177,7 +177,7 @@ export default function ModelPerformancePage() {
               <div className="p-2.5 rounded-md bg-muted/30 border border-border/30 space-y-1">
                 <span className="text-[10px] text-muted-foreground font-semibold">Active Model Type</span>
                 <p className="text-xs font-bold text-primary">
-                  {status?.modelType || 'BASELINE_HEURISTIC'} (v4.0.0)
+                  {status?.modelType || 'BASELINE_HEURISTIC'} ({status?.version || 'v5.0.0'})
                 </p>
                 <span className="text-[10px] text-muted-foreground">Calibration: {perf?.calibrationStatus || status?.calibrationStatus || 'FITTED'}</span>
               </div>
@@ -203,7 +203,7 @@ export default function ModelPerformancePage() {
                   <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                 </div>
                 <div className={`text-2xl font-bold font-mono mt-1 ${winRate >= 50 ? 'text-emerald-400' : 'text-red-400'}`}>
-                  {winRate > 0 ? `${winRate.toFixed(1)}%` : 'INSUFFICIENT DATA'}
+                  {winRate != null && totalTrades > 0 ? `${winRate.toFixed(1)}%` : 'INSUFFICIENT DATA'}
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-1">
@@ -221,7 +221,7 @@ export default function ModelPerformancePage() {
                   <Zap className="h-4 w-4 text-amber-400" />
                 </div>
                 <div className={`text-2xl font-bold font-mono mt-1 ${annualReturn >= 0 ? 'text-amber-400' : 'text-red-400'}`}>
-                  {annualReturn !== 0 ? `${annualReturn >= 0 ? '+' : ''}${annualReturn.toFixed(1)}%` : 'INSUFFICIENT DATA'}
+                  {annualReturn != null && totalTrades > 0 ? `${annualReturn >= 0 ? '+' : ''}${annualReturn.toFixed(1)}%` : 'INSUFFICIENT DATA'}
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-1">
@@ -239,7 +239,7 @@ export default function ModelPerformancePage() {
                   <Scale className="h-4 w-4 text-primary" />
                 </div>
                 <div className="text-2xl font-bold font-mono text-foreground mt-1">
-                  {overallSharpe !== null && overallSharpe > 0 ? overallSharpe.toFixed(2) : 'N/A'} / <span className="text-emerald-400">{overallSortino !== null && overallSortino > 0 ? overallSortino.toFixed(2) : 'N/A'}</span>
+                  {overallSharpe !== null && !isNaN(overallSharpe) ? overallSharpe.toFixed(2) : '—'} / <span className="text-emerald-400">{overallSortino !== null && !isNaN(overallSortino) ? overallSortino.toFixed(2) : '—'}</span>
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-1">
@@ -257,12 +257,12 @@ export default function ModelPerformancePage() {
                   <ShieldCheck className="h-4 w-4 text-blue-400" />
                 </div>
                 <div className="text-2xl font-bold font-mono text-foreground mt-1">
-                  {rrRatio > 0 ? `1 : ${rrRatio.toFixed(1)}` : 'N/A'}
+                  {rrRatio != null && rrRatio > 0 ? `1 : ${rrRatio.toFixed(1)}` : '—'}
                 </div>
               </CardHeader>
               <CardContent className="px-4 pb-4 pt-1">
                 <p className="text-xs text-muted-foreground">
-                  Profit factor: {h5d?.profitFactor ? `${h5d.profitFactor}×` : 'Positive expectancy'}.
+                  Profit factor: {h5d?.profitFactor != null ? `${h5d.profitFactor}×` : '—'}.
                 </p>
               </CardContent>
             </Card>
@@ -565,7 +565,7 @@ export default function ModelPerformancePage() {
           Rigorous Quantitative Methodology & Governance
         </h2>
 
-        <div className="grid gap-3 grid-cols-1 md:grid-cols-3">
+        <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Card className="bg-card/40 border-border/30 p-4 space-y-1.5 shadow-xs">
             <h3 className="text-xs font-bold text-foreground">Direct Time-Aligned Statistics</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
@@ -584,6 +584,13 @@ export default function ModelPerformancePage() {
             <h3 className="text-xs font-bold text-foreground">Hierarchical Empirical Returns</h3>
             <p className="text-xs text-muted-foreground leading-relaxed">
               Conditional return distributions are fitted using trimmed robust statistics from out-of-sample validation partitions.
+            </p>
+          </Card>
+
+          <Card className="bg-card/40 border-border/30 p-4 space-y-1.5 shadow-xs">
+            <h3 className="text-xs font-bold text-amber-400">Survivorship Bias Disclosure</h3>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              Point-in-time trailing liquidity on NSE equities with survivorship limitation explicitly documented; unlisted historical constituent data is not back-filled.
             </p>
           </Card>
         </div>

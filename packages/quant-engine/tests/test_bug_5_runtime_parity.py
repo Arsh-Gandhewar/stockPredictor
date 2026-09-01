@@ -446,3 +446,33 @@ class TestBug5FailClosedSemantics:
         with open(pkg_path, "r", encoding="utf-8") as f:
             pkg_content = f.read()
         assert "build_engine.py" not in pkg_content, "build_engine.py must not be referenced in package.json"
+
+    def test_20_pbo_and_alpha_decay_honest_governance(self):
+        """Issues 4, 5, 6: PBO 1.0, wide alpha CI, and alpha decay must honestly lock production gate."""
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        audit_path = os.path.join(repo_root, "audit-results.json")
+        with open(audit_path, "r", encoding="utf-8") as f:
+            audit = json.load(f)
+
+        assert audit.get("economicStrategyStatus") == "FAIL"
+        assert audit.get("status") in ["PASSED", "PASS"]  # Technical audit passed, economic failed
+        assert audit.get("alphaConfidence", {}).get("statisticallySignificant") is False
+        assert audit.get("alphaDecay", {}).get("alphaDecay") is True
+
+    def test_21_gross_vs_net_profit_factor_distinction(self):
+        """Issue 2: Standardized computation of both grossProfitFactor and netProfitFactor."""
+        from audit.independent_metrics_engine import IndependentMetricsEngine
+
+        # Trades with both grossPnl and netPnl (reflecting statutory friction)
+        trades = [
+            {'grossPnl': 300.0, 'netPnl': 200.0},
+            {'grossPnl': -50.0, 'netPnl': -150.0},
+        ]
+        gross_pf = IndependentMetricsEngine._compute_gross_profit_factor(trades)
+        net_pf = IndependentMetricsEngine._compute_net_profit_factor(trades)
+
+        # Gross: 300 / 50 = 6.0
+        # Net: 200 / 150 = 1.3333
+        assert abs(gross_pf - 6.0) < 1e-2
+        assert abs(net_pf - 1.3333) < 1e-2
+        assert gross_pf > net_pf, "Gross profit factor must exceed net profit factor due to statutory friction."

@@ -60,7 +60,8 @@ class IndependentMetricsEngine:
         sortino = cls._compute_sortino(daily_returns, risk_free_rate_annual)
         max_dd = cls._compute_max_drawdown(equity_values)
         calmar = cagr / abs(max_dd) if max_dd != 0.0 else float('inf')
-        pf = cls._compute_profit_factor(trade_ledger)
+        gross_pf = cls._compute_gross_profit_factor(trade_ledger)
+        net_pf = cls._compute_net_profit_factor(trade_ledger)
         expectancy = cls._compute_expectancy(trade_ledger)
         trade_count = len(trade_ledger)
         turnover = cls._compute_turnover(trade_ledger, equity_values)
@@ -76,7 +77,9 @@ class IndependentMetricsEngine:
             'sortino': round(sortino, 4),
             'maxDrawdown': round(max_dd * 100.0, 4),
             'calmar': round(calmar, 4),
-            'profitFactor': round(pf, 4),
+            'profitFactor': round(net_pf, 4),
+            'netProfitFactor': round(net_pf, 4),
+            'grossProfitFactor': round(gross_pf, 4),
             'expectancy': round(expectancy, 2),
             'turnover': round(turnover, 4),
             'tradeCount': trade_count,
@@ -159,11 +162,11 @@ class IndependentMetricsEngine:
         return float(np.min(drawdowns))
 
     # ------------------------------------------------------------------
-    # Profit Factor
+    # Profit Factor (Gross vs Net Post-Friction)
     # ------------------------------------------------------------------
 
     @classmethod
-    def _compute_profit_factor(cls, trades: List[Dict[str, Any]]) -> float:
+    def _compute_gross_profit_factor(cls, trades: List[Dict[str, Any]]) -> float:
         gross_gains = sum(t.get('grossPnl', t.get('netPnl', 0.0)) for t in trades
                          if t.get('grossPnl', t.get('netPnl', 0.0)) > 0.0)
         gross_losses = sum(abs(t.get('grossPnl', t.get('netPnl', 0.0))) for t in trades
@@ -171,6 +174,20 @@ class IndependentMetricsEngine:
         if gross_losses < 1e-8:
             return float('inf') if gross_gains > 0 else 0.0
         return gross_gains / gross_losses
+
+    @classmethod
+    def _compute_net_profit_factor(cls, trades: List[Dict[str, Any]]) -> float:
+        net_gains = sum(t.get('netPnl', t.get('grossPnl', 0.0)) for t in trades
+                        if t.get('netPnl', t.get('grossPnl', 0.0)) > 0.0)
+        net_losses = sum(abs(t.get('netPnl', t.get('grossPnl', 0.0))) for t in trades
+                         if t.get('netPnl', t.get('grossPnl', 0.0)) < 0.0)
+        if net_losses < 1e-8:
+            return float('inf') if net_gains > 0 else 0.0
+        return net_gains / net_losses
+
+    @classmethod
+    def _compute_profit_factor(cls, trades: List[Dict[str, Any]]) -> float:
+        return cls._compute_net_profit_factor(trades)
 
     # ------------------------------------------------------------------
     # Expectancy

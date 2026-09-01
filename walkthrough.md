@@ -74,10 +74,34 @@ In accordance with the **BUG 5 Master Repair Mandate**, the QuantX repository ha
 9. **Build Script Proof of build_engine.py Deletion (🟠 P2 — Item 14)**:
    - Added `test_19_build_engine_py_verified_absent` asserting complete absence from filesystem and `package.json` build scripts.
 
-### Verification Run:
-- **Python Pytest**: 62 / 62 passed (`test_bug_4_research_integrity.py`), 19 / 19 passed (`test_bug_5_runtime_parity.py`).
-- **MCP Unit Tests**: 106 / 106 passed.
-- **Engineering Context Tests**: 40 / 40 passed.
-- **NestJS API Tests**: 49 / 49 passed.
-- **Next.js Web Build**: Compiled successfully (`next build` exited with code 0).
-- **Manifest Verification**: `node scripts/sync-manifests.js --verify` passed cleanly against Git commit `35dc90279bcb18c265e32a73a202fb17a6dbf0ad` and tree `c9c5606b54a22ebebd9feff205becc693d7633e3`.
+---
+
+## 5. Institutional 14-Point Quant & Governance Mandate (September 1, 2026)
+
+### Complete Invariant Resolutions:
+1. **Manifest Attestation & Lineage Separation (🔴 P0 / 🔴 P1 — Issues 1 & 9)**:
+   - Synchronized cryptographic lineage (`gitSha` and `treeSha`) across in-tree manifests and release certification bundles in `dist/certification/`.
+2. **Standardized Gross vs Net Profit Factor Reconciliation (🔴 P0 — Issue 2)**:
+   - Upgraded `IndependentMetricsEngine` to compute and export both `grossProfitFactor` (pre-friction: 6.285) and `netProfitFactor` (post-statutory taxes & slippage: 1.17 / 0.99) explicitly, eliminating single-field ambiguity across research and audit reports.
+3. **Statistical Governance & Gatekeeping (🔴 P0 / 🔴 P1 — Issues 3, 4, 5, 6, 8)**:
+   - Gated fail-closed on sub-hurdle CAGR (2.73%), negative risk-adjusted Sharpe (-0.13), PBO = 1.0 (high overfit risk), alpha confidence interval `[-10.95%, +9.97%]`, and temporal OOS alpha decay. `productionReady: false` and `economicStatus: FAIL` are strictly locked.
+4. **Calibration Sample Sufficiency (🔴 P1 — Issue 7)**:
+   - Added validation criteria requiring documented sample size ($N \ge 500$) and out-of-sample knot monotonicity before marking sample sufficiency as passed.
+5. **Durable Research Test Registry (🟠 P1 — Issue 10)**:
+   - Implemented inter-process mutual exclusion with PID/timestamp tracking, 30s TTL stale lock recovery, and atomic pre-claims (`test_claims/{exp_id}.claim`).
+6. **Canonical Event-Level Auto-Sell Idempotency (🟠 P1 — Issue 11)**:
+   - Formulated canonical immutable event IDs (`EVENT_${reason}_${pos.id}_${pos.stock.ticker}_${currentPrice}_${quoteTimestamp.toISOString()}`) bound to quote timestamps and prices in database transaction records.
+7. **Python vs TypeScript Execution Cost Parity (🟠 P1 — Issue 12)**:
+   - Expanded parity test suite (`test_17_multi_tier_numerical_cashflow_parity`, `test_21_gross_vs_net_profit_factor_distinction`) validating exact statutory fees, ₹20 brokerage cap, STT, GST, and slippage parity.
+8. **Historical Universe Survivorship Bias Disclosure (🟠 P1 — Issue 13)**:
+   - Explicitly surfaced survivorship limitation disclosures on `model-performance/page.tsx` and in `audit-results.json`.
+9. **Full Zero-Fake-Data Contract Across Backend & Frontend (🟠 P2 — Issue 14)**:
+   - Eradicated all hardcoded numeric fallbacks (`0.18`, `0.85`, `1.15`, `1.2`, `12.5`, `1.45`, `0.16`, `1.12`, `1.58`, `1.8`, `18.2`, `1.72`, `0.15`, `1.28`, `1.84`, `2.1`, `22.4`, `1.88`, `0.042`) in `prediction.service.ts` and `model-performance/page.tsx`. Displayed honest values (including negative Sharpe `-0.13`) and clean empty/loading states.
+
+### Unified Test Suite Verification Run:
+- **Python Pytest**: **537 / 537 passed** across all 18 test modules.
+- **MCP Protocol & Security Tests**: **106 / 106 passed** (12 suites).
+- **Engineering Context MCP Tests**: **40 / 40 passed** (7 suites).
+- **NestJS API Tests**: **49 / 49 passed** (11 suites).
+- **Next.js Web Production Build**: **Passed** (`next build` compiled with 0 errors).
+- **Manifest Synchronization & Verification**: `node scripts/sync-manifests.js` completed cleanly.

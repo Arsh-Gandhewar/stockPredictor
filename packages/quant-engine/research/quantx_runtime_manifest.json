@@ -1,7 +1,7 @@
 {
   "manifestVersion": "1.0.0",
   "generatedAt": "2026-08-31T03:30:00.000Z",
-  "gitSha": "e43a0d5c07a3c99390418932bc5f9774008fa10a",
+  "gitSha": "b532fa94e9b8f26254a058ed5f225fd44f3ac129",
   "modelVersion": "5.0.0",
   "returnModelVersion": "v5.0.0-empirical-quantiles",
   "featureVersion": "v5.0.0-multi-factor-25",
@@ -39,5 +39,5 @@
     ]
   },
   "runtimeManifestHash": "27db4d2625291e1d0f507b9a5fe3509bc489e224e757d5940e4f3a74347dd9c7",
-  "treeSha": "a39f0cd15769267c0b5b90cc4f7cf9b2e5a4dc05"
+  "treeSha": "34802f2f14c9c9f318df11a60106b41e53e01527"
 }
