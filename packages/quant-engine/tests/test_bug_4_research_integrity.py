@@ -16,6 +16,7 @@ Contains 60+ rigorous unit & adversarial regression tests spanning 10 test class
 import os
 import sys
 import json
+import time
 import pytest
 import numpy as np
 import pandas as pd
@@ -718,4 +719,79 @@ class TestProductionCertificationGate:
 
         ResearchPartitionGuard.release_holdout()
         assert ResearchPartitionGuard.is_holdout_active() is False
+        ResearchPartitionGuard.reset_locks()
+
+    def test_authoritative_research_experiment_registry_lifecycle(self):
+        """Authoritative transactional research experiment registry with lease TTL, crash recovery, and immutable evidence."""
+        from research.research_partition_guard import ResearchExperimentRegistry
+        ResearchPartitionGuard.reset_locks()
+
+        exp_id = "EXP_TRANSACTIONAL_REGISTRY_001"
+        worker_a = "ci_worker_node_1:pid101"
+        worker_b = "ci_worker_node_2:pid202"
+
+        # 1. Worker A claims experiment with 2s lease
+        claim_a = ResearchExperimentRegistry.claim_experiment(
+            experiment_id=exp_id,
+            worker_id=worker_a,
+            lease_ttl_seconds=2,
+            lineage_hashes={"datasetHash": "data_hash_abc", "featureHash": "feat_hash_xyz"}
+        )
+        assert claim_a["status"] == "CLAIMED"
+        assert claim_a["claim"]["workerId"] == worker_a
+        claim_id_a = claim_a["claim"]["claimId"]
+
+        # 2. Worker B attempts immediate claim -> fails with active contention
+        with pytest.raises(TestSelectionLockError) as excinfo:
+            ResearchExperimentRegistry.claim_experiment(experiment_id=exp_id, worker_id=worker_b)
+        assert "actively claimed by worker" in str(excinfo.value)
+
+        # 3. Heartbeat extends Worker A's lease
+        renewed = ResearchExperimentRegistry.heartbeat_claim(exp_id, claim_id_a, extension_seconds=10)
+        assert renewed is True
+
+        # 4. Commit immutable evidence
+        evidence = {
+            "sampleCount": 500,
+            "cagr": 2.73,
+            "sharpe": -0.13,
+            "grossProfitFactor": 6.285,
+            "netProfitFactor": 1.174,
+            "pbo": 1.0,
+        }
+        committed_rec = ResearchExperimentRegistry.commit_evidence(
+            experiment_id=exp_id,
+            claim_id=claim_id_a,
+            evidence_metrics=evidence,
+            lineage_hashes={"modelHash": "model_hash_123"}
+        )
+        assert committed_rec["status"] == "COMMITTED"
+        assert "evidenceHash" in committed_rec["evidence"]
+        assert len(committed_rec["evidence"]["evidenceHash"]) == 64
+
+        # 5. Any subsequent claim on committed experiment is permanently blocked
+        with pytest.raises(TestSelectionLockError) as excinfo_commit:
+            ResearchExperimentRegistry.claim_experiment(experiment_id=exp_id, worker_id=worker_b)
+        assert "has already been evaluated" in str(excinfo_commit.value)
+
+        # 6. Test Crash Recovery / Lease Expiry on uncommitted experiment
+        exp_crash_id = "EXP_CRASHED_WORKER_002"
+        # Claim with 0s lease so it expires immediately
+        claim_crash = ResearchExperimentRegistry.claim_experiment(
+            experiment_id=exp_crash_id,
+            worker_id="crashed_worker:pid999",
+            lease_ttl_seconds=0
+        )
+        time.sleep(0.05)
+
+        # Worker B reclaims expired lease
+        reclaimed = ResearchExperimentRegistry.claim_experiment(
+            experiment_id=exp_crash_id,
+            worker_id=worker_b,
+            lease_ttl_seconds=300
+        )
+        assert reclaimed["status"] == "CLAIMED"
+        assert reclaimed["claim"]["workerId"] == worker_b
+        assert any(h["event"] == "LEASE_EXPIRED_RECLAIMED" for h in reclaimed["history"])
+
         ResearchPartitionGuard.reset_locks()

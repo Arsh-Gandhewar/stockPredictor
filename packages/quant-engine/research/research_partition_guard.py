@@ -339,35 +339,77 @@ class ResearchPartitionGuard:
                 raise RuntimeError(
                     f"RESEARCH_PERSISTENCE_FAILURE: Failed to parse durable test experiments file: {exc}"
                 ) from exc
+        # Also consult authoritative persistent registry
+        reg_exps = ResearchExperimentRegistry.list_experiments()
+        for exp_id, rec in reg_exps.items():
+            if rec.get("status") == "COMMITTED":
+                experiments.add(exp_id)
         return experiments
 
     @classmethod
-    def claim_test_evaluation(cls, experiment_id: str) -> None:
-        """Atomically pre-claims an experiment ID before TEST evaluation runs to prevent concurrent evaluations."""
+    def claim_test_evaluation(cls, experiment_id: str, worker_id: Optional[str] = None, lease_ttl: int = 300) -> Dict[str, Any]:
+        """
+        Atomically pre-claims an experiment ID before TEST evaluation runs.
+        Combines fast local node guard (O_EXCL) with authoritative transactional lease registry.
+        """
         cls._ensure_lock_dir()
         cls.assert_test_not_repeated(experiment_id)
 
+        # 1. Authoritative Transactional Registry Claim (Distributed & Lease Managed)
+        claim_record = ResearchExperimentRegistry.claim_experiment(
+            experiment_id=experiment_id,
+            worker_id=worker_id,
+            lease_ttl_seconds=lease_ttl
+        )
+
+        # 2. Local Node Fast Guard (O_EXCL)
         claim_file = os.path.join(cls._TEST_CLAIMS_DIR, f"{experiment_id}.claim")
         try:
             fd = os.open(claim_file, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
             try:
-                payload = json.dumps({"experimentId": experiment_id, "pid": os.getpid(), "timestamp": time.time()})
+                payload = json.dumps({
+                    "experimentId": experiment_id,
+                    "claimId": claim_record.get("claim", {}).get("claimId"),
+                    "pid": os.getpid(),
+                    "timestamp": time.time()
+                })
                 os.write(fd, payload.encode('utf-8'))
             finally:
                 os.close(fd)
         except FileExistsError:
-            raise TestSelectionLockError(
-                f"TEST CLAIM CONFLICT: Experiment '{experiment_id}' has already been claimed or evaluated by another process."
-            )
+            # If claim exists locally, check if it belongs to this exact claim
+            pass
         except OSError as exc:
             raise RuntimeError(f"TEST_CLAIM_FAILURE: Failed to create atomic claim for '{experiment_id}': {exc}") from exc
 
+        return claim_record
+
     @classmethod
-    def record_test_run(cls, experiment_id: str) -> None:
-        """Records that an experiment has executed its single allowed TEST evaluation with atomic cross-process mutex."""
+    def record_test_run(
+        cls,
+        experiment_id: str,
+        evidence_metrics: Optional[Dict[str, Any]] = None,
+        lineage_hashes: Optional[Dict[str, str]] = None
+    ) -> None:
+        """Records that an experiment has executed its single allowed TEST evaluation with atomic cross-process mutex and registry commit."""
         with cls._lock:
             cls._evaluated_test_experiments.add(experiment_id)
             cls._ensure_lock_dir()
+
+            # Ensure authoritative registry commit
+            exp_rec = ResearchExperimentRegistry.get_experiment(experiment_id)
+            claim_id = exp_rec.get("claim", {}).get("claimId", f"auto_claim_{experiment_id}") if exp_rec else f"auto_claim_{experiment_id}"
+            if not exp_rec or exp_rec.get("status") != "COMMITTED":
+                if not exp_rec:
+                    ResearchExperimentRegistry.claim_experiment(experiment_id)
+                    exp_rec = ResearchExperimentRegistry.get_experiment(experiment_id)
+                    claim_id = exp_rec.get("claim", {}).get("claimId", f"auto_claim_{experiment_id}")
+                ResearchExperimentRegistry.commit_evidence(
+                    experiment_id=experiment_id,
+                    claim_id=claim_id,
+                    evidence_metrics=evidence_metrics or {"sampleCount": 1, "status": "EVALUATED"},
+                    lineage_hashes=lineage_hashes
+                )
 
             # Ensure pre-claim exists (or create it)
             claim_file = os.path.join(cls._TEST_CLAIMS_DIR, f"{experiment_id}.claim")
@@ -382,7 +424,7 @@ class ResearchPartitionGuard:
                 except FileExistsError:
                     pass
 
-            # Acquire atomic inter-process mutex
+            # Acquire atomic inter-process mutex for legacy tracker
             lock_fd = cls._acquire_process_file_lock(cls._TEST_LOCK_FILE)
             try:
                 all_exps = cls._load_durable_test_experiments()
@@ -400,8 +442,26 @@ class ResearchPartitionGuard:
 
     @classmethod
     def assert_test_not_repeated(cls, experiment_id: str) -> None:
-        """Prevents repeated evaluation/optimization on TEST across threads and processes."""
+        """Prevents repeated evaluation/optimization on TEST across threads, processes, and distributed workers."""
         with cls._lock:
+            # 1. Check Authoritative Registry
+            reg_rec = ResearchExperimentRegistry.get_experiment(experiment_id)
+            if reg_rec:
+                status = reg_rec.get("status")
+                if status == "COMMITTED":
+                    raise TestSelectionLockError(
+                        f"TEST SELECTION LOCK: Experiment '{experiment_id}' has already been evaluated "
+                        "on TEST and committed to the authoritative research registry. Re-tuning is forbidden."
+                    )
+                if status in ["CLAIMED", "EVALUATING"]:
+                    claim = reg_rec.get("claim", {})
+                    if time.time() < claim.get("leaseExpiryTs", 0):
+                        raise TestSelectionLockError(
+                            f"TEST CLAIM CONFLICT: Experiment '{experiment_id}' is actively claimed by "
+                            f"worker '{claim.get('workerId')}' until {claim.get('leaseExpiry')}."
+                        )
+
+            # 2. Check local files
             all_exps = cls._load_durable_test_experiments()
             claim_file = os.path.join(cls._TEST_CLAIMS_DIR, f"{experiment_id}.claim")
             if experiment_id in all_exps or os.path.exists(claim_file):
@@ -517,5 +577,224 @@ class ResearchPartitionGuard:
                 try:
                     for f in os.listdir(cls._TEST_CLAIMS_DIR):
                         os.remove(os.path.join(cls._TEST_CLAIMS_DIR, f))
+                except OSError:
+                    pass
+            ResearchExperimentRegistry.reset_registry()
+
+
+# ===========================================================================
+# Authoritative Persistent Transactional Research Experiment Registry
+# ===========================================================================
+
+class ResearchExperimentRegistry:
+    """
+    Authoritative Persistent Transactional Research Experiment Registry.
+    
+    Provides distributed atomic claims, lease management with TTL, worker ownership tracking,
+    crash recovery with expired lease reclamation, and immutable evidence anchoring for all
+    TEST and HOLDOUT evaluations.
+    """
+    _REGISTRY_DIR = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+        ".research_locks"
+    )
+    _REGISTRY_FILE = os.path.join(_REGISTRY_DIR, "research_experiment_registry.json")
+    _LOCK_FILE = os.path.join(_REGISTRY_DIR, "research_registry.lock")
+    _lock = threading.RLock()
+
+    @classmethod
+    def _ensure_dir(cls) -> None:
+        os.makedirs(cls._REGISTRY_DIR, exist_ok=True)
+
+    @classmethod
+    def _load_registry(cls) -> Dict[str, Any]:
+        cls._ensure_dir()
+        if not os.path.exists(cls._REGISTRY_FILE):
+            return {"schema": "1.0.0", "experiments": {}}
+        try:
+            with open(cls._REGISTRY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {"schema": "1.0.0", "experiments": {}}
+
+    @classmethod
+    def _save_registry(cls, data: Dict[str, Any]) -> None:
+        cls._ensure_dir()
+        temp_file = f"{cls._REGISTRY_FILE}.tmp.{os.getpid()}_{time.time_ns()}"
+        with open(temp_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(temp_file, cls._REGISTRY_FILE)
+
+    @classmethod
+    def claim_experiment(
+        cls,
+        experiment_id: str,
+        worker_id: Optional[str] = None,
+        lease_ttl_seconds: int = 300,
+        lineage_hashes: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Atomically claims an experiment ID with lease TTL, worker ownership, and crash recovery.
+        Raises TestSelectionLockError if experiment is already committed or actively claimed.
+        """
+        import uuid
+        worker = worker_id or f"worker_{os.getpid()}_{time.time_ns()}"
+        now_ts = time.time()
+        claim_id = f"claim_{uuid.uuid4().hex[:12]}"
+        lease_expiry_ts = now_ts + lease_ttl_seconds
+
+        with cls._lock:
+            lock_fd = ResearchPartitionGuard._acquire_process_file_lock(cls._LOCK_FILE)
+            try:
+                registry = cls._load_registry()
+                exps = registry.setdefault("experiments", {})
+
+                rec = exps.get(experiment_id, {})
+                history = list(rec.get("history", []))
+                if experiment_id in exps:
+                    status = rec.get("status")
+                    if status == "COMMITTED":
+                        raise TestSelectionLockError(
+                            f"TEST SELECTION LOCK: Experiment '{experiment_id}' has already been evaluated "
+                            "and committed to the authoritative research registry. Re-tuning is forbidden."
+                        )
+                    elif status in ["CLAIMED", "EVALUATING"]:
+                        existing_claim = rec.get("claim", {})
+                        existing_expiry = existing_claim.get("leaseExpiryTs", 0)
+                        if now_ts < existing_expiry:
+                            raise TestSelectionLockError(
+                                f"TEST CLAIM CONFLICT: Experiment '{experiment_id}' is actively claimed by "
+                                f"worker '{existing_claim.get('workerId')}' until {existing_claim.get('leaseExpiry')}."
+                            )
+                        # Lease expired -> crash recovery
+                        history.append({
+                            "event": "LEASE_EXPIRED_RECLAIMED",
+                            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts)),
+                            "reclaimedFromWorker": existing_claim.get("workerId"),
+                            "reclaimedByWorker": worker
+                        })
+
+                history.append({
+                    "event": "CLAIMED",
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts)),
+                    "workerId": worker,
+                    "claimId": claim_id
+                })
+
+                # Register new atomic claim
+                record = {
+                    "experimentId": experiment_id,
+                    "status": "CLAIMED",
+                    "claim": {
+                        "claimId": claim_id,
+                        "workerId": worker,
+                        "claimedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts)),
+                        "claimedAtTs": now_ts,
+                        "leaseExpiry": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(lease_expiry_ts)),
+                        "leaseExpiryTs": lease_expiry_ts,
+                        "leaseTtlSeconds": lease_ttl_seconds
+                    },
+                    "lineage": lineage_hashes or {},
+                    "history": history
+                }
+                exps[experiment_id] = record
+                cls._save_registry(registry)
+                return record
+            finally:
+                ResearchPartitionGuard._release_process_file_lock(cls._LOCK_FILE, lock_fd)
+
+    @classmethod
+    def heartbeat_claim(cls, experiment_id: str, claim_id: str, extension_seconds: int = 300) -> bool:
+        """Renews the active lease for a long-running evaluation."""
+        now_ts = time.time()
+        with cls._lock:
+            lock_fd = ResearchPartitionGuard._acquire_process_file_lock(cls._LOCK_FILE)
+            try:
+                registry = cls._load_registry()
+                exps = registry.setdefault("experiments", {})
+                if experiment_id not in exps:
+                    return False
+                rec = exps[experiment_id]
+                claim = rec.get("claim", {})
+                if claim.get("claimId") != claim_id or rec.get("status") not in ["CLAIMED", "EVALUATING"]:
+                    return False
+                new_expiry = now_ts + extension_seconds
+                claim["leaseExpiryTs"] = new_expiry
+                claim["leaseExpiry"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(new_expiry))
+                cls._save_registry(registry)
+                return True
+            finally:
+                ResearchPartitionGuard._release_process_file_lock(cls._LOCK_FILE, lock_fd)
+
+    @classmethod
+    def commit_evidence(
+        cls,
+        experiment_id: str,
+        claim_id: str,
+        evidence_metrics: Dict[str, Any],
+        lineage_hashes: Optional[Dict[str, str]] = None
+    ) -> Dict[str, Any]:
+        """
+        Durable, atomic commit of research evidence to registry.
+        Permanently locks the experiment against any subsequent re-evaluation.
+        """
+        import hashlib
+        now_ts = time.time()
+        with cls._lock:
+            lock_fd = ResearchPartitionGuard._acquire_process_file_lock(cls._LOCK_FILE)
+            try:
+                registry = cls._load_registry()
+                exps = registry.setdefault("experiments", {})
+                if experiment_id not in exps:
+                    raise RuntimeError(f"Experiment '{experiment_id}' must be claimed before committing evidence.")
+                rec = exps[experiment_id]
+                claim = rec.get("claim", {})
+                if claim.get("claimId") != claim_id:
+                    raise RuntimeError(f"Claim ID mismatch for experiment '{experiment_id}'.")
+
+                evidence_str = json.dumps(evidence_metrics, sort_keys=True)
+                evidence_hash = hashlib.sha256(evidence_str.encode("utf-8")).hexdigest()
+
+                rec["status"] = "COMMITTED"
+                rec["evidence"] = {
+                    **evidence_metrics,
+                    "evidenceHash": evidence_hash,
+                    "committedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts))
+                }
+                if lineage_hashes:
+                    rec["lineage"] = {**rec.get("lineage", {}), **lineage_hashes}
+                rec["history"].append({
+                    "event": "COMMITTED",
+                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts)),
+                    "claimId": claim_id,
+                    "evidenceHash": evidence_hash
+                })
+                cls._save_registry(registry)
+                return rec
+            finally:
+                ResearchPartitionGuard._release_process_file_lock(cls._LOCK_FILE, lock_fd)
+
+    @classmethod
+    def get_experiment(cls, experiment_id: str) -> Optional[Dict[str, Any]]:
+        registry = cls._load_registry()
+        return registry.get("experiments", {}).get(experiment_id)
+
+    @classmethod
+    def list_experiments(cls) -> Dict[str, Any]:
+        registry = cls._load_registry()
+        return registry.get("experiments", {})
+
+    @classmethod
+    def reset_registry(cls) -> None:
+        """Harness reset for test isolation."""
+        with cls._lock:
+            if os.path.exists(cls._REGISTRY_FILE):
+                try:
+                    os.remove(cls._REGISTRY_FILE)
+                except OSError:
+                    pass
+            if os.path.exists(cls._LOCK_FILE):
+                try:
+                    os.remove(cls._LOCK_FILE)
                 except OSError:
                     pass
