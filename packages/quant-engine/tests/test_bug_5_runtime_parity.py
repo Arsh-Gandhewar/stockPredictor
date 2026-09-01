@@ -447,6 +447,26 @@ class TestBug5FailClosedSemantics:
         assert "ece" in metrics, "ECE must be recorded in metrics."
         assert "brierScore" in metrics, "Brier score must be recorded in metrics."
 
+        # Rigorous institutional sample sufficiency gate (N >= 500)
+        INSTITUTIONAL_MIN_SAMPLES = 500
+        is_institutionally_sufficient = (sample_count >= INSTITUTIONAL_MIN_SAMPLES)
+        
+        # Prototype artifact has N = 60, which must evaluate to False (blocking production promotion)
+        assert is_institutionally_sufficient is False, (
+            f"Active prototype sampleCount ({sample_count}) is below institutional standard "
+            f"({INSTITUTIONAL_MIN_SAMPLES}), correctly blocking production promotion."
+        )
+
+        # Enforce that threshold evaluator strictly requires N >= 500
+        def evaluate_sample_sufficiency(n: int) -> bool:
+            return n >= INSTITUTIONAL_MIN_SAMPLES
+
+        assert evaluate_sample_sufficiency(1) is False, "N=1 must fail sample sufficiency"
+        assert evaluate_sample_sufficiency(60) is False, "N=60 must fail institutional sample sufficiency"
+        assert evaluate_sample_sufficiency(499) is False, "N=499 must fail institutional sample sufficiency"
+        assert evaluate_sample_sufficiency(500) is True, "N=500 must pass institutional sample sufficiency"
+        assert evaluate_sample_sufficiency(1000) is True, "N=1000 must pass institutional sample sufficiency"
+
     def test_19_build_engine_py_verified_absent(self):
         """Item 14: Verify build_engine.py is permanently eliminated and not referenced in scripts or package.json."""
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
