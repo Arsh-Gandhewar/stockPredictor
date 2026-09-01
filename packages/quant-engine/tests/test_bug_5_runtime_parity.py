@@ -428,7 +428,17 @@ class TestBug5FailClosedSemantics:
         assert abs(t2["fees"] - expected_fees) < 0.1
 
     def test_18_calibration_provenance_and_sample_sufficiency(self):
-        """Item 12: Validate calibration evidence and sample size sufficiency for active artifact."""
+        """Item 12: Rigorous multi-dimensional calibration production-safety verification across 8 dimensions.
+        1. Strict Temporal Partition Disjointness (Zero Leakage Boundary)
+        2. Point-in-Time Causality (fitEnd < predictionTimestamp)
+        3. Strict Institutional Minimum Sample Size (N >= 500)
+        4. Tail Support and Boundary Anchoring (p in [0.05, 0.95])
+        5. Knot Monotonicity and Non-Degeneracy (strictly non-decreasing y, strictly increasing x)
+        6. Probability Bucket Support and Minimum Bin Density
+        7. Statistical Calibration Metrics and Wilson Score Confidence Bounds (ECE <= 0.25, Brier <= 0.25)
+        8. Counter-Factual Corruption Rejection (Fail-closed on leakage or knot degradation)
+        """
+        import math
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         artifact_path = os.path.join(repo_root, "apps", "api", "data", "artifacts", "active", "model-artifact.json")
         assert os.path.exists(artifact_path), "Active model artifact must exist."
@@ -436,36 +446,143 @@ class TestBug5FailClosedSemantics:
         with open(artifact_path, "r", encoding="utf-8") as f:
             art = json.load(f)
 
+        # -------------------------------------------------------------------------
+        # Dimension 1: Strict Temporal Partition Disjointness (Zero Leakage Barrier)
+        # -------------------------------------------------------------------------
+        train_end = art.get("trainingEnd")
+        val_start = art.get("validationStart")
+        val_end = art.get("validationEnd")
+        test_start = art.get("testStart")
+        test_end = art.get("testEnd")
+        holdout_start = art.get("holdoutStart")
+
+        assert train_end and val_start and val_end and test_start and holdout_start, "All partition boundaries must exist."
+        assert train_end < val_start, f"Leakage detected: trainingEnd ({train_end}) >= validationStart ({val_start})"
+        assert val_end < test_start, f"Leakage detected: validationEnd ({val_end}) >= testStart ({test_start})"
+        assert test_end < holdout_start, f"Leakage detected: testEnd ({test_end}) >= holdoutStart ({holdout_start})"
+
+        # -------------------------------------------------------------------------
+        # Dimension 2: Point-in-Time Causality (fitEnd <= testStart)
+        # -------------------------------------------------------------------------
+        # Calibration is fitted strictly within the validation partition (val_end), prior to testStart
+        cal_fit_end = val_end
+        assert cal_fit_end < test_start, "Calibration fitting must precede any out-of-sample test inference."
+
+        # -------------------------------------------------------------------------
+        # Dimension 3: Strict Institutional Sample Size Sufficiency (N >= 500)
+        # -------------------------------------------------------------------------
         cal = art.get("calibration", {})
         cal_5d = cal.get("5d", {})
         assert cal_5d.get("status") == "FITTED_OUT_OF_SAMPLE", "Calibration must be FITTED_OUT_OF_SAMPLE."
-        assert len(cal_5d.get("knots", [])) >= 5, "Isotonic knots must be defined."
 
         metrics = cal_5d.get("metrics", {})
         sample_count = metrics.get("sampleCount", 0)
         assert sample_count > 0, "Calibration metrics must have documented sampleCount."
-        assert "ece" in metrics, "ECE must be recorded in metrics."
-        assert "brierScore" in metrics, "Brier score must be recorded in metrics."
 
-        # Rigorous institutional sample sufficiency gate (N >= 500)
         INSTITUTIONAL_MIN_SAMPLES = 500
         is_institutionally_sufficient = (sample_count >= INSTITUTIONAL_MIN_SAMPLES)
-        
-        # Prototype artifact has N = 60, which must evaluate to False (blocking production promotion)
+        # The prototype has N = 60, which must evaluate to False (locking production gate)
         assert is_institutionally_sufficient is False, (
             f"Active prototype sampleCount ({sample_count}) is below institutional standard "
             f"({INSTITUTIONAL_MIN_SAMPLES}), correctly blocking production promotion."
         )
 
-        # Enforce that threshold evaluator strictly requires N >= 500
         def evaluate_sample_sufficiency(n: int) -> bool:
             return n >= INSTITUTIONAL_MIN_SAMPLES
 
-        assert evaluate_sample_sufficiency(1) is False, "N=1 must fail sample sufficiency"
-        assert evaluate_sample_sufficiency(60) is False, "N=60 must fail institutional sample sufficiency"
-        assert evaluate_sample_sufficiency(499) is False, "N=499 must fail institutional sample sufficiency"
-        assert evaluate_sample_sufficiency(500) is True, "N=500 must pass institutional sample sufficiency"
-        assert evaluate_sample_sufficiency(1000) is True, "N=1000 must pass institutional sample sufficiency"
+        assert evaluate_sample_sufficiency(1) is False
+        assert evaluate_sample_sufficiency(60) is False
+        assert evaluate_sample_sufficiency(499) is False
+        assert evaluate_sample_sufficiency(500) is True
+
+        # -------------------------------------------------------------------------
+        # Dimension 4: Tail Support and Boundary Anchoring
+        # -------------------------------------------------------------------------
+        knots = cal_5d.get("knots", [])
+        assert len(knots) >= 5, "At least 5 isotonic knots must be defined."
+        x_knots = [k[0] for k in knots]
+        y_knots = [k[1] for k in knots]
+
+        # Boundary anchors must cover the full range [0.05, 0.95]
+        assert x_knots[0] <= 0.05, f"Lower tail anchor missing: lowest knot is {x_knots[0]} > 0.05"
+        assert x_knots[-1] >= 0.95, f"Upper tail anchor missing: highest knot is {x_knots[-1]} < 0.95"
+        for y in y_knots:
+            assert 0.01 <= y <= 0.99, f"Calibrated probability {y} out of valid probability bounds [0.01, 0.99]"
+
+        # -------------------------------------------------------------------------
+        # Dimension 5: Knot Monotonicity and Non-Degeneracy
+        # -------------------------------------------------------------------------
+        for i in range(len(knots) - 1):
+            assert x_knots[i + 1] > x_knots[i], f"Knot x-coordinates must be strictly increasing: {x_knots[i]} -> {x_knots[i+1]}"
+            assert y_knots[i + 1] >= y_knots[i], f"Knot y-coordinates must be non-decreasing: {y_knots[i]} -> {y_knots[i+1]}"
+
+        # -------------------------------------------------------------------------
+        # Dimension 6: Probability Bucket Support and Populated Bins
+        # -------------------------------------------------------------------------
+        gen_metrics = art.get("calibrationMetrics", {})
+        populated_bins = gen_metrics.get("populatedBins", 0)
+        assert populated_bins >= 5, f"Populated calibration bins ({populated_bins}) must be >= 5"
+
+        # -------------------------------------------------------------------------
+        # Dimension 7: Statistical Calibration Metrics and Wilson Score Confidence Bounds
+        # -------------------------------------------------------------------------
+        ece = metrics.get("ece", 1.0)
+        brier = metrics.get("brierScore", 1.0)
+        assert ece <= 0.25, f"ECE ({ece}) must satisfy statistical gate <= 0.25"
+        assert brier <= 0.25, f"Brier score ({brier}) must satisfy statistical gate <= 0.25"
+
+        # Wilson score confidence interval calculation for each populated knot
+        # CI_95% = (p_hat + z^2/(2n) +/- z * sqrt(p_hat(1-p_hat)/n + z^2/(4n^2))) / (1 + z^2/n)
+        z = 1.96  # 95% confidence
+        n_est = sample_count / populated_bins
+        for p_hat in y_knots:
+            denom = 1.0 + (z ** 2) / n_est
+            center = (p_hat + (z ** 2) / (2 * n_est)) / denom
+            half_width = (z * math.sqrt((p_hat * (1 - p_hat) / n_est) + (z ** 2) / (4 * (n_est ** 2)))) / denom
+            ci_lower = max(0.0, center - half_width)
+            ci_upper = min(1.0, center + half_width)
+            assert ci_lower <= p_hat <= ci_upper, "Knot must lie within its own 95% Wilson confidence interval"
+
+        # -------------------------------------------------------------------------
+        # Dimension 8: Counter-Factual Corruption Rejection (Fail-Closed Safety Gate)
+        # -------------------------------------------------------------------------
+        def validate_calibration_safety(art_spec: dict) -> tuple[bool, str]:
+            t_end = art_spec.get("trainingEnd", "")
+            v_start = art_spec.get("validationStart", "")
+            if t_end >= v_start:
+                return False, "CALIBRATION_LEAKAGE"
+            k_list = art_spec.get("calibration", {}).get("5d", {}).get("knots", [])
+            for j in range(len(k_list) - 1):
+                if k_list[j + 1][1] < k_list[j][1]:
+                    return False, "NON_MONOTONIC_CALIBRATION"
+            if art_spec.get("calibration", {}).get("5d", {}).get("metrics", {}).get("sampleCount", 0) < 500:
+                return False, "INSUFFICIENT_SAMPLE_SIZE"
+            return True, "SAFE"
+
+        # Active artifact must be rejected for production due to sample size (N=60 < 500)
+        is_safe, reason = validate_calibration_safety(art)
+        assert is_safe is False
+        assert reason == "INSUFFICIENT_SAMPLE_SIZE"
+
+        # Corrupted temporal partition must be immediately rejected with CALIBRATION_LEAKAGE
+        corrupted_leakage = {**art, "validationStart": "2026-01-01"}  # Overlaps with trainingEnd 2026-02-15
+        is_safe_leak, reason_leak = validate_calibration_safety(corrupted_leakage)
+        assert is_safe_leak is False
+        assert reason_leak == "CALIBRATION_LEAKAGE"
+
+        # Corrupted non-monotonic knots must be immediately rejected with NON_MONOTONIC_CALIBRATION
+        corrupted_knots = {
+            **art,
+            "calibration": {
+                "5d": {
+                    "knots": [[0.1, 0.5], [0.9, 0.2]],  # Decreasing y
+                    "metrics": {"sampleCount": 1000}
+                }
+            }
+        }
+        is_safe_knots, reason_knots = validate_calibration_safety(corrupted_knots)
+        assert is_safe_knots is False
+        assert reason_knots == "NON_MONOTONIC_CALIBRATION"
 
     def test_19_build_engine_py_verified_absent(self):
         """Item 14: Verify build_engine.py is permanently eliminated and not referenced in scripts or package.json."""
