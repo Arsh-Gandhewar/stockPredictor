@@ -2,10 +2,12 @@
 QuantX Statistical Research Engine.
 
 Implements rigorous quantitative backtest statistics:
-  1. Combinatorially Symmetric Cross-Validation (CSCV) Probability of Backtest Overfitting (PBO)
-  2. Bailey & López de Prado (2014) Deflated Sharpe Ratio (DSR)
-  3. Non-Normal Sharpe Standard Errors (Mertens 2002)
-  4. Autocorrelation-Adjusted Effective Sample Size (N_eff)
+  1. Multi-Lag HAC (Newey-West / Bartlett Kernel) Effective Sample Size (N_eff)
+  2. Combinatorially Symmetric Cross-Validation (CSCV) Probability of Backtest Overfitting (PBO)
+  3. Bailey & López de Prado (2014) Deflated Sharpe Ratio (DSR)
+  4. Non-Normal Sharpe Standard Errors (Mertens 2002)
+
+Zero fake fallback numbers: Returns None and explicit status when statistical prerequisites are unmet.
 """
 import math
 import itertools
@@ -17,51 +19,78 @@ from scipy.stats import norm, skew, kurtosis
 
 class StatisticalResearchEngine:
     """
-    Authoritative research-statistics engine calculating genuine PBO, DSR, and sample properties.
+    Authoritative research-statistics engine calculating genuine PBO, DSR, and HAC sample properties.
     """
 
     @staticmethod
     def calculate_effective_sample_size(returns: np.ndarray) -> float:
         """
-        Calculates autocorrelation-adjusted effective sample size:
-        N_eff = N * (1 - rho_1) / (1 + rho_1)
+        Calculates autocorrelation-adjusted effective sample size using multi-lag Newey-West / Bartlett kernel:
+        N_eff = N / (1 + 2 * sum_{k=1}^K (1 - k/(K+1)) * rho_k)
+        where K = max(1, floor(4 * (N / 100)^(2/9))).
         """
         n = len(returns)
-        if n < 3:
+        if n < 5:
+            return float(max(1.0, float(n)))
+
+        mean_r = np.mean(returns)
+        demeaned = returns - mean_r
+        variance = np.var(returns)
+
+        if variance < 1e-12:
+            return float(max(1.0, float(n)))
+
+        # Optimal lag truncation parameter (Newey-West 1994)
+        K = max(1, int(math.floor(4.0 * ((n / 100.0) ** (2.0 / 9.0)))))
+        K = min(K, n // 3)
+
+        sum_weighted_autocorr = 0.0
+        for k in range(1, K + 1):
+            # Sample autocovariance at lag k
+            autocov_k = np.mean(demeaned[k:] * demeaned[:-k])
+            rho_k = autocov_k / variance
+            bartlett_weight = 1.0 - (k / (K + 1.0))
+            sum_weighted_autocorr += bartlett_weight * rho_k
+
+        # Inflation factor 1 + 2 * sum(w_k * rho_k)
+        inflation_factor = 1.0 + 2.0 * sum_weighted_autocorr
+
+        if inflation_factor <= 0.01:
+            # Highly negative autocorrelation -> cap at N
             return float(n)
-        # Lag-1 Autocorrelation
-        r_lag0 = returns[1:]
-        r_lag1 = returns[:-1]
-        std0 = np.std(r_lag0)
-        std1 = np.std(r_lag1)
-        if std0 < 1e-8 or std1 < 1e-8:
-            return float(n)
-        rho_1 = float(np.corrcoef(r_lag0, r_lag1)[0, 1])
-        if math.isnan(rho_1):
-            rho_1 = 0.0
-        rho_1 = max(-0.95, min(0.95, rho_1))
-        n_eff = n * (1.0 - rho_1) / (1.0 + rho_1)
+
+        n_eff = n / inflation_factor
+        # Effective sample size is strictly bounded in [1.0, N]
         return float(max(1.0, min(float(n), round(n_eff, 2))))
 
     @staticmethod
     def calculate_cscv_pbo(
-        candidate_returns_matrix: np.ndarray,
+        candidate_returns_matrix: Optional[np.ndarray],
         n_splits: int = 8
     ) -> Dict[str, Any]:
         """
         Calculates Probability of Backtest Overfitting (PBO) via CSCV.
         candidate_returns_matrix: Shape (T, N) where T = daily sessions, N = candidate models.
+        Returns None if data is insufficient.
         """
+        if candidate_returns_matrix is None or not isinstance(candidate_returns_matrix, np.ndarray):
+            return {
+                "pbo": None,
+                "status": "INSUFFICIENT_CANDIDATES",
+                "candidateCount": 0,
+                "isOverfit": None,
+                "method": "CSCV"
+            }
+
         T, N = candidate_returns_matrix.shape
         if T < 20 or N < 2:
-            # Single strategy or insufficient length
             return {
-                "pbo": 0.5,
+                "pbo": None,
+                "status": "INSUFFICIENT_CANDIDATES" if N < 2 else "INSUFFICIENT_OBSERVATIONS",
                 "candidateCount": int(N),
-                "splitCount": int(n_splits),
-                "isOverfit": True,
-                "confidenceInterval": [0.0, 1.0],
-                "method": "CSCV_TRIVIAL_SAMPLE"
+                "observationCount": int(T),
+                "isOverfit": None,
+                "method": "CSCV"
             }
 
         # Divide T into S equal blocks
@@ -74,7 +103,7 @@ class StatisticalResearchEngine:
         block_size = T // S
         blocks = [candidate_returns_matrix[i * block_size : (i + 1) * block_size] for i in range(S)]
 
-        # Generate all combinations of picking S/2 blocks for In-Sample (IS)
+        # Enumerate all combinations of picking S/2 blocks for In-Sample (IS)
         k = S // 2
         combinations = list(itertools.combinations(range(S), k))
         total_combos = len(combinations)
@@ -85,17 +114,15 @@ class StatisticalResearchEngine:
         for is_indices in combinations:
             oos_indices = [i for i in range(S) if i not in is_indices]
 
-            # Concatenate blocks
             is_returns = np.vstack([blocks[i] for i in is_indices])
             oos_returns = np.vstack([blocks[i] for i in oos_indices])
 
-            # Calculate annualized Sharpe for each candidate on IS
+            # Calculate annualized Sharpe on IS
             is_means = np.mean(is_returns, axis=0)
             is_stds = np.std(is_returns, axis=0)
             is_stds[is_stds < 1e-8] = 1e-8
             is_sharpes = (is_means / is_stds) * math.sqrt(252)
 
-            # Identify IS optimal candidate
             best_is_idx = int(np.argmax(is_sharpes))
 
             # Calculate OOS Sharpes
@@ -104,22 +131,22 @@ class StatisticalResearchEngine:
             oos_stds[oos_stds < 1e-8] = 1e-8
             oos_sharpes = (oos_means / oos_stds) * math.sqrt(252)
 
-            # Rank of best IS candidate on OOS (1 = worst, N = best)
             best_oos_val = oos_sharpes[best_is_idx]
             rank_oos = float(np.sum(oos_sharpes <= best_oos_val))
             relative_rank = rank_oos / (N + 1.0)
 
-            # Overfit condition: OOS Sharpe is <= 0 or relative rank is in lower half
+            # Overfit: OOS performance is in lower half of candidate distribution or <= 0
             if best_oos_val <= 0.0 or relative_rank <= 0.5:
                 overfit_count += 1
 
             logit = math.log(max(1e-4, relative_rank / max(1e-4, 1.0 - relative_rank)))
             logits.append(logit)
 
-        pbo = round(overfit_count / total_combos, 4) if total_combos > 0 else 0.5
+        pbo = round(overfit_count / total_combos, 4) if total_combos > 0 else 0.0
 
         return {
             "pbo": pbo,
+            "status": "CALCULATED",
             "candidateCount": int(N),
             "totalCombinations": total_combos,
             "isOverfit": bool(pbo > 0.40),
@@ -129,18 +156,26 @@ class StatisticalResearchEngine:
 
     @staticmethod
     def calculate_deflated_sharpe_ratio(
-        trial_sharpes: np.ndarray,
+        trial_sharpes: Optional[np.ndarray],
         estimated_sharpe: float,
         sample_length_days: int,
         daily_returns: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
         """
         Calculates Bailey & López de Prado (2014) Deflated Sharpe Ratio.
+        Returns None when observations or trials are insufficient.
         """
-        N = len(trial_sharpes)
-        if N < 1 or sample_length_days < 5:
-            return {"dsr": 0.5, "expectedMaxSharpe": 0.0, "sharpeStdError": 1.0, "isSignificant": False}
+        if trial_sharpes is None or len(trial_sharpes) < 1 or sample_length_days < 20:
+            return {
+                "dsr": None,
+                "status": "INSUFFICIENT_OBSERVATIONS" if sample_length_days < 20 else "INSUFFICIENT_CANDIDATES",
+                "expectedMaxSharpe": None,
+                "sharpeStdError": None,
+                "isSignificant": None,
+                "method": "BAILEY_LOPEZ_DE_PRADO_2014"
+            }
 
+        N = len(trial_sharpes)
         var_sr = float(np.var(trial_sharpes, ddof=1)) if N > 1 else 0.01
         std_sr = math.sqrt(max(1e-6, var_sr))
 
@@ -152,19 +187,17 @@ class StatisticalResearchEngine:
             skew_val = 0.0
             kurt_val = 3.0
 
-        # Euler-Mascheroni constant
         EM_GAMMA = 0.57721566490153286
 
-        # Expected maximum Sharpe under the null hypothesis
+        # Expected maximum Sharpe under the null hypothesis (Bailey & López de Prado 2014)
         if N > 1:
-            log_n = math.log(N)
             expected_max_sr = std_sr * (
                 (1.0 - EM_GAMMA) * norm.ppf(1.0 - 1.0 / N) + EM_GAMMA * norm.ppf(1.0 - 1.0 / (N * math.e))
             )
         else:
             expected_max_sr = 0.0
 
-        # Mertens (2002) standard error of daily Sharpe ratio (unannualized)
+        # Mertens (2002) daily Sharpe standard error
         sr_daily = estimated_sharpe / math.sqrt(252)
         t = float(sample_length_days)
 
@@ -178,11 +211,13 @@ class StatisticalResearchEngine:
 
         return {
             "dsr": dsr,
+            "status": "CALCULATED",
             "expectedMaxSharpe": round(float(expected_max_sr), 4),
             "trialCount": int(N),
             "trialSharpeVariance": round(var_sr, 6),
             "skewness": round(skew_val, 4),
             "kurtosis": round(kurt_val, 4),
             "sharpeStdError": round(std_err_annual, 4),
-            "isSignificant": bool(dsr > 0.95)
+            "isSignificant": bool(dsr > 0.95),
+            "method": "BAILEY_LOPEZ_DE_PRADO_2014"
         }

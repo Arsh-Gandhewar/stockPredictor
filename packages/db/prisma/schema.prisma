@@ -476,6 +476,13 @@ enum ExperimentStatus {
   COMMITTED
   EXPIRED
   ABORTED
+  REJECTED
+}
+
+enum ProfitFactorStatus {
+  FINITE
+  UNDEFINED_NO_LOSSES
+  NO_TRADES
 }
 
 model ResearchExperiment {
@@ -514,11 +521,12 @@ model ResearchEvidenceBundle {
   experimentId          String             @unique
   claimGeneration       Int
   evidenceContentHash   String             @unique
+  evidenceRunId         String?
   tradeCount            Int
   dailyObservationCount Int
   predictionCount       Int
   effectiveSampleSize   Float
-  profitFactorStatus    String
+  profitFactorStatus    ProfitFactorStatus
   grossProfitFactor     Float?
   netProfitFactor       Float?
   netCagr               Float
@@ -529,8 +537,10 @@ model ResearchEvidenceBundle {
   totalCosts            Float
   totalGrossPnl         Float
   totalNetPnl           Float
-  pbo                   Float
-  dsr                   Float
+  pbo                   Float?
+  pboStatus             String?
+  dsr                   Float?
+  dsrStatus             String?
   isAlphaSignificant    Boolean
   hasAlphaDecay         Boolean
   rawEvidenceChain      Json

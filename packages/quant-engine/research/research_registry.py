@@ -3,11 +3,11 @@ QuantX Authoritative Transactional Research Experiment Registry.
 
 Provides robust, distributed, ACID-compliant state management with:
   1. Monotonically increasing generation fencing tokens (`claimGeneration`)
-  2. Strict atomic conditional state machine: AVAILABLE -> CLAIMED -> EVALUATING -> COMMITTED / EXPIRED / ABORTED
+  2. Strict atomic conditional state machine: AVAILABLE -> CLAIMED -> EVALUATING -> COMMITTED / EXPIRED / ABORTED / REJECTED
   3. Worker ownership enforcement (`workerId`, `processId`, `nodeHostname`)
   4. Unexpired lease verification at commit time
-  5. 12-Dimensional lineage and typed evidence persistence with deterministic content hash
-  6. Append-only, deletion-protected committed research records
+  5. 12-Dimensional lineage and typed evidence persistence with deterministic content hash and concrete run ID
+  6. Append-only, deletion-prohibited committed research records (preserves full selection intensity history)
 """
 import os
 import sys
@@ -20,6 +20,7 @@ from typing import Dict, Any, Optional
 
 from research.evidence_schema import (
     ResearchLineage,
+    RawEvidenceChain,
     ResearchEvidence,
     EvidenceValidationError,
     AccountingInconsistencyError,
@@ -112,6 +113,7 @@ class TransactionalResearchRegistry:
                     experiment_id TEXT PRIMARY KEY,
                     claim_generation INTEGER NOT NULL,
                     evidence_content_hash TEXT UNIQUE NOT NULL,
+                    evidence_run_id TEXT,
                     trade_count INTEGER NOT NULL,
                     daily_observation_count INTEGER NOT NULL,
                     prediction_count INTEGER NOT NULL,
@@ -127,8 +129,10 @@ class TransactionalResearchRegistry:
                     total_costs REAL NOT NULL,
                     total_gross_pnl REAL NOT NULL,
                     total_net_pnl REAL NOT NULL,
-                    pbo REAL NOT NULL,
-                    dsr REAL NOT NULL,
+                    pbo REAL,
+                    pbo_status TEXT,
+                    dsr REAL,
+                    dsr_status TEXT,
                     is_alpha_significant INTEGER NOT NULL,
                     has_alpha_decay INTEGER NOT NULL,
                     raw_evidence_chain_json TEXT NOT NULL,
@@ -151,7 +155,6 @@ class TransactionalResearchRegistry:
     ) -> Dict[str, Any]:
         """
         Atomically claims an experiment ID with lease TTL, worker ownership, and fencing token.
-        Raises DuplicateCommitError if already committed, or LeaseExpiredError / WorkerOwnershipError on contention.
         """
         if not experiment_id or not isinstance(experiment_id, str) or not experiment_id.strip():
             raise ValueError("EXPERIMENT_ID_REQUIRED: experiment_id must be a non-empty string.")
@@ -166,7 +169,6 @@ class TransactionalResearchRegistry:
             try:
                 conn.execute("BEGIN IMMEDIATE TRANSACTION;")
 
-                # Fetch experiment row with row lock
                 cur = conn.execute("SELECT status, claim_generation FROM research_experiments WHERE experiment_id = ?;", (experiment_id,))
                 row = cur.fetchone()
 
@@ -178,9 +180,12 @@ class TransactionalResearchRegistry:
                         raise DuplicateCommitError(
                             f"TEST SELECTION LOCK: Experiment '{experiment_id}' has already been evaluated and committed. Re-tuning is strictly forbidden."
                         )
+                    if status in ["ABORTED", "REJECTED"]:
+                        raise ResearchRegistryError(
+                            f"EXPERIMENT_CLOSED: Experiment '{experiment_id}' is in terminal state '{status}'."
+                        )
 
                     if status in ["CLAIMED", "EVALUATING"]:
-                        # Check active claim lease
                         claim_cur = conn.execute(
                             "SELECT claim_id, worker_id, lease_expires_at, claim_generation FROM research_claims WHERE experiment_id = ? AND is_reclaimed = 0 ORDER BY claim_generation DESC LIMIT 1;",
                             (experiment_id,)
@@ -192,7 +197,6 @@ class TransactionalResearchRegistry:
                                 f"TEST CLAIM CONFLICT: Experiment '{experiment_id}' is actively claimed by worker '{active_claim['worker_id']}' until {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(active_claim['lease_expires_at']))}."
                             )
 
-                        # Lease expired -> mark old claims reclaimed and increment generation atomically
                         conn.execute("UPDATE research_claims SET is_reclaimed = 1 WHERE experiment_id = ?;", (experiment_id,))
                         new_gen = current_gen + 1
                         updated = conn.execute(
@@ -214,7 +218,6 @@ class TransactionalResearchRegistry:
                         (experiment_id, new_gen, now_ts, now_ts)
                     )
 
-                # Record claim
                 conn.execute(
                     "INSERT INTO research_claims (claim_id, experiment_id, claim_generation, worker_id, node_hostname, process_id, claimed_at, lease_expires_at, is_reclaimed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0);",
                     (claim_id, experiment_id, new_gen, worker, os.uname().nodename if hasattr(os, 'uname') else 'localhost', os.getpid(), now_ts, lease_expiry_ts)
@@ -307,16 +310,20 @@ class TransactionalResearchRegistry:
         claim_generation: int,
         evidence: ResearchEvidence,
         lineage: ResearchLineage,
+        raw_evidence_chain: RawEvidenceChain,
         worker_id: str,
-        raw_evidence_chain: Optional[Dict[str, str]] = None
+        evidence_run_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Durable, atomic commit of research evidence to registry.
-        Fails closed on lease expiry, generation mismatch, or invalid evidence/lineage.
+        Fails closed on lease expiry, generation mismatch, or invalid evidence/lineage/raw-chain.
         """
         now_ts = time.time()
-        content_hash = compute_deterministic_evidence_content_hash(lineage, evidence)
-        raw_chain = raw_evidence_chain or {}
+        if not isinstance(raw_evidence_chain, RawEvidenceChain):
+            raise EvidenceValidationError("RAW_CHAIN_REQUIRED: raw_evidence_chain must be a valid RawEvidenceChain instance.")
+
+        content_hash = compute_deterministic_evidence_content_hash(lineage, raw_evidence_chain, evidence)
+        run_id = evidence_run_id or f"run_{uuid.uuid4().hex[:16]}"
 
         with self._lock:
             conn = self._get_connection()
@@ -359,37 +366,36 @@ class TransactionalResearchRegistry:
                         f"LEASE_EXPIRED_AT_COMMIT: Lease expired at {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(claim['lease_expires_at']))} (now: {time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now_ts))})."
                     )
 
-                # Commit immutable evidence bundle
                 conn.execute(
                     """
                     INSERT INTO research_evidence_bundles (
-                        experiment_id, claim_generation, evidence_content_hash, trade_count,
-                        daily_observation_count, prediction_count, effective_sample_size,
+                        experiment_id, claim_generation, evidence_content_hash, evidence_run_id,
+                        trade_count, daily_observation_count, prediction_count, effective_sample_size,
                         profit_factor_status, gross_profit_factor, net_profit_factor,
                         net_cagr, sharpe, sortino, max_drawdown, turnover_annual, total_costs,
-                        total_gross_pnl, total_net_pnl, pbo, dsr, is_alpha_significant,
-                        has_alpha_decay, raw_evidence_chain_json, lineage_json, metrics_json,
-                        committed_at, committed_by_worker
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                        total_gross_pnl, total_net_pnl, pbo, pbo_status, dsr, dsr_status,
+                        is_alpha_significant, has_alpha_decay, raw_evidence_chain_json,
+                        lineage_json, metrics_json, committed_at, committed_by_worker
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
                     (
-                        experiment_id, claim_generation, content_hash,
+                        experiment_id, claim_generation, content_hash, run_id,
                         evidence.tradeCount, evidence.dailyObservationCount, evidence.predictionCount,
                         evidence.effectiveSampleSize, evidence.profitFactorStatus,
                         evidence.grossProfitFactor, evidence.netProfitFactor,
                         evidence.netCagr, evidence.sharpe, evidence.sortino,
                         evidence.maxDrawdown, evidence.turnoverAnnual, evidence.totalCosts,
-                        evidence.totalGrossPnl, evidence.totalNetPnl, evidence.pbo, evidence.dsr,
+                        evidence.totalGrossPnl, evidence.totalNetPnl,
+                        evidence.pbo, evidence.pboStatus, evidence.dsr, evidence.dsrStatus,
                         1 if evidence.isAlphaSignificant else 0,
                         1 if evidence.hasAlphaDecay else 0,
-                        json.dumps(raw_chain, sort_keys=True),
+                        json.dumps(raw_evidence_chain.to_dict(), sort_keys=True),
                         json.dumps(lineage.to_dict(), sort_keys=True),
                         json.dumps(evidence.to_dict(), sort_keys=True),
                         now_ts, worker_id
                     )
                 )
 
-                # Transition experiment status to COMMITTED
                 conn.execute(
                     "UPDATE research_experiments SET status = 'COMMITTED', updated_at = ? WHERE experiment_id = ?;",
                     (now_ts, experiment_id)
@@ -401,8 +407,9 @@ class TransactionalResearchRegistry:
                     "experimentId": experiment_id,
                     "status": "COMMITTED",
                     "claimGeneration": claim_generation,
+                    "evidenceRunId": run_id,
                     "evidenceContentHash": content_hash,
-                    "rawEvidenceChain": raw_chain,
+                    "rawEvidenceChain": raw_evidence_chain.to_dict(),
                     "lineage": lineage.to_dict(),
                     "evidence": evidence.to_dict(),
                     "committedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts)),
@@ -414,6 +421,26 @@ class TransactionalResearchRegistry:
                 except Exception:
                     pass
                 raise
+            finally:
+                conn.close()
+
+    def abort_experiment(self, experiment_id: str, reason: str = "ABORTED_BY_WORKER") -> None:
+        """Transitions experiment to immutable ABORTED status. Deletion is prohibited."""
+        with self._lock:
+            conn = self._get_connection()
+            try:
+                cur = conn.execute("SELECT status FROM research_experiments WHERE experiment_id = ?;", (experiment_id,))
+                row = cur.fetchone()
+                if not row:
+                    raise ResearchRegistryError(f"Experiment '{experiment_id}' does not exist.")
+                if row["status"] == "COMMITTED":
+                    raise PermissionError(f"Cannot abort already committed experiment '{experiment_id}'.")
+
+                now_ts = time.time()
+                conn.execute(
+                    "UPDATE research_experiments SET status = 'ABORTED', updated_at = ? WHERE experiment_id = ?;",
+                    (now_ts, experiment_id)
+                )
             finally:
                 conn.close()
 
@@ -441,7 +468,7 @@ class TransactionalResearchRegistry:
                 if exp["status"] == "COMMITTED":
                     ev_cur = conn.execute(
                         """
-                        SELECT evidence_content_hash, raw_evidence_chain_json, lineage_json,
+                        SELECT evidence_content_hash, evidence_run_id, raw_evidence_chain_json, lineage_json,
                                metrics_json, committed_at, committed_by_worker
                         FROM research_evidence_bundles WHERE experiment_id = ?;
                         """,
@@ -450,6 +477,7 @@ class TransactionalResearchRegistry:
                     ev_row = ev_cur.fetchone()
                     if ev_row:
                         result["evidenceContentHash"] = ev_row["evidence_content_hash"]
+                        result["evidenceRunId"] = ev_row["evidence_run_id"]
                         result["rawEvidenceChain"] = json.loads(ev_row["raw_evidence_chain_json"])
                         result["lineage"] = json.loads(ev_row["lineage_json"])
                         result["evidence"] = json.loads(ev_row["metrics_json"])
@@ -474,17 +502,7 @@ class TransactionalResearchRegistry:
                 conn.close()
 
     def delete_experiment(self, experiment_id: str) -> None:
-        """Committed experiments cannot be deleted. Deletion is strictly prohibited."""
-        with self._lock:
-            conn = self._get_connection()
-            try:
-                cur = conn.execute("SELECT status FROM research_experiments WHERE experiment_id = ?;", (experiment_id,))
-                row = cur.fetchone()
-                if row and row["status"] == "COMMITTED":
-                    raise PermissionError(
-                        f"IMMUTABLE_EVIDENCE_PROTECTED: Experiment '{experiment_id}' has committed evidence and cannot be deleted."
-                    )
-                conn.execute("DELETE FROM research_claims WHERE experiment_id = ?;", (experiment_id,))
-                conn.execute("DELETE FROM research_experiments WHERE experiment_id = ?;", (experiment_id,))
-            finally:
-                conn.close()
+        """Deletion of registered experiments is prohibited to preserve audit trails."""
+        raise PermissionError(
+            f"EXPERIMENT_DELETION_PROHIBITED: Deletion of experiment '{experiment_id}' is forbidden to preserve research selection trails. Use abort_experiment() instead."
+        )
