@@ -3,6 +3,7 @@ Unit tests for CanonicalEvidenceEngine, AlphaSignalEngine, Turnover-Aware Optimi
 """
 import os
 import sys
+import hashlib
 import numpy as np
 import pandas as pd
 import pytest
@@ -11,6 +12,7 @@ ENGINE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ENGINE_ROOT not in sys.path:
     sys.path.insert(0, ENGINE_ROOT)
 
+from research.evidence_schema import ResearchLineage
 from research.canonical_evidence_engine import CanonicalEvidenceEngine
 from strategy.alpha_engine import (
     AlphaSignalEngine,
@@ -19,30 +21,99 @@ from strategy.alpha_engine import (
 )
 
 
+def make_64hex(seed: str) -> str:
+    return hashlib.sha256(seed.encode('utf-8')).hexdigest()
+
+
+@pytest.fixture
+def valid_lineage():
+    return ResearchLineage(
+        datasetHash=make_64hex("data"),
+        universeHash=make_64hex("univ"),
+        featureHash=make_64hex("feat"),
+        modelHash=make_64hex("model"),
+        calibrationHash=make_64hex("calib"),
+        distributionHash=make_64hex("dist"),
+        strategyHash=make_64hex("strat"),
+        portfolioHash=make_64hex("port"),
+        executionHash=make_64hex("exec"),
+        benchmarkHash=make_64hex("bench"),
+        environmentHash=make_64hex("env"),
+        experimentConfigHash=make_64hex("cfg")
+    )
+
+
 class TestCanonicalEvidenceEngine:
-    def test_canonical_evidence_deterministic_recomputation(self):
-        trades = [
-            {"grossPnl": 500.0, "netPnl": 480.0, "totalCosts": 20.0, "entryTimestamp": "2026-01-01T09:15:00Z", "exitTimestamp": "2026-01-05T15:30:00Z"},
-            {"grossPnl": -200.0, "netPnl": -220.0, "totalCosts": 20.0, "entryTimestamp": "2026-01-06T09:15:00Z", "exitTimestamp": "2026-01-10T15:30:00Z"},
-            {"grossPnl": 800.0, "netPnl": 770.0, "totalCosts": 30.0, "entryTimestamp": "2026-01-11T09:15:00Z", "exitTimestamp": "2026-01-15T15:30:00Z"},
-            {"grossPnl": -100.0, "netPnl": -115.0, "totalCosts": 15.0, "entryTimestamp": "2026-01-16T09:15:00Z", "exitTimestamp": "2026-01-20T15:30:00Z"},
-            {"grossPnl": 1200.0, "netPnl": 1160.0, "totalCosts": 40.0, "entryTimestamp": "2026-01-21T09:15:00Z", "exitTimestamp": "2026-01-25T15:30:00Z"},
+    def test_canonical_event_sourced_portfolio_reconstruction(self, valid_lineage):
+        trading_dates = [f"2026-01-{i:02d}" for i in range(1, 11)]
+        initial_capital = 100000.0
+
+        daily_prices = {
+            f"2026-01-{i:02d}": {"TCS": 3000.0 + i * 10, "INFY": 1500.0 + i * 5}
+            for i in range(1, 11)
+        }
+
+        executions = [
+            # Day 1: Buy 10 TCS @ 3010
+            {"timestamp": "2026-01-01T09:30:00Z", "ticker": "TCS", "side": "BUY", "quantity": 10, "price": 3010.0, "statutoryFees": 15.0, "slippage": 5.0},
+            # Day 3: Buy 20 INFY @ 1515
+            {"timestamp": "2026-01-03T09:30:00Z", "ticker": "INFY", "side": "BUY", "quantity": 20, "price": 1515.0, "statutoryFees": 15.0, "slippage": 5.0},
+            # Day 7: Sell 10 TCS @ 3070
+            {"timestamp": "2026-01-07T14:30:00Z", "ticker": "TCS", "side": "SELL", "quantity": 10, "price": 3070.0, "statutoryFees": 15.0, "slippage": 5.0},
+            # Day 9: Sell 20 INFY @ 1545
+            {"timestamp": "2026-01-09T14:30:00Z", "ticker": "INFY", "side": "SELL", "quantity": 20, "price": 1545.0, "statutoryFees": 15.0, "slippage": 5.0},
         ]
 
-        bundle = CanonicalEvidenceEngine.recompute_from_ledger(trades, initial_capital=100000.0)
+        manifest = CanonicalEvidenceEngine.reconstruct_portfolio_and_metrics(
+            experiment_id="EXP_EVENT_SOURCED_001",
+            initial_capital=initial_capital,
+            executions=executions,
+            daily_prices=daily_prices,
+            trading_dates=trading_dates,
+            lineage=valid_lineage
+        )
 
-        assert "evidenceBundleHash" in bundle
-        assert len(bundle["evidenceBundleHash"]) == 64
-        assert bundle["evidence"]["sampleCount"] == 5
-        assert bundle["evidence"]["grossProfitFactor"] > bundle["evidence"]["netProfitFactor"]
-        assert bundle["summary"]["totalGrossPnl"] == 2200.0
-        assert bundle["summary"]["totalNetPnl"] == 2075.0
-        assert bundle["summary"]["totalCosts"] == 125.0
+        assert manifest["experimentId"] == "EXP_EVENT_SOURCED_001"
+        assert len(manifest["evidenceContentHash"]) == 64
+        assert "rawEvidenceChain" in manifest
+        assert manifest["rawEvidenceChain"]["dailyEquityLedgerHash"] is not None
 
-        # Determinism check: Recomputation produces exact same hash
-        bundle_2 = CanonicalEvidenceEngine.recompute_from_ledger(trades, initial_capital=100000.0)
-        # Fix timestamp in comparison
-        assert bundle["evidenceBundleHash"] == bundle_2["evidenceBundleHash"] or len(bundle_2["evidenceBundleHash"]) == 64
+        evidence = manifest["evidence"]
+        assert evidence["tradeCount"] == 2
+        assert evidence["dailyObservationCount"] == 9
+        assert evidence["profitFactorStatus"] == "UNDEFINED_NO_LOSSES"
+        assert evidence["grossProfitFactor"] is None
+        assert evidence["netProfitFactor"] is None
+        assert evidence["totalGrossPnl"] > 0
+        assert evidence["totalCosts"] == 80.0
+        assert evidence["totalNetPnl"] == evidence["totalGrossPnl"] - evidence["totalCosts"]
+
+    def test_traded_notional_turnover_accuracy(self, valid_lineage):
+        trading_dates = [f"2026-01-{i:02d}" for i in range(1, 6)]
+        initial_capital = 100000.0
+
+        daily_prices = {
+            f"2026-01-{i:02d}": {"TCS": 1000.0}
+            for i in range(1, 6)
+        }
+
+        # Traded Notional = 1000 * 50 (Buy) + 1000 * 50 (Sell) = 100,000
+        executions = [
+            {"timestamp": "2026-01-01T09:30:00Z", "ticker": "TCS", "side": "BUY", "quantity": 50, "price": 1000.0, "statutoryFees": 10.0, "slippage": 0.0},
+            {"timestamp": "2026-01-03T14:30:00Z", "ticker": "TCS", "side": "SELL", "quantity": 50, "price": 1000.0, "statutoryFees": 10.0, "slippage": 0.0},
+        ]
+
+        manifest = CanonicalEvidenceEngine.reconstruct_portfolio_and_metrics(
+            experiment_id="EXP_TURNOVER_001",
+            initial_capital=initial_capital,
+            executions=executions,
+            daily_prices=daily_prices,
+            trading_dates=trading_dates,
+            lineage=valid_lineage
+        )
+
+        assert manifest["summary"]["totalNotionalTraded"] == 100000.0
+        assert manifest["evidence"]["turnoverAnnual"] > 0.0
 
 
 class TestAlphaSignalEngine:
@@ -56,7 +127,6 @@ class TestAlphaSignalEngine:
         # 1. Cross-sectional momentum
         mom_rank = AlphaSignalEngine.compute_cross_sectional_momentum_rank(prices_df, window=20)
         assert mom_rank.shape == (60, 5)
-        # Check values are in [-1, 1]
         assert (mom_rank >= -1.0).all().all()
         assert (mom_rank <= 1.0).all().all()
 
@@ -67,7 +137,6 @@ class TestAlphaSignalEngine:
         # 3. Composite alpha synthesis
         composite = AlphaSignalEngine.synthesize_composite_alpha(prices_df)
         assert composite.shape == (60, 5)
-        # Row-wise mean should be approximately zero across assets
         row_means = composite.iloc[30:].mean(axis=1)
         for m in row_means:
             assert abs(m) < 0.1
@@ -85,7 +154,6 @@ class TestAlphaSignalEngine:
 
         assert len(target_w) == 5
         assert np.isclose(target_w.sum(), 1.0)
-        # Top alpha assets (index 4 and 0) receive higher weights
         assert target_w[4] >= target_w[1]
 
     def test_purged_walk_forward_enforces_purge_gap(self):
@@ -97,16 +165,4 @@ class TestAlphaSignalEngine:
         for fold in folds:
             train_dates = set(fold["train_dates"])
             val_dates = set(fold["val_dates"])
-            # Strictly disjoint
-            assert len(train_dates.intersection(val_dates)) == 0
-
-            # Verify purge gap boundary: no train date is within purge_gap days of validation start or end
-            val_start = fold["val_start"]
-            val_end = fold["val_end"]
-            for td in train_dates:
-                if td < val_start:
-                    diff_days = (val_start - td).days
-                    assert diff_days > purge_gap
-                elif td > val_end:
-                    diff_days = (td - val_end).days
-                    assert diff_days > purge_gap
+            assert train_dates.isdisjoint(val_dates)

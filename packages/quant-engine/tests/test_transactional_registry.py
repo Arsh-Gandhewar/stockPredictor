@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import pytest
+import hashlib
 
 ENGINE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ENGINE_ROOT not in sys.path:
@@ -14,7 +15,8 @@ from research.evidence_schema import (
     ResearchLineage,
     ResearchEvidence,
     EvidenceValidationError,
-    compute_evidence_bundle_hash
+    AccountingInconsistencyError,
+    compute_deterministic_evidence_content_hash
 )
 from research.research_registry import (
     TransactionalResearchRegistry,
@@ -23,6 +25,10 @@ from research.research_registry import (
     StaleGenerationError,
     LeaseExpiredError
 )
+
+
+def make_64hex(seed: str) -> str:
+    return hashlib.sha256(seed.encode('utf-8')).hexdigest()
 
 
 @pytest.fixture
@@ -34,25 +40,29 @@ def ephemeral_registry(tmp_path):
 @pytest.fixture
 def sample_12d_lineage():
     return ResearchLineage(
-        datasetHash="data_sha256_001_nse_daily_eod",
-        universeHash="univ_sha256_002_nifty500_survivorship",
-        featureHash="feat_sha256_003_25_technical_indicators",
-        modelHash="model_sha256_004_lightgbm_regressor_5d",
-        calibrationHash="calib_sha256_005_isotonic_pav_bounds",
-        distributionHash="dist_sha256_006_empirical_returns",
-        strategyHash="strat_sha256_007_cross_sectional_rank",
-        portfolioHash="port_sha256_008_max_sharpe_5pos_capped",
-        executionHash="exec_sha256_009_market_adverse_slippage",
-        benchmarkHash="bench_sha256_010_nifty50_total_return",
-        environmentHash="env_sha256_011_python312_onnx127_linux",
-        experimentConfigHash="cfg_sha256_012_institutional_hyperparams"
+        datasetHash=make_64hex("dataset_nse_eod_v5"),
+        universeHash=make_64hex("universe_nifty500_pit"),
+        featureHash=make_64hex("features_25_indicators"),
+        modelHash=make_64hex("model_onnx_5d_lgbm"),
+        calibrationHash=make_64hex("calibration_isotonic_pav"),
+        distributionHash=make_64hex("distribution_empirical_returns"),
+        strategyHash=make_64hex("strategy_cross_sectional_rank"),
+        portfolioHash=make_64hex("portfolio_max_sharpe_5pos"),
+        executionHash=make_64hex("execution_market_adverse_slippage"),
+        benchmarkHash=make_64hex("benchmark_nifty50_tri"),
+        environmentHash=make_64hex("environment_py312_onnx127"),
+        experimentConfigHash=make_64hex("config_hyperparams_v5")
     )
 
 
 @pytest.fixture
 def sample_evidence():
     return ResearchEvidence(
-        sampleCount=520,
+        tradeCount=45,
+        dailyObservationCount=252,
+        predictionCount=520,
+        effectiveSampleSize=210.5,
+        profitFactorStatus="FINITE",
         grossProfitFactor=2.15,
         netProfitFactor=1.42,
         netCagr=18.4,
@@ -61,11 +71,12 @@ def sample_evidence():
         maxDrawdown=-12.3,
         turnoverAnnual=2.4,
         totalCosts=1420.50,
+        totalGrossPnl=10000.0,
+        totalNetPnl=8579.50,
         pbo=0.18,
         dsr=0.82,
         isAlphaSignificant=True,
         hasAlphaDecay=False,
-        completedAt="2026-09-01T15:00:00Z",
         partition="TEST",
         status="COMMITTED"
     )
@@ -145,9 +156,9 @@ class TestTransactionalResearchRegistry:
         )
         assert committed["status"] == "COMMITTED"
         assert committed["claimGeneration"] == 2
-        assert "evidenceBundleHash" in committed
+        assert "evidenceContentHash" in committed
 
-    def test_committed_experiment_is_permanently_immutable(self, ephemeral_registry, sample_12d_lineage, sample_evidence):
+    def test_committed_experiment_cannot_be_deleted(self, ephemeral_registry, sample_12d_lineage, sample_evidence):
         reg = ephemeral_registry
         exp_id = "EXP_ALPHA_004"
         worker = "worker_node_1:pid_1001"
@@ -162,62 +173,143 @@ class TestTransactionalResearchRegistry:
             worker_id=worker
         )
 
-        # Any attempt to re-claim or re-evaluate is permanently blocked
+        # Attempt to delete committed experiment -> raises PermissionError
+        with pytest.raises(PermissionError):
+            reg.delete_experiment(exp_id)
+
+        # Attempt to re-claim -> DuplicateCommitError
         with pytest.raises(DuplicateCommitError):
             reg.claim_experiment(exp_id, worker_id=worker)
 
 
 class TestEvidenceSchemaValidation:
-    def test_valid_evidence_and_bundle_hashing(self, sample_12d_lineage, sample_evidence):
-        bundle_hash = compute_evidence_bundle_hash(sample_12d_lineage, sample_evidence)
-        assert isinstance(bundle_hash, str)
-        assert len(bundle_hash) == 64
+    def test_valid_evidence_and_content_hashing(self, sample_12d_lineage, sample_evidence):
+        content_hash = compute_deterministic_evidence_content_hash(sample_12d_lineage, sample_evidence)
+        assert isinstance(content_hash, str)
+        assert len(content_hash) == 64
 
-    def test_missing_lineage_dimensions_fails(self):
+    def test_non_64hex_lineage_fails(self):
         with pytest.raises(EvidenceValidationError) as excinfo:
-            ResearchLineage.from_dict({
-                "datasetHash": "data_hash",
-                "universeHash": "univ_hash"
-                # Missing other 10 dimensions
-            })
-        assert "MISSING_LINEAGE_DIMENSIONS" in str(excinfo.value)
-
-    def test_nan_or_inf_metric_fails(self):
-        with pytest.raises(EvidenceValidationError) as excinfo:
-            ResearchEvidence(
-                sampleCount=100,
-                grossProfitFactor=2.0,
-                netProfitFactor=1.5,
-                netCagr=float("nan"),  # Illegal NaN
-                sharpe=1.0,
-                sortino=1.2,
-                maxDrawdown=-5.0,
-                turnoverAnnual=1.0,
-                totalCosts=100.0,
-                pbo=0.2,
-                dsr=0.7,
-                isAlphaSignificant=True,
-                hasAlphaDecay=False,
-                completedAt="2026-09-01T15:00:00Z"
+            ResearchLineage(
+                datasetHash="not_a_64_hex_hash",  # Invalid
+                universeHash=make_64hex("u"),
+                featureHash=make_64hex("f"),
+                modelHash=make_64hex("m"),
+                calibrationHash=make_64hex("c"),
+                distributionHash=make_64hex("d"),
+                strategyHash=make_64hex("s"),
+                portfolioHash=make_64hex("p"),
+                executionHash=make_64hex("e"),
+                benchmarkHash=make_64hex("b"),
+                environmentHash=make_64hex("env"),
+                experimentConfigHash=make_64hex("cfg")
             )
-        assert "EVIDENCE_FINITE_ERROR" in str(excinfo.value)
+        assert "LINEAGE_HASH_INVALID" in str(excinfo.value)
 
-    def test_unphysical_profit_factor_fails(self):
-        with pytest.raises(EvidenceValidationError) as excinfo:
+    def test_zero_losses_profit_factor_is_none(self, sample_12d_lineage):
+        ev = ResearchEvidence(
+            tradeCount=10,
+            dailyObservationCount=50,
+            predictionCount=50,
+            effectiveSampleSize=48.0,
+            profitFactorStatus="UNDEFINED_NO_LOSSES",
+            grossProfitFactor=None,
+            netProfitFactor=None,
+            netCagr=15.0,
+            sharpe=1.2,
+            sortino=1.5,
+            maxDrawdown=-2.0,
+            turnoverAnnual=1.0,
+            totalCosts=50.0,
+            totalGrossPnl=500.0,
+            totalNetPnl=450.0,
+            pbo=0.1,
+            dsr=0.9,
+            isAlphaSignificant=True,
+            hasAlphaDecay=False,
+            partition="TEST",
+            status="COMMITTED"
+        )
+        assert ev.grossProfitFactor is None
+        assert ev.netProfitFactor is None
+
+    def test_unphysical_profit_factor_raises_inconsistency_error(self):
+        with pytest.raises(AccountingInconsistencyError) as excinfo:
             ResearchEvidence(
-                sampleCount=100,
+                tradeCount=10,
+                dailyObservationCount=50,
+                predictionCount=50,
+                effectiveSampleSize=48.0,
+                profitFactorStatus="FINITE",
                 grossProfitFactor=1.2,
-                netProfitFactor=1.8,  # Net PF > Gross PF is impossible with positive friction
+                netProfitFactor=1.8,  # Net PF > Gross PF
                 netCagr=10.0,
                 sharpe=1.0,
                 sortino=1.2,
                 maxDrawdown=-5.0,
                 turnoverAnnual=1.0,
                 totalCosts=100.0,
+                totalGrossPnl=1000.0,
+                totalNetPnl=900.0,
                 pbo=0.2,
                 dsr=0.7,
                 isAlphaSignificant=True,
                 hasAlphaDecay=False,
-                completedAt="2026-09-01T15:00:00Z"
+                partition="TEST",
+                status="COMMITTED"
             )
-        assert "EVIDENCE_PF_INCONSISTENCY" in str(excinfo.value)
+        assert "INCONSISTENT_PROFIT_FACTOR" in str(excinfo.value)
+
+    def test_pnl_mismatch_raises_accounting_error(self):
+        with pytest.raises(AccountingInconsistencyError) as excinfo:
+            ResearchEvidence(
+                tradeCount=10,
+                dailyObservationCount=50,
+                predictionCount=50,
+                effectiveSampleSize=48.0,
+                profitFactorStatus="FINITE",
+                grossProfitFactor=1.5,
+                netProfitFactor=1.3,
+                netCagr=10.0,
+                sharpe=1.0,
+                sortino=1.2,
+                maxDrawdown=-5.0,
+                turnoverAnnual=1.0,
+                totalCosts=100.0,
+                totalGrossPnl=1000.0,
+                totalNetPnl=500.0,  # Expected 900.0 (1000 - 100)
+                pbo=0.2,
+                dsr=0.7,
+                isAlphaSignificant=True,
+                hasAlphaDecay=False,
+                partition="TEST",
+                status="COMMITTED"
+            )
+        assert "ACCOUNTING_PNL_MISMATCH" in str(excinfo.value)
+
+    def test_strict_from_dict_rejects_coercion(self):
+        with pytest.raises(EvidenceValidationError) as excinfo:
+            ResearchEvidence.from_dict({
+                "tradeCount": 10,
+                "dailyObservationCount": 50,
+                "predictionCount": 50,
+                "effectiveSampleSize": 48.0,
+                "profitFactorStatus": "FINITE",
+                "grossProfitFactor": 1.5,
+                "netProfitFactor": 1.3,
+                "netCagr": 10.0,
+                "sharpe": 1.0,
+                "sortino": 1.2,
+                "maxDrawdown": -5.0,
+                "turnoverAnnual": 1.0,
+                "totalCosts": 100.0,
+                "totalGrossPnl": 1000.0,
+                "totalNetPnl": 900.0,
+                "pbo": 0.2,
+                "dsr": 0.7,
+                "isAlphaSignificant": "true",  # String instead of boolean -> rejected
+                "hasAlphaDecay": False,
+                "partition": "TEST",
+                "status": "COMMITTED"
+            })
+        assert "TYPE_ERROR" in str(excinfo.value)

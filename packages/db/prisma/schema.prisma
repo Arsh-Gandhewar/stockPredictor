@@ -503,36 +503,43 @@ model ResearchClaim {
   claimedAt       DateTime           @default(now())
   leaseExpiresAt  DateTime
   isReclaimed     Boolean            @default(false)
-  experiment      ResearchExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  experiment      ResearchExperiment @relation(fields: [experimentId], references: [id], onDelete: Restrict)
 
   @@index([experimentId, isReclaimed])
   @@index([leaseExpiresAt])
 }
 
 model ResearchEvidenceBundle {
-  id                 String             @id @default(cuid())
-  experimentId       String             @unique
-  claimGeneration    Int
-  evidenceBundleHash String             @unique
-  sampleCount        Int
-  grossProfitFactor  Float
-  netProfitFactor    Float
-  netCagr            Float
-  sharpe             Float
-  sortino            Float
-  maxDrawdown        Float
-  turnoverAnnual     Float
-  totalCosts         Float
-  pbo                Float
-  dsr                Float
-  isAlphaSignificant Boolean
-  hasAlphaDecay      Boolean
-  lineage            Json
-  metrics            Json
-  committedAt        DateTime           @default(now())
-  committedByWorker  String
-  experiment         ResearchExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  id                    String             @id @default(cuid())
+  experimentId          String             @unique
+  claimGeneration       Int
+  evidenceContentHash   String             @unique
+  tradeCount            Int
+  dailyObservationCount Int
+  predictionCount       Int
+  effectiveSampleSize   Float
+  profitFactorStatus    String
+  grossProfitFactor     Float?
+  netProfitFactor       Float?
+  netCagr               Float
+  sharpe                Float
+  sortino               Float
+  maxDrawdown           Float
+  turnoverAnnual        Float
+  totalCosts            Float
+  totalGrossPnl         Float
+  totalNetPnl           Float
+  pbo                   Float
+  dsr                   Float
+  isAlphaSignificant    Boolean
+  hasAlphaDecay         Boolean
+  rawEvidenceChain      Json
+  lineage               Json
+  metrics               Json
+  committedAt           DateTime           @default(now())
+  committedByWorker     String
+  experiment            ResearchExperiment @relation(fields: [experimentId], references: [id], onDelete: Restrict)
 
-  @@index([evidenceBundleHash])
+  @@index([evidenceContentHash])
 }
 
