@@ -1,7 +1,6 @@
 {
   "auditRunId": "audit_1787844602",
   "auditTimestamp": "2026-08-31T03:30:00Z",
-  "gitSha": "DYNAMIC_HEAD",
   "auditorVersion": "v5.0.0-independent-quant-auditor",
   "status": "PASSED",
   "technicalMethodStatus": "PASS",
@@ -230,7 +229,5 @@
     "profitFactor": 0.99,
     "totalTrades": 498,
     "costDrag": 141700.83
-  },
-  "treeSha": "DYNAMIC_TREE",
-  "attestationMode": "POST_BUILD_BOUND"
+  }
 }

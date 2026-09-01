@@ -1,7 +1,6 @@
 {
   "manifestVersion": "1.0.0",
   "generatedAt": "2026-08-31T03:30:00.000Z",
-  "gitSha": "DYNAMIC_HEAD",
   "lineage": {
     "datasetHash": "2a1535660daf6294522253eb5a70c97cd60a1624cebb2b19ad4d60ffdf6dbd3e",
     "universeHash": "26b1ed4a3131708ef778c27fa8745728d22ca497d94c63ae1cec6766769461d3",
@@ -30,7 +29,5 @@
     "runtimeParityStatus": "PASS",
     "productionReady": false,
     "governanceReason": "Empirical Net Realizable CAGR of 2.73% is below institutional hurdle of 5.0%. Production gate strictly locked."
-  },
-  "treeSha": "DYNAMIC_TREE",
-  "attestationMode": "POST_BUILD_BOUND"
+  }
 }

@@ -1,7 +1,6 @@
 {
   "manifestVersion": "1.0.0",
   "generatedAt": "2026-08-31T03:30:00.000Z",
-  "gitSha": "DYNAMIC_HEAD",
   "modelVersion": "5.0.0",
   "returnModelVersion": "v5.0.0-empirical-quantiles",
   "featureVersion": "v5.0.0-multi-factor-25",
@@ -38,7 +37,5 @@
       "20d"
     ]
   },
-  "runtimeManifestHash": "27db4d2625291e1d0f507b9a5fe3509bc489e224e757d5940e4f3a74347dd9c7",
-  "treeSha": "DYNAMIC_TREE",
-  "attestationMode": "POST_BUILD_BOUND"
+  "runtimeManifestHash": "27db4d2625291e1d0f507b9a5fe3509bc489e224e757d5940e4f3a74347dd9c7"
 }

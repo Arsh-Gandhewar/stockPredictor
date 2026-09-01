@@ -80,7 +80,8 @@ In accordance with the **BUG 5 Master Repair Mandate**, the QuantX repository ha
 
 ### Complete Invariant Resolutions:
 1. **Manifest Attestation & Lineage Separation (🔴 P0 / 🔴 P1 — Issues 1 & 9)**:
-   - Synchronized cryptographic lineage (`gitSha` and `treeSha`) across in-tree manifests and release certification bundles in `dist/certification/`.
+   - Completely removed self-referential `treeSha` and `gitSha` fields from in-tree declarative manifest specifications (`quantx-production-manifest.json`, `quantx_runtime_manifest.json`, `audit-results.json`).
+   - Implemented the post-commit external release attestation architecture (`dist/certification/quantx-attestation.json`) generated outside the source tree, anchoring immutable commit SHA and tree SHA to CI/release execution evidence.
 2. **Standardized Gross vs Net Profit Factor Reconciliation (🔴 P0 — Issue 2)**:
    - Upgraded `IndependentMetricsEngine` to compute and export both `grossProfitFactor` (pre-friction: 6.285) and `netProfitFactor` (post-statutory taxes & slippage: 1.17 / 0.99) explicitly, eliminating single-field ambiguity across research and audit reports.
 3. **Statistical Governance & Gatekeeping (🔴 P0 / 🔴 P1 — Issues 3, 4, 5, 6, 8)**:

@@ -149,7 +149,6 @@ class TestBug5ArtifactLineage:
             manifest = json.load(f)
 
         required_keys = [
-            "gitSha",
             "modelVersion",
             "returnModelVersion",
             "featureVersion",
@@ -171,6 +170,19 @@ class TestBug5ArtifactLineage:
         assert len(lineage["modelHash"]) == 64
         assert len(lineage["executionHash"]) == 64
         assert len(lineage["environmentHash"]) == 64
+
+    def test_05b_post_commit_external_attestation_architecture(self):
+        """Attestation must live outside in-tree content to preserve sound non-circular Merkle tree provenance."""
+        repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        in_tree_prod = os.path.join(repo_root, "quantx-production-manifest.json")
+        in_tree_runtime = os.path.join(repo_root, "packages", "quant-engine", "research", "quantx_runtime_manifest.json")
+        in_tree_audit = os.path.join(repo_root, "audit-results.json")
+
+        for p in [in_tree_prod, in_tree_runtime, in_tree_audit]:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            assert "treeSha" not in data, f"In-tree file {p} must not contain self-referential treeSha"
+            assert "gitSha" not in data, f"In-tree file {p} must not contain self-referential gitSha"
 
     def test_06_stale_artifact_rejection(self):
         """An artifact with an outdated gitSha must be flagged as STALE_ARTIFACT."""

@@ -56,16 +56,25 @@ function syncManifests(isVerifyOnly = false) {
     if (runtimeManifest.lineageHashes.featureHash !== featureSchemaHash) {
       mismatches.push('Runtime manifest featureHash != canonical_features.json hash');
     }
+    if ('gitSha' in prodManifest || 'treeSha' in prodManifest) {
+      mismatches.push('In-tree quantx-production-manifest.json must not contain self-referential gitSha/treeSha');
+    }
+    if ('gitSha' in runtimeManifest || 'treeSha' in runtimeManifest) {
+      mismatches.push('In-tree quantx_runtime_manifest.json must not contain self-referential gitSha/treeSha');
+    }
+    if ('gitSha' in auditResults || 'treeSha' in auditResults) {
+      mismatches.push('In-tree audit-results.json must not contain self-referential gitSha/treeSha');
+    }
 
     const certDir = path.join(repoRoot, 'dist', 'certification');
-    const certProdPath = path.join(certDir, 'quantx-production-manifest.json');
-    if (fs.existsSync(certProdPath)) {
-      const certProd = JSON.parse(fs.readFileSync(certProdPath, 'utf-8'));
-      if (certProd.gitSha !== headSha) {
-        mismatches.push(`Certified release manifest gitSha (${certProd.gitSha}) != HEAD (${headSha})`);
+    const attestationPath = path.join(certDir, 'quantx-attestation.json');
+    if (fs.existsSync(attestationPath)) {
+      const attestation = JSON.parse(fs.readFileSync(attestationPath, 'utf-8'));
+      if (attestation.target.gitSha !== headSha) {
+        mismatches.push(`Certified release attestation gitSha (${attestation.target.gitSha}) != HEAD (${headSha})`);
       }
-      if (certProd.treeSha !== treeSha) {
-        mismatches.push(`Certified release manifest treeSha (${certProd.treeSha}) != HEAD tree (${treeSha})`);
+      if (attestation.target.treeSha !== treeSha) {
+        mismatches.push(`Certified release attestation treeSha (${attestation.target.treeSha}) != HEAD tree (${treeSha})`);
       }
     }
 
@@ -73,41 +82,50 @@ function syncManifests(isVerifyOnly = false) {
       console.error('[sync-manifests] Verification FAILED:\n' + mismatches.join('\n'));
       process.exit(1);
     }
-    console.log('[sync-manifests] All manifests and lineage hashes verified successfully.');
+    console.log('[sync-manifests] All in-tree specifications and external release attestations verified successfully.');
     return;
   }
 
-  // 1. Maintain in-tree declarative manifest specifications
-  prodManifest.gitSha = 'DYNAMIC_HEAD';
-  prodManifest.treeSha = 'DYNAMIC_TREE';
-  prodManifest.attestationMode = 'POST_BUILD_BOUND';
+  // 1. In-tree specifications: pure declarative content hashes without self-referential tree/git SHA
+  delete prodManifest.gitSha;
+  delete prodManifest.treeSha;
+  delete prodManifest.attestationMode;
   prodManifest.lineage.featureHash = featureSchemaHash;
   fs.writeFileSync(prodManifestPath, JSON.stringify(prodManifest, null, 2) + '\n', 'utf-8');
 
-  runtimeManifest.gitSha = 'DYNAMIC_HEAD';
-  runtimeManifest.treeSha = 'DYNAMIC_TREE';
-  runtimeManifest.attestationMode = 'POST_BUILD_BOUND';
+  delete runtimeManifest.gitSha;
+  delete runtimeManifest.treeSha;
+  delete runtimeManifest.attestationMode;
   runtimeManifest.lineageHashes.featureHash = featureSchemaHash;
   fs.writeFileSync(runtimeManifestPath, JSON.stringify(runtimeManifest, null, 2) + '\n', 'utf-8');
 
-  auditResults.gitSha = 'DYNAMIC_HEAD';
-  auditResults.treeSha = 'DYNAMIC_TREE';
-  auditResults.attestationMode = 'POST_BUILD_BOUND';
+  delete auditResults.gitSha;
+  delete auditResults.treeSha;
+  delete auditResults.attestationMode;
   fs.writeFileSync(auditResultsPath, JSON.stringify(auditResults, null, 2) + '\n', 'utf-8');
 
-  // 2. Emit immutable release certification attestation bundle into dist/certification/
+  // 2. External release attestation: generated post-commit in dist/certification/ outside the source tree
   const certDir = path.join(repoRoot, 'dist', 'certification');
   if (!fs.existsSync(certDir)) {
     fs.mkdirSync(certDir, { recursive: true });
   }
 
-  const certifiedProdManifest = { ...prodManifest, gitSha: headSha, treeSha: treeSha, attestationMode: 'CERTIFIED_RELEASE' };
-  const certifiedAuditResults = { ...auditResults, gitSha: headSha, treeSha: treeSha, attestationMode: 'CERTIFIED_RELEASE' };
+  const attestationRecord = {
+    attestationSchema: '1.0.0',
+    attestedAt: new Date().toISOString(),
+    target: {
+      gitSha: headSha,
+      treeSha: treeSha
+    },
+    lineageHashes: {
+      ...prodManifest.lineage,
+      featureHash: featureSchemaHash
+    },
+    certification: prodManifest.certification
+  };
 
-  fs.writeFileSync(path.join(certDir, 'audit-results.json'), JSON.stringify(certifiedAuditResults, null, 2) + '\n', 'utf-8');
-  fs.writeFileSync(path.join(certDir, 'quantx-production-manifest.json'), JSON.stringify(certifiedProdManifest, null, 2) + '\n', 'utf-8');
-
-  console.log('[sync-manifests] Successfully synchronized in-tree manifests and generated release attestation bound to gitSha ' + headSha + ' and treeSha ' + treeSha + '.');
+  fs.writeFileSync(path.join(certDir, 'quantx-attestation.json'), JSON.stringify(attestationRecord, null, 2) + '\n', 'utf-8');
+  console.log('[sync-manifests] In-tree manifests maintained purely declarative. Generated external release attestation in dist/certification/quantx-attestation.json for commit ' + headSha + ' (tree ' + treeSha + ').');
 }
 
 const isVerify = process.argv.includes('--verify');
