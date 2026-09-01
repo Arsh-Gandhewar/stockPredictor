@@ -468,3 +468,71 @@ enum ModelStatus {
   DEPRECATED
   DEGRADED
 }
+
+enum ExperimentStatus {
+  AVAILABLE
+  CLAIMED
+  EVALUATING
+  COMMITTED
+  EXPIRED
+  ABORTED
+}
+
+model ResearchExperiment {
+  id              String           @id @default(cuid())
+  experimentId    String           @unique
+  status          ExperimentStatus @default(AVAILABLE)
+  claimGeneration Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  claims   ResearchClaim[]
+  evidence ResearchEvidenceBundle?
+
+  @@index([status])
+}
+
+model ResearchClaim {
+  id              String             @id @default(cuid())
+  experimentId    String
+  claimId         String             @unique
+  claimGeneration Int
+  workerId        String
+  nodeHostname    String?
+  processId       Int?
+  claimedAt       DateTime           @default(now())
+  leaseExpiresAt  DateTime
+  isReclaimed     Boolean            @default(false)
+  experiment      ResearchExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([experimentId, isReclaimed])
+  @@index([leaseExpiresAt])
+}
+
+model ResearchEvidenceBundle {
+  id                 String             @id @default(cuid())
+  experimentId       String             @unique
+  claimGeneration    Int
+  evidenceBundleHash String             @unique
+  sampleCount        Int
+  grossProfitFactor  Float
+  netProfitFactor    Float
+  netCagr            Float
+  sharpe             Float
+  sortino            Float
+  maxDrawdown        Float
+  turnoverAnnual     Float
+  totalCosts         Float
+  pbo                Float
+  dsr                Float
+  isAlphaSignificant Boolean
+  hasAlphaDecay      Boolean
+  lineage            Json
+  metrics            Json
+  committedAt        DateTime           @default(now())
+  committedByWorker  String
+  experiment         ResearchExperiment @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+
+  @@index([evidenceBundleHash])
+}
+
