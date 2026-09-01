@@ -358,15 +358,33 @@ export class PortfolioService {
       const costExecution = this.costEngine.calculateSellExecution(pos.quantity, currentPrice);
       const executionTimestamp = new Date();
 
-      // Canonical Risk Trigger Event Identifier represents the discrete state transition on the position's risk lifecycle
-      // (position ID + position risk epoch + trigger type) rather than mutable market quote prices or worker polling timestamps.
+      // 1. Economic Trigger Identity: Invariant position risk lifecycle state transition
       const positionRiskEpoch = pos.createdAt ? new Date(pos.createdAt).toISOString() : (pos.updatedAt ? new Date(pos.updatedAt).toISOString() : '0');
       const triggerEventId = `RISK_EVENT_${pos.id}_${positionRiskEpoch}_${reason}`;
-      const idempotencyKey = triggerEventId;
+      const economicTriggerIdentity = `POSITION:${pos.id}:TICKER:${pos.stock.ticker}:QTY:${pos.quantity}:AVG_BUY:${pos.avgBuyPrice}:REASON:${reason}:EPOCH:${positionRiskEpoch}`;
       const canonicalPayloadHash = crypto
         .createHash('sha256')
-        .update(`POSITION:${pos.id}:TICKER:${pos.stock.ticker}:QTY:${pos.quantity}:AVG_BUY:${pos.avgBuyPrice}:REASON:${reason}:EPOCH:${positionRiskEpoch}`)
+        .update(economicTriggerIdentity)
         .digest('hex');
+
+      // 2. Execution Request Fingerprint: Specific market pricing observation and adverse execution parameters
+      const executionRequestPayload = JSON.stringify({
+        triggerEventId,
+        ticker: pos.stock.ticker,
+        quantity: pos.quantity,
+        observedPrice: currentPrice,
+        executionPrice: costExecution.executionPrice,
+        fees: costExecution.fees,
+        slippage: costExecution.slippage,
+        quoteTimestamp: quoteTimestamp.toISOString(),
+        executionTimestamp: executionTimestamp.toISOString(),
+      });
+      const executionRequestHash = crypto
+        .createHash('sha256')
+        .update(executionRequestPayload)
+        .digest('hex');
+
+      const idempotencyKey = triggerEventId;
 
       try {
         const tradeResult = await this.db.client.$transaction(async (tx) => {
@@ -457,6 +475,8 @@ export class PortfolioService {
               transactionId: txRecord.id,
               completedAt: executionTimestamp,
               result: {
+                triggerEventId,
+                executionRequestHash,
                 stock: pos.stock.ticker,
                 quantity: pos.quantity,
                 quotePrice: currentPrice,
