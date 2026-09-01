@@ -359,9 +359,10 @@ export class PortfolioService {
       const executionTimestamp = new Date();
 
       // 1. Economic Trigger Identity: Invariant position risk lifecycle state transition
-      const positionRiskEpoch = pos.createdAt ? new Date(pos.createdAt).toISOString() : (pos.updatedAt ? new Date(pos.updatedAt).toISOString() : '0');
+      const positionRiskEpoch = pos.updatedAt ? new Date(pos.updatedAt).toISOString() : '0';
+      const avgPrice = pos.averagePrice ? Number(pos.averagePrice) : 0;
       const triggerEventId = `RISK_EVENT_${pos.id}_${positionRiskEpoch}_${reason}`;
-      const economicTriggerIdentity = `POSITION:${pos.id}:TICKER:${pos.stock.ticker}:QTY:${pos.quantity}:AVG_BUY:${pos.avgBuyPrice}:REASON:${reason}:EPOCH:${positionRiskEpoch}`;
+      const economicTriggerIdentity = `POSITION:${pos.id}:TICKER:${pos.stock.ticker}:QTY:${pos.quantity}:AVG_PRICE:${avgPrice}:REASON:${reason}:EPOCH:${positionRiskEpoch}`;
       const canonicalPayloadHash = crypto
         .createHash('sha256')
         .update(economicTriggerIdentity)
@@ -374,7 +375,7 @@ export class PortfolioService {
         quantity: pos.quantity,
         observedPrice: currentPrice,
         executionPrice: costExecution.executionPrice,
-        fees: costExecution.fees,
+        statutoryFees: costExecution.statutoryFees,
         slippage: costExecution.slippage,
         quoteTimestamp: quoteTimestamp.toISOString(),
         executionTimestamp: executionTimestamp.toISOString(),
