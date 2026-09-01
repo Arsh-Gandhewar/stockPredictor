@@ -357,12 +357,15 @@ export class PortfolioService {
       // Calculate side-specific execution costs (brokerage, STT, exchange, GST, sebi, slippage)
       const costExecution = this.costEngine.calculateSellExecution(pos.quantity, currentPrice);
       const executionTimestamp = new Date();
-      // Event-based idempotency key bound to the discrete economic trigger event and timestamp
-      const triggerEventId = `EVENT_${reason}_${pos.id}_${pos.stock.ticker}_${currentPrice}_${quoteTimestamp.toISOString()}`;
+
+      // Canonical Risk Trigger Event Identifier represents the discrete state transition on the position's risk lifecycle
+      // (position ID + position risk epoch + trigger type) rather than mutable market quote prices or worker polling timestamps.
+      const positionRiskEpoch = pos.createdAt ? new Date(pos.createdAt).toISOString() : (pos.updatedAt ? new Date(pos.updatedAt).toISOString() : '0');
+      const triggerEventId = `RISK_EVENT_${pos.id}_${positionRiskEpoch}_${reason}`;
       const idempotencyKey = triggerEventId;
       const canonicalPayloadHash = crypto
         .createHash('sha256')
-        .update(`${pos.id}:${pos.stock.ticker}:${pos.quantity}:${currentPrice}:${costExecution.executionPrice}:${reason}:${quoteTimestamp.toISOString()}`)
+        .update(`POSITION:${pos.id}:TICKER:${pos.stock.ticker}:QTY:${pos.quantity}:AVG_BUY:${pos.avgBuyPrice}:REASON:${reason}:EPOCH:${positionRiskEpoch}`)
         .digest('hex');
 
       try {
