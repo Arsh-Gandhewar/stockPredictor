@@ -127,6 +127,14 @@ export class StockService {
     }, 60_000);
   }
 
+  onModuleInit() {
+    // Warm up market summary and movers in background on startup
+    setTimeout(() => {
+      this.getMarketSummary().catch(() => {});
+      this.getMarketMovers().catch(() => {});
+    }, 500);
+  }
+
   private getCached<T>(key: string): T | null {
     const cached = this.cache.get(key);
     if (cached && cached.expiresAt > Date.now()) return cached.data as T;
@@ -139,7 +147,7 @@ export class StockService {
 
   private getCacheTtl(): number {
     const status = this.marketProvider.getMarketStatus();
-    return status.status === 'OPEN' ? 5_000 : 30_000; // 5s during market, 30s otherwise
+    return status.status === 'OPEN' ? 20_000 : 60_000; // 20s during market, 60s otherwise
   }
 
   async getMarketSummary(): Promise<MarketIndexBenchmark[]> {
@@ -212,20 +220,20 @@ export class StockService {
     const cached = this.getCached<any>('market-movers');
     if (cached) return cached;
 
-    // Scan top universe leaders for real-time movers
-    const scanUniverse = this.marketProvider.getUniverse().slice(0, 35);
+    // Scan top liquid universe leaders for real-time movers
+    const scanUniverse = this.marketProvider.getUniverse().slice(0, 20);
     const quotes = await this.getQuotes(scanUniverse.map((s) => s.ticker));
 
     const sortedByChange = [...quotes].sort((a, b) => b.changePercent - a.changePercent);
     const sortedByVolume = [...quotes].sort((a, b) => (b.volume || 0) - (a.volume || 0));
 
     const result = {
-      gainers: sortedByChange.slice(0, 10),
-      losers: [...sortedByChange].reverse().slice(0, 10),
-      mostActive: sortedByVolume.slice(0, 10),
+      gainers: sortedByChange.slice(0, 8),
+      losers: [...sortedByChange].reverse().slice(0, 8),
+      mostActive: sortedByVolume.slice(0, 8),
     };
 
-    this.setCache('market-movers', result, this.getCacheTtl());
+    this.setCache('market-movers', result, 45_000);
     return result;
   }
 

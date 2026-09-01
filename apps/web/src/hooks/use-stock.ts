@@ -226,8 +226,8 @@ export function usePrediction(ticker: string) {
     queryKey: ['quant-prediction', ticker],
     queryFn: () => fetchPrediction(ticker),
     enabled: !!ticker,
-    refetchInterval: 5000,
-    staleTime: 3000,
+    refetchInterval: 60000,
+    staleTime: 30000,
   });
 }
 
@@ -235,8 +235,8 @@ export function useTopRankedPredictions() {
   return useQuery({
     queryKey: ['quant-top-ranked'],
     queryFn: () => fetchTopRankedPredictions(),
-    refetchInterval: 5000,
-    staleTime: 3000,
+    refetchInterval: 120000,
+    staleTime: 60000,
   });
 }
 
@@ -244,8 +244,8 @@ export function useHighRiskPredictions() {
   return useQuery({
     queryKey: ['quant-high-risk'],
     queryFn: () => fetchHighRiskPredictions(),
-    refetchInterval: 5000,
-    staleTime: 3000,
+    refetchInterval: 120000,
+    staleTime: 60000,
   });
 }
 
@@ -253,8 +253,8 @@ export function useMarketRegime() {
   return useQuery({
     queryKey: ['quant-regime'],
     queryFn: () => fetchMarketRegime(),
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 60000,
+    staleTime: 30000,
   });
 }
 
@@ -262,8 +262,8 @@ export function useModelStatus() {
   return useQuery({
     queryKey: ['quant-model-status'],
     queryFn: () => fetchModelStatus(),
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: 120000,
+    staleTime: 60000,
   });
 }
 
@@ -319,8 +319,8 @@ export function useTopPicks() {
       }
       return fetcher<TopPickItem[]>('/stock/top-picks');
     },
-    refetchInterval: 15000,
-    staleTime: 10000,
+    refetchInterval: 120000,
+    staleTime: 60000,
   });
 }
 
@@ -357,8 +357,8 @@ export function useHighRiskStocks() {
       }
       return fetcher<HighRiskStockItem[]>('/stock/high-risk-high-reward');
     },
-    refetchInterval: 15000,
-    staleTime: 10000,
+    refetchInterval: 120000,
+    staleTime: 60000,
   });
 }
 
@@ -368,8 +368,8 @@ export function useMarketSummary() {
   return useQuery({
     queryKey: ['market-summary'],
     queryFn: () => fetcher<MarketIndex[]>('/stock/market-summary'),
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 }
 
@@ -377,8 +377,8 @@ export function useMarketStatus() {
   return useQuery({
     queryKey: ['market-status'],
     queryFn: () => fetcher<MarketStatusInfo>('/stock/market-status'),
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: 60000,
+    staleTime: 30000,
   });
 }
 
@@ -386,8 +386,8 @@ export function useMarketMovers() {
   return useQuery({
     queryKey: ['market-movers'],
     queryFn: () => fetcher<MarketMovers>('/stock/movers'),
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 45000,
+    staleTime: 20000,
   });
 }
 

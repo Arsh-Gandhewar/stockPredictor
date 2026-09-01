@@ -82,9 +82,25 @@ export class QuantPredictionService implements OnModuleInit {
     private readonly scorecardService: ProductionScorecardService
   ) {}
 
+  private inFlightUniversePromise: Promise<StockPrediction[]> | null = null;
+
   onModuleInit() {
     this.logger.log('QuantPredictionService v5.0 initializing ONNX models & statistical governance...');
     this.refreshArtifactGovernance();
+
+    // Warm up universe predictions in background so initial web requests respond instantaneously
+    setTimeout(() => {
+      this.getUniversePredictions().catch((err) =>
+        this.logger.warn(`Initial universe predictions warmup: ${err.message}`)
+      );
+    }, 500);
+
+    // Refresh universe predictions in background every 2 minutes
+    setInterval(() => {
+      this.getUniversePredictions().catch((err) =>
+        this.logger.warn(`Automated universe predictions refresh: ${err.message}`)
+      );
+    }, 120_000);
   }
 
   /**
@@ -232,7 +248,7 @@ export class QuantPredictionService implements OnModuleInit {
 
     let benchmarkCandles: any[] = [];
     try {
-      benchmarkCandles = await this.marketProvider.getHistoricalCandles('^NSEI', '6mo');
+      benchmarkCandles = await this.stockService.getChartData('^NSEI', '6mo').catch(() => []);
     } catch {}
 
     const features = this.featureEngine.calculateFeatures(
@@ -468,43 +484,63 @@ export class QuantPredictionService implements OnModuleInit {
       return cached.data as unknown as StockPrediction[];
     }
 
-    const scanList = [
-      'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ITC.NS', 'HINDUNILVR.NS',
-      'SUNPHARMA.NS', 'BHARTIARTL.NS', 'LT.NS', 'MARUTI.NS', 'NESTLEIND.NS',
-      'BRITANNIA.NS', 'CIPLA.NS', 'KOTAKBANK.NS', 'TITAN.NS', 'ASIANPAINT.NS',
-      'POWERGRID.NS', 'NTPC.NS', 'ULTRACEMCO.NS', 'RELIANCE.NS', 'BAJAJ-AUTO.NS',
-      'ADANIENT.NS', 'TATASTEEL.NS', 'JSWSTEEL.NS', 'HINDALCO.NS', 'VEDL.NS',
-      'SUZLON.NS', 'ZOMATO.NS', 'BHEL.NS', 'DIXON.NS', 'POLICYBZR.NS',
-      'BEL.NS', 'HAL.NS', 'TRENT.NS', 'TATAMOTORS.NS', 'COALINDIA.NS',
-      'IREDA.NS', 'MAZDOCK.NS', 'COCHINSHIP.NS', 'YESBANK.NS', 'BPCL.NS',
-    ];
+    // Share active in-flight evaluation across concurrent requests
+    if (this.inFlightUniversePromise) {
+      return this.inFlightUniversePromise;
+    }
 
-    const results = await Promise.allSettled(
-      scanList.map((ticker) => this.getPrediction(ticker))
-    );
+    this.inFlightUniversePromise = (async () => {
+      try {
+        // Pre-warm benchmark chart into memory
+        await this.stockService.getChartData('^NSEI', '6mo').catch(() => []);
 
-    const predictions: StockPrediction[] = results
-      .filter((r): r is PromiseFulfilledResult<StockPrediction> => r.status === 'fulfilled')
-      .map((r) => r.value);
+        const scanList = [
+          'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ITC.NS',
+          'HINDUNILVR.NS', 'SUNPHARMA.NS', 'BHARTIARTL.NS', 'LT.NS', 'MARUTI.NS',
+          'NESTLEIND.NS', 'BRITANNIA.NS', 'CIPLA.NS', 'KOTAKBANK.NS', 'TITAN.NS',
+          'ASIANPAINT.NS', 'POWERGRID.NS', 'NTPC.NS', 'ULTRACEMCO.NS', 'BAJAJ-AUTO.NS',
+          'TATASTEEL.NS', 'JSWSTEEL.NS', 'HINDALCO.NS', 'BEL.NS', 'HAL.NS',
+          'TRENT.NS', 'TATAMOTORS.NS', 'COALINDIA.NS', 'ZOMATO.NS', 'DIXON.NS'
+        ];
 
-    predictions.sort(
-      (a, b) => b.prediction['20d'].calibratedProbability - a.prediction['20d'].calibratedProbability
-    );
+        const predictions: StockPrediction[] = [];
+        const batchSize = 6;
+        for (let i = 0; i < scanList.length; i += batchSize) {
+          const batch = scanList.slice(i, i + batchSize);
+          const results = await Promise.allSettled(
+            batch.map((ticker) => this.getPrediction(ticker))
+          );
+          for (const r of results) {
+            if (r.status === 'fulfilled' && r.value) {
+              predictions.push(r.value);
+            }
+          }
+        }
 
-    predictions.forEach((p, idx) => {
-      p.ranking = {
-        rank: idx + 1,
-        percentile: parseFloat((100 - (idx / predictions.length) * 100).toFixed(1)),
-        universeSize: predictions.length,
-      };
-    });
+        predictions.sort(
+          (a, b) => b.prediction['20d'].calibratedProbability - a.prediction['20d'].calibratedProbability
+        );
 
-    this.cache.set(universeCacheKey, {
-      data: predictions as unknown as StockPrediction,
-      expiresAt: Date.now() + 45_000,
-    });
+        predictions.forEach((p, idx) => {
+          p.ranking = {
+            rank: idx + 1,
+            percentile: parseFloat((100 - (idx / predictions.length) * 100).toFixed(1)),
+            universeSize: predictions.length,
+          };
+        });
 
-    return predictions;
+        this.cache.set(universeCacheKey, {
+          data: predictions as unknown as StockPrediction,
+          expiresAt: Date.now() + 180_000, // 3 minutes TTL
+        });
+
+        return predictions;
+      } finally {
+        this.inFlightUniversePromise = null;
+      }
+    })();
+
+    return this.inFlightUniversePromise;
   }
 
   async getTopRankedStocks(): Promise<StockPrediction[]> {
