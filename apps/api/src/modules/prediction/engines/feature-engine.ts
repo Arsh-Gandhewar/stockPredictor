@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { MarketQuote, OHLCVCandle } from '../../stock/providers/market-data.provider.interface';
 import { RSI, MACD, SMA, EMA, BollingerBands, ATR, Stochastic } from 'technicalindicators';
 import { MODEL_CONFIG } from './model-config';
@@ -13,55 +13,54 @@ export interface FeatureMetadata {
 
 @Injectable()
 export class FeatureEngine {
-  /**
-   * Complete Feature Dictionary Registry
-   */
-  static readonly FEATURE_REGISTRY: Record<string, FeatureMetadata> = {
-    rsi_14: { name: 'RSI(14)', category: 'MOMENTUM', lookbackPeriod: 14, source: 'OHLCV', description: 'Wilder 14-period Relative Strength Index' },
-    macd_hist: { name: 'MACD Histogram', category: 'MOMENTUM', lookbackPeriod: 26, source: 'OHLCV', description: 'MACD 12/26/9 histogram' },
-    stoch_k: { name: 'Stochastic %K', category: 'MOMENTUM', lookbackPeriod: 14, source: 'OHLCV', description: 'Fast Stochastic oscillator %K' },
-    stoch_d: { name: 'Stochastic %D', category: 'MOMENTUM', lookbackPeriod: 14, source: 'OHLCV', description: 'Stochastic signal line %D (3-period SMA of %K)' },
-    momentum_5: { name: '5-Day Momentum', category: 'MOMENTUM', lookbackPeriod: 5, source: 'OHLCV', description: '5-day rate of return' },
-    momentum_10: { name: '10-Day Momentum', category: 'MOMENTUM', lookbackPeriod: 10, source: 'OHLCV', description: '10-day rate of return' },
-    momentum_20: { name: '20-Day Momentum', category: 'MOMENTUM', lookbackPeriod: 20, source: 'OHLCV', description: '20-day rate of return' },
-    sma_20_dist: { name: 'SMA 20 Distance', category: 'TREND', lookbackPeriod: 20, source: 'OHLCV', description: 'Price distance from 20-day SMA' },
-    sma_50_dist: { name: 'SMA 50 Distance', category: 'TREND', lookbackPeriod: 50, source: 'OHLCV', description: 'Price distance from 50-day SMA' },
-    ema_20_dist: { name: 'EMA 20 Distance', category: 'TREND', lookbackPeriod: 20, source: 'OHLCV', description: 'Price distance from 20-day EMA' },
-    atr_14: { name: 'ATR(14)', category: 'VOLATILITY', lookbackPeriod: 14, source: 'OHLCV', description: '14-period Average True Range in Rupees' },
-    atr_percent: { name: 'ATR %', category: 'VOLATILITY', lookbackPeriod: 14, source: 'OHLCV', description: 'Normalized ATR as percentage of price' },
-    bb_width: { name: 'Bollinger Band Width', category: 'VOLATILITY', lookbackPeriod: 20, source: 'OHLCV', description: '(Upper - Lower) / Middle Band' },
-    annualized_volatility: { name: 'Annualized Volatility', category: 'VOLATILITY', lookbackPeriod: 20, source: 'OHLCV', description: '20-day return StdDev annualized (sqrt 252)' },
-    downside_deviation: { name: 'Downside Deviation', category: 'VOLATILITY', lookbackPeriod: 20, source: 'OHLCV', description: 'StdDev of negative returns annualized' },
-    max_drawdown_20d: { name: '20-Day Max Drawdown', category: 'VOLATILITY', lookbackPeriod: 20, source: 'OHLCV', description: 'Maximum peak-to-trough drop over 20 days' },
-    max_drawdown_60d: { name: '60-Day Max Drawdown', category: 'VOLATILITY', lookbackPeriod: 60, source: 'OHLCV', description: 'Maximum peak-to-trough drop over 60 days' },
-    gap_risk: { name: 'Overnight Gap Risk', category: 'VOLATILITY', lookbackPeriod: 20, source: 'OHLCV', description: 'Average absolute overnight gap as % of close' },
-    tail_risk_5pct: { name: 'Tail Risk (5th Pct VaR)', category: 'TAIL_RISK', lookbackPeriod: 60, source: 'OHLCV', description: '5th percentile daily return over 60 days' },
-    volume_z_score: { name: 'Volume Z-Score', category: 'LIQUIDITY', lookbackPeriod: 20, source: 'OHLCV', description: 'Standardized volume relative to 20-day mean/stddev' },
-    volume_stability: { name: 'Volume Stability (CV)', category: 'LIQUIDITY', lookbackPeriod: 20, source: 'OHLCV', description: 'Volume coefficient of variation (StdDev / Mean)' },
-    liquidity_score: { name: 'Turnover Liquidity Score', category: 'LIQUIDITY', lookbackPeriod: 20, source: 'OHLCV', description: 'Log10 of average daily turnover in ₹' },
-    beta_nifty: { name: 'Beta vs NIFTY', category: 'BENCHMARK', lookbackPeriod: 60, source: 'BENCHMARK', description: 'Covariance(Stock, NIFTY) / Variance(NIFTY)' },
-    relative_strength_nifty: { name: 'Relative Strength vs NIFTY', category: 'BENCHMARK', lookbackPeriod: 20, source: 'BENCHMARK', description: '20-day Stock return minus NIFTY return' },
-    news_sentiment: { name: 'News Sentiment', category: 'SENTIMENT', lookbackPeriod: 1, source: 'NEWS', description: 'Structured news sentiment score (-50 to +50)' },
-  };
+  static readonly CANONICAL_FEATURES: string[] = [
+    'rsi_14',
+    'macd_hist',
+    'sma_20_dist',
+    'sma_50_dist',
+    'ema_20_dist',
+    'atr_percent',
+    'bb_width',
+    'stoch_k',
+    'volume_z_score',
+    'annualized_volatility',
+    'downside_deviation',
+    'beta_nifty',
+    'relative_strength_nifty',
+    'momentum_5',
+    'momentum_20',
+    'ret_1d',
+    'ret_5d',
+    'ret_20d',
+    'gap_pct',
+    'dist_52w_high',
+    'dist_52w_low',
+    'roc_12',
+    'rel_volume',
+    'vol_20d',
+    'vol_60d',
+  ];
 
-  /**
-   * Computes a full suite of multi-factor statistical and technical features.
-   * Point-in-time strictly: Only historical candles through the current timestamp are used.
-   */
   calculateFeatures(
     quote: MarketQuote,
     candles: OHLCVCandle[],
     newsSentiment: number = 0,
     benchmarkCandles?: OHLCVCandle[]
   ): Record<string, number | null> {
-    const features: Record<string, number | null> = {
-      news_sentiment: newsSentiment,
-      price: quote.price,
-      change_percent: quote.changePercent,
-      volume: quote.volume,
-    };
+    const features: Record<string, number | null> = {};
 
-    if (!candles || candles.length < MODEL_CONFIG.FEATURES.WARMUP_MIN_CANDLES) {
+    // Initialize all 25 canonical keys with 0.0 or null
+    for (const key of FeatureEngine.CANONICAL_FEATURES) {
+      features[key] = 0.0;
+    }
+
+    // Also include metadata fields for downstream scoring/heuristics
+    features['news_sentiment'] = newsSentiment;
+    features['price'] = quote.price;
+    features['change_percent'] = quote.changePercent;
+    features['volume'] = quote.volume;
+
+    if (!candles || candles.length < 5) {
       return features;
     }
 
@@ -74,68 +73,70 @@ export class FeatureEngine {
     const currentPrice = quote.price || closes[len - 1];
 
     try {
-      // ── 1. Momentum & Oscillators ──
-      const rsiArr = RSI.calculate({ values: closes, period: MODEL_CONFIG.FEATURES.RSI_PERIOD });
-      features['rsi_14'] = rsiArr.length > 0 ? rsiArr[rsiArr.length - 1] : null;
+      // 1. Momentum & Oscillators
+      const rsiArr = RSI.calculate({ values: closes, period: 14 });
+      features['rsi_14'] = rsiArr.length > 0 ? rsiArr[rsiArr.length - 1] : 50.0;
 
       const macdArr = MACD.calculate({
         values: closes,
-        fastPeriod: MODEL_CONFIG.FEATURES.MACD.FAST_PERIOD,
-        slowPeriod: MODEL_CONFIG.FEATURES.MACD.SLOW_PERIOD,
-        signalPeriod: MODEL_CONFIG.FEATURES.MACD.SIGNAL_PERIOD,
+        fastPeriod: 12,
+        slowPeriod: 26,
+        signalPeriod: 9,
         SimpleMAOscillator: false,
         SimpleMASignal: false,
       });
       if (macdArr.length > 0) {
         const last = macdArr[macdArr.length - 1];
-        features['macd_hist'] = last.histogram !== undefined ? last.histogram : null;
+        features['macd_hist'] = last.histogram !== undefined && currentPrice > 0 ? last.histogram / currentPrice : 0.0;
       }
 
       const stochArr = Stochastic.calculate({
         high: highs,
         low: lows,
         close: closes,
-        period: MODEL_CONFIG.FEATURES.STOCHASTIC.K_PERIOD,
-        signalPeriod: MODEL_CONFIG.FEATURES.STOCHASTIC.D_PERIOD,
+        period: 14,
+        signalPeriod: 3,
       });
       if (stochArr.length > 0) {
         const lastStoch = stochArr[stochArr.length - 1];
         features['stoch_k'] = lastStoch.k;
-        features['stoch_d'] = lastStoch.d;
       }
 
-      // Rate of Change Momentum (5d, 10d, 20d)
-      features['momentum_5'] = len >= 6 ? (closes[len - 1] - closes[len - 6]) / closes[len - 6] : 0;
-      features['momentum_10'] = len >= 11 ? (closes[len - 1] - closes[len - 11]) / closes[len - 11] : 0;
-      features['momentum_20'] = len >= 21 ? (closes[len - 1] - closes[len - 21]) / closes[len - 21] : 0;
+      // ROC(12)
+      features['roc_12'] = len >= 13 ? ((closes[len - 1] - closes[len - 13]) / closes[len - 13]) * 100.0 : 0.0;
 
-      // ── 2. Trend & Moving Average Distances ──
-      const sma20 = SMA.calculate({ values: closes, period: MODEL_CONFIG.FEATURES.SMA.SHORT_PERIOD });
-      features['sma_20_dist'] = sma20.length > 0 ? (currentPrice - sma20[sma20.length - 1]) / sma20[sma20.length - 1] : null;
+      // 2. Trend & Moving Average Distances
+      const sma20 = SMA.calculate({ values: closes, period: 20 });
+      features['sma_20_dist'] = sma20.length > 0 && sma20[sma20.length - 1] > 0
+        ? (currentPrice - sma20[sma20.length - 1]) / sma20[sma20.length - 1]
+        : 0.0;
 
-      const sma50 = SMA.calculate({ values: closes, period: MODEL_CONFIG.FEATURES.SMA.LONG_PERIOD });
-      features['sma_50_dist'] = sma50.length > 0 ? (currentPrice - sma50[sma50.length - 1]) / sma50[sma50.length - 1] : null;
+      const sma50 = SMA.calculate({ values: closes, period: 50 });
+      features['sma_50_dist'] = sma50.length > 0 && sma50[sma50.length - 1] > 0
+        ? (currentPrice - sma50[sma50.length - 1]) / sma50[sma50.length - 1]
+        : 0.0;
 
-      const ema20 = EMA.calculate({ values: closes, period: MODEL_CONFIG.FEATURES.EMA.MEDIUM_PERIOD });
-      features['ema_20_dist'] = ema20.length > 0 ? (currentPrice - ema20[ema20.length - 1]) / ema20[ema20.length - 1] : null;
+      const ema20 = EMA.calculate({ values: closes, period: 20 });
+      features['ema_20_dist'] = ema20.length > 0 && ema20[ema20.length - 1] > 0
+        ? (currentPrice - ema20[ema20.length - 1]) / ema20[ema20.length - 1]
+        : 0.0;
 
-      // ── 3. Volatility & Dispersion ──
-      const atrArr = ATR.calculate({ high: highs, low: lows, close: closes, period: MODEL_CONFIG.FEATURES.ATR_PERIOD });
-      const atr14 = atrArr.length > 0 ? atrArr[atrArr.length - 1] : null;
-      features['atr_14'] = atr14;
-      features['atr_percent'] = atr14 && currentPrice > 0 ? atr14 / currentPrice : null;
+      // 3. Volatility & Bands
+      const atrArr = ATR.calculate({ high: highs, low: lows, close: closes, period: 14 });
+      const atr14 = atrArr.length > 0 ? atrArr[atrArr.length - 1] : 0.0;
+      features['atr_percent'] = currentPrice > 0 ? atr14 / currentPrice : 0.02;
 
       const bb = BollingerBands.calculate({
         values: closes,
-        period: MODEL_CONFIG.FEATURES.BOLLINGER.PERIOD,
-        stdDev: MODEL_CONFIG.FEATURES.BOLLINGER.STD_DEV,
+        period: 20,
+        stdDev: 2,
       });
       if (bb.length > 0) {
         const last = bb[bb.length - 1];
-        features['bb_width'] = last.middle > 0 ? (last.upper - last.lower) / last.middle : 0;
+        features['bb_width'] = last.middle > 0 ? (last.upper - last.lower) / last.middle : 0.05;
       }
 
-      // Compute Daily Returns for last 60 candles
+      // Compute Daily Returns
       const dailyReturns: number[] = [];
       for (let i = 1; i < len; i++) {
         if (closes[i - 1] > 0) {
@@ -146,71 +147,56 @@ export class FeatureEngine {
       const returns20 = dailyReturns.slice(-20);
       const returns60 = dailyReturns.slice(-60);
 
-      // Annualized Volatility (20-day lookback)
-      if (returns20.length >= 10) {
-        const meanReturn = returns20.reduce((s, r) => s + r, 0) / returns20.length;
-        const variance20 = returns20.reduce((s, r) => s + Math.pow(r - meanReturn, 2), 0) / returns20.length;
-        const dailyStdDev = Math.sqrt(variance20);
-        features['annualized_volatility'] = dailyStdDev * Math.sqrt(MODEL_CONFIG.FEATURES.LOOKBACKS.ANNUALIZATION_FACTOR);
+      const std20 = returns20.length >= 5
+        ? Math.sqrt(returns20.reduce((s, r) => s + Math.pow(r - (returns20.reduce((a, b) => a + b, 0) / returns20.length), 2), 0) / returns20.length)
+        : 0.015;
+      const std60 = returns60.length >= 10
+        ? Math.sqrt(returns60.reduce((s, r) => s + Math.pow(r - (returns60.reduce((a, b) => a + b, 0) / returns60.length), 2), 0) / returns60.length)
+        : 0.015;
 
-        // Downside Deviation (Semi-Variance of negative returns only)
-        const negativeReturns = returns20.filter((r) => r < 0);
-        const downsideVariance = negativeReturns.length > 0
-          ? negativeReturns.reduce((s, r) => s + Math.pow(r, 2), 0) / returns20.length
-          : 0;
-        features['downside_deviation'] = Math.sqrt(downsideVariance) * Math.sqrt(MODEL_CONFIG.FEATURES.LOOKBACKS.ANNUALIZATION_FACTOR);
-      } else {
-        features['annualized_volatility'] = null;
-        features['downside_deviation'] = null;
-      }
+      features['vol_20d'] = std20 * Math.sqrt(252);
+      features['vol_60d'] = std60 * Math.sqrt(252);
+      features['annualized_volatility'] = features['vol_20d'];
 
-      // Max Drawdown over 20d and 60d
-      features['max_drawdown_20d'] = this.calculateMaxDrawdown(closes.slice(-20));
-      features['max_drawdown_60d'] = this.calculateMaxDrawdown(closes.slice(-60));
+      const negReturns = returns20.filter((r) => r < 0);
+      const downsideVar = negReturns.length > 0
+        ? negReturns.reduce((s, r) => s + Math.pow(r, 2), 0) / returns20.length
+        : 0.0001;
+      features['downside_deviation'] = Math.sqrt(downsideVar) * Math.sqrt(252);
 
-      // Overnight Gap Risk
-      const gaps: number[] = [];
-      const gapLookback = Math.min(20, len - 1);
-      for (let i = len - gapLookback; i < len; i++) {
-        if (i > 0 && closes[i - 1] > 0) {
-          gaps.push(Math.abs(opens[i] - closes[i - 1]) / closes[i - 1]);
-        }
-      }
-      features['gap_risk'] = gaps.length > 0 ? gaps.reduce((s, g) => s + g, 0) / gaps.length : null;
+      // 4. Multi-Horizon Returns & Price Action
+      features['ret_1d'] = len >= 2 && closes[len - 2] > 0 ? (closes[len - 1] - closes[len - 2]) / closes[len - 2] : 0.0;
+      features['ret_5d'] = len >= 6 && closes[len - 6] > 0 ? (closes[len - 1] - closes[len - 6]) / closes[len - 6] : 0.0;
+      features['ret_20d'] = len >= 21 && closes[len - 21] > 0 ? (closes[len - 1] - closes[len - 21]) / closes[len - 21] : 0.0;
+      features['momentum_5'] = features['ret_5d'];
+      features['momentum_20'] = features['ret_20d'];
 
-      // Tail Risk (5th percentile return from last 60 days)
-      if (returns60.length >= 20) {
-        const sortedReturns = [...returns60].sort((a, b) => a - b);
-        const p5Idx = Math.max(0, Math.floor(sortedReturns.length * 0.05));
-        features['tail_risk_5pct'] = sortedReturns[p5Idx];
-      } else {
-        features['tail_risk_5pct'] = null;
-      }
+      // Gap %
+      const prevClose = len >= 2 ? closes[len - 2] : currentPrice;
+      const openPrice = len >= 1 ? opens[len - 1] : currentPrice;
+      features['gap_pct'] = prevClose > 0 ? (openPrice - prevClose) / prevClose : 0.0;
 
-      // ── 4. Volume & Liquidity Dynamics ──
+      // 52-Week Distances
+      const high252 = Math.max(...highs.slice(-252));
+      const low252 = Math.min(...lows.slice(-252));
+      features['dist_52w_high'] = high252 > 0 ? (currentPrice - high252) / high252 : 0.0;
+      features['dist_52w_low'] = low252 > 0 ? (currentPrice - low252) / low252 : 0.0;
+
+      // 5. Volume Features
       const volumes20 = volumes.slice(-20);
-      if (volumes20.length >= 10) {
+      if (volumes20.length >= 5) {
         const meanVol = volumes20.reduce((s, v) => s + v, 0) / volumes20.length;
-        const volVariance = volumes20.reduce((s, v) => s + Math.pow(v - meanVol, 2), 0) / volumes20.length;
-        const stdVol = Math.sqrt(volVariance);
-
-        // Volume Z-Score (Stock-Relative)
-        const currentVol = quote.volume || volumes[len - 1];
-        features['volume_z_score'] = stdVol > 0 ? (currentVol - meanVol) / stdVol : 0;
-
-        // Volume Stability (Coefficient of Variation)
-        features['volume_stability'] = meanVol > 0 ? stdVol / meanVol : 1.0;
-
-        // Liquidity Score: Log10 of daily rupee turnover
-        const dailyTurnoverRupees = currentPrice * meanVol;
-        features['liquidity_score'] = Math.log10(Math.max(1, dailyTurnoverRupees));
+        const volVar = volumes20.reduce((s, v) => s + Math.pow(v - meanVol, 2), 0) / volumes20.length;
+        const stdVol = Math.sqrt(volVar);
+        const currentVol = quote.volume || volumes[len - 1] || meanVol;
+        features['volume_z_score'] = stdVol > 0 ? Math.max(-3.0, Math.min(3.0, (currentVol - meanVol) / stdVol)) : 0.0;
+        features['rel_volume'] = meanVol > 0 ? Math.max(0.1, Math.min(10.0, currentVol / meanVol)) : 1.0;
       } else {
-        features['volume_z_score'] = null;
-        features['volume_stability'] = null;
-        features['liquidity_score'] = null;
+        features['volume_z_score'] = 0.0;
+        features['rel_volume'] = 1.0;
       }
 
-      // ── 5. Benchmark & Relative Dynamics (NIFTY 50) ──
+      // 6. Benchmark Features (NIFTY 50)
       if (benchmarkCandles && benchmarkCandles.length >= 30) {
         const benchCloses = benchmarkCandles.map((b) => b.close);
         const benchReturns: number[] = [];
@@ -239,59 +225,21 @@ export class FeatureEngine {
 
           features['beta_nifty'] = varBench > 0 ? parseFloat((cov / varBench).toFixed(2)) : 1.0;
 
-          // 20d Relative Strength
           const stock20Return = closes[len - 1] / closes[Math.max(0, len - 21)] - 1;
           const bench20Return = benchCloses[benchCloses.length - 1] / benchCloses[Math.max(0, benchCloses.length - 21)] - 1;
           features['relative_strength_nifty'] = stock20Return - bench20Return;
         } else {
-          features['beta_nifty'] = null;
-          features['relative_strength_nifty'] = null;
+          features['beta_nifty'] = 1.0;
+          features['relative_strength_nifty'] = 0.0;
         }
       } else {
-        features['beta_nifty'] = null;
-        features['relative_strength_nifty'] = null;
+        features['beta_nifty'] = 1.0;
+        features['relative_strength_nifty'] = 0.0;
       }
     } catch {
-      // Graceful fallback
+      // Graceful fallback with zeros for all canonical features
     }
 
     return features;
-  }
-
-  /**
-   * Helper: Calculates rolling Z-Score of a value against trailing series.
-   */
-  calculateRollingZScore(series: number[], value: number): number {
-    if (!series || series.length < 5) return 0;
-    const mean = series.reduce((s, x) => s + x, 0) / series.length;
-    const variance = series.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / series.length;
-    const std = Math.sqrt(variance);
-    return std > 0 ? (value - mean) / std : 0;
-  }
-
-  /**
-   * Helper: Calculates rolling Percentile Rank (0 to 100) of a value against trailing series.
-   */
-  calculatePercentileRank(series: number[], value: number): number {
-    if (!series || series.length === 0) return 50;
-    const countBelow = series.filter((x) => x < value).length;
-    return (countBelow / series.length) * 100;
-  }
-
-  /**
-   * Helper: Calculates maximum peak-to-trough drawdown from an array of prices
-   */
-  private calculateMaxDrawdown(prices: number[]): number {
-    if (!prices || prices.length < 2) return 0;
-    let peak = prices[0];
-    let maxDrawdown = 0;
-    for (const p of prices) {
-      if (p > peak) peak = p;
-      if (peak > 0) {
-        const dd = (peak - p) / peak;
-        if (dd > maxDrawdown) maxDrawdown = dd;
-      }
-    }
-    return maxDrawdown;
   }
 }

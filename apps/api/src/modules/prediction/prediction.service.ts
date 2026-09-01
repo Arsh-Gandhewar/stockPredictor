@@ -529,10 +529,12 @@ export class QuantPredictionService implements OnModuleInit {
           };
         });
 
-        this.cache.set(universeCacheKey, {
-          data: predictions as unknown as StockPrediction,
-          expiresAt: Date.now() + 180_000, // 3 minutes TTL
-        });
+        if (predictions.length > 0) {
+          this.cache.set(universeCacheKey, {
+            data: predictions as unknown as StockPrediction,
+            expiresAt: Date.now() + 180_000, // 3 minutes TTL
+          });
+        }
 
         return predictions;
       } finally {
