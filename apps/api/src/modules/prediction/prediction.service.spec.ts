@@ -5,6 +5,7 @@ import { RegimeEngine } from './engines/regime-engine';
 import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
 import { ModelArtifactService, ModelArtifact, STATISTICAL_GATES } from './engines/model-artifact.service';
+import { getCanonicalFeatureSchemaHash } from './engines/onnx-inference.engine';
 import { LogisticRegressionModel, TrainingSample } from './engines/learned-model';
 import { MarketQuote, OHLCVCandle } from '../stock/providers/market-data.provider.interface';
 
@@ -347,6 +348,7 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
           modelVersion: '5.0.0',
           modelType: 'LEARNED_LIGHTGBM',
           featureVersion: 'v5.0.0-multi-factor-25',
+          featureSchemaHash: getCanonicalFeatureSchemaHash(),
           trainingStart: '2025-08-22',
           trainingEnd: '2026-02-15',
           validationStart: '2026-02-16',

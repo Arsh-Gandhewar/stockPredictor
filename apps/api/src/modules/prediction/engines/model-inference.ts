@@ -3,19 +3,20 @@ import { ModelRegistry } from './model-registry';
 import { MODEL_CONFIG } from './model-config';
 import { LogisticRegressionModel } from './learned-model';
 import { EmpiricalDistributionBucket, STATISTICAL_GATES } from './model-artifact.service';
+import { ModelFeatureVector25 } from './feature-engine';
 
 export interface ExpectedReturnEstimation {
-  probability: number;
-  expectedGainConditionalUp: number;
-  expectedLossConditionalDown: number;
-  expectedValue: number;
-  expectedVolatility: number;
-  confidenceInterval: [number, number];
-  marketVolatility: number;
-  estimationUncertainty: number;
-  uncertainty: number;
-  sampleCount: number;
-  method: 'EMPIRICAL_FINE_BUCKET' | 'EMPIRICAL_BROAD_BUCKET' | 'EMPIRICAL_HORIZON_WIDE' | 'FALLBACK_DIFFUSION';
+  probability?: number | null;
+  expectedGainConditionalUp?: number | null;
+  expectedLossConditionalDown?: number | null;
+  expectedValue?: number | null;
+  expectedVolatility?: number | null;
+  confidenceInterval?: [number, number] | null;
+  marketVolatility?: number | null;
+  estimationUncertainty?: number | null;
+  uncertainty?: number | null;
+  sampleCount?: number;
+  method: 'EMPIRICAL_FINE_BUCKET' | 'EMPIRICAL_BROAD_BUCKET' | 'EMPIRICAL_HORIZON_WIDE' | 'FALLBACK_DIFFUSION' | 'INSUFFICIENT_DATA';
   reason?: string;
 }
 
@@ -318,7 +319,7 @@ export class ModelInferenceEngine {
   }
 
   calculateFeatureContributions(
-    features: Record<string, number | null>
+    features: ModelFeatureVector25
   ): { feature: string; contribution: number }[] {
     return [];
   }

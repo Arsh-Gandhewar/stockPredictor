@@ -2,7 +2,6 @@
   "modelVersion": "5.0.0",
   "modelType": "LEARNED_LIGHTGBM",
   "featureVersion": "v5.0.0-multi-factor-25",
-  "featureSchemaHash": "e34d088fa4b4a36f65611dcff43603cd00478ea6be64440d3f499b2c630ed4cd",
   "trainingStart": "2025-08-22",
   "trainingEnd": "2026-02-15",
   "validationStart": "2026-02-16",
@@ -183,7 +182,7 @@
       "dispersion": 0.0268,
       "sampleCount": 25,
       "uncertainty": 0.0054,
-      "fittedAt": "2026-09-02T16:23:38.899Z"
+      "fittedAt": "2026-09-02T16:18:46.911Z"
     },
     {
       "horizon": "5d",
@@ -195,7 +194,7 @@
       "dispersion": 0.0195,
       "sampleCount": 6,
       "uncertainty": 0.008,
-      "fittedAt": "2026-09-02T16:23:38.899Z"
+      "fittedAt": "2026-09-02T16:18:46.911Z"
     },
     {
       "horizon": "5d",
@@ -207,7 +206,7 @@
       "dispersion": 0.0158,
       "sampleCount": 7,
       "uncertainty": 0.006,
-      "fittedAt": "2026-09-02T16:23:38.899Z"
+      "fittedAt": "2026-09-02T16:18:46.911Z"
     },
     {
       "horizon": "5d",
@@ -219,7 +218,7 @@
       "dispersion": 0.0168,
       "sampleCount": 14,
       "uncertainty": 0.0045,
-      "fittedAt": "2026-09-02T16:23:38.900Z"
+      "fittedAt": "2026-09-02T16:18:46.911Z"
     }
   ],
   "empiricalQuantiles": {
@@ -260,24 +259,7 @@
     "versionCompatibility": true,
     "dateRangeIntegrity": true
   },
-  "createdAt": "2026-09-02T16:23:38.902Z",
-  "onnxModels": {
-    "1d": {
-      "filename": "model_1d.onnx",
-      "sha256": "e2ba796cfec92eeb73a367932aeccdbcf388521c68bf33766a55626678a4b682",
-      "status": "VALID"
-    },
-    "5d": {
-      "filename": "model_5d.onnx",
-      "sha256": "219244e3c64f10df121f79f05c709b1b809d4eab27995bcfe10b019ba5c959e8",
-      "status": "VALID"
-    },
-    "20d": {
-      "filename": "model_20d.onnx",
-      "sha256": "38a1e862f89d04499e1ab7fb168c6606e21cb2dd6e5299d97b441221ce8cba57",
-      "status": "VALID"
-    }
-  },
-  "id": "art_1788366218903_286394ff",
-  "checksum": "bda2d77aa44636433b9755464bbb7badbcd4b1a12ab86b0279ca7712b99a61f2"
+  "createdAt": "2026-09-02T16:18:46.913Z",
+  "id": "art_1788365926913_aa9c1287",
+  "checksum": "e8a917856f1a76ad0cec417814f75544d1a2e061fbd2cbbbfd4fc0dd1899bdd3"
 }

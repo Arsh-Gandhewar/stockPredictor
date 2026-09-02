@@ -3,7 +3,7 @@
   "name": "QuantX Canonical Multi-Factor 25-Feature Schema",
   "version": "v5.0.0-multi-factor-25",
   "featureCount": 25,
-  "globalMinLookback": 61,
+  "globalMinLookback": 252,
   "features": [
     "rsi_14",
     "macd_hist",
@@ -44,7 +44,8 @@
       "lookback": 14,
       "parameters": {
         "period": 14,
-        "smoothing": "WILDER_EWM"
+        "smoothing": "WILDER_EWM",
+        "alpha": 0.07142857142857142
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
@@ -106,7 +107,8 @@
       "minLookback": 20,
       "lookback": 20,
       "parameters": {
-        "span": 20
+        "span": 20,
+        "alpha": 0.09523809523809523
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
@@ -130,7 +132,7 @@
     {
       "id": "bb_width",
       "name": "Bollinger Bands Width",
-      "formula": "(UpperBand - LowerBand) / SMA(Close, 20) where Bands = SMA(20) +/- 2*Std(20)",
+      "formula": "(UpperBand - LowerBand) / SMA(Close, 20) where Bands = SMA(20) +/- 2*Std(20, ddof=1)",
       "unit": "PERCENT_RATIO",
       "inputs": [
         "OHLCV.Close"
@@ -139,7 +141,8 @@
       "lookback": 20,
       "parameters": {
         "period": 20,
-        "stdDevMultiplier": 2.0
+        "stdDevMultiplier": 2.0,
+        "ddof": 1
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
@@ -163,7 +166,7 @@
     {
       "id": "volume_z_score",
       "name": "20-Day Volume Z-Score",
-      "formula": "clip((Volume - Mean(Volume, 20)) / Std(Volume, 20), -3.0, 3.0)",
+      "formula": "clip((Volume - Mean(Volume, 20)) / Std(Volume, 20, ddof=1), -3.0, 3.0)",
       "unit": "Z_SCORE",
       "inputs": [
         "OHLCV.Volume"
@@ -173,14 +176,15 @@
       "parameters": {
         "period": 20,
         "clipMin": -3.0,
-        "clipMax": 3.0
+        "clipMax": 3.0,
+        "ddof": 1
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
     {
       "id": "annualized_volatility",
       "name": "20-Day Annualized Volatility",
-      "formula": "Std(DailyReturns, 20) * sqrt(252)",
+      "formula": "Std(DailyReturns, 20, ddof=1) * sqrt(252)",
       "unit": "ANNUALIZED_PERCENT",
       "inputs": [
         "OHLCV.Close"
@@ -189,14 +193,15 @@
       "lookback": 20,
       "parameters": {
         "period": 20,
-        "annualizationFactor": 252
+        "annualizationFactor": 252,
+        "ddof": 1
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
     {
       "id": "downside_deviation",
       "name": "20-Day Downside Semi-Deviation",
-      "formula": "Std(clip(DailyReturns, upper=0), 20) * sqrt(252)",
+      "formula": "Std(clip(DailyReturns, upper=0), 20, ddof=1) * sqrt(252)",
       "unit": "ANNUALIZED_PERCENT",
       "inputs": [
         "OHLCV.Close"
@@ -205,14 +210,15 @@
       "lookback": 20,
       "parameters": {
         "period": 20,
-        "annualizationFactor": 252
+        "annualizationFactor": 252,
+        "ddof": 1
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
     {
       "id": "beta_nifty",
-      "name": "60-Day Rolling Beta vs NIFTY 50",
-      "formula": "clip(Cov(DailyReturns, BenchReturns, 60) / Var(BenchReturns, 60), 0.2, 3.0)",
+      "name": "60-Day Rolling Beta vs NIFTY 50 (Date-Matched)",
+      "formula": "clip(Cov(DailyReturns, BenchReturns, 60, ddof=1) / Var(BenchReturns, 60, ddof=1), 0.2, 3.0)",
       "unit": "BETA_COEFFICIENT",
       "inputs": [
         "OHLCV.Close",
@@ -223,13 +229,15 @@
       "parameters": {
         "period": 60,
         "clipMin": 0.2,
-        "clipMax": 3.0
+        "clipMax": 3.0,
+        "ddof": 1,
+        "alignment": "CALENDAR_DATE"
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
     {
       "id": "relative_strength_nifty",
-      "name": "20-Day Relative Strength vs NIFTY 50",
+      "name": "20-Day Relative Strength vs NIFTY 50 (Date-Matched)",
       "formula": "Return(Close, 20) - Return(BenchClose, 20)",
       "unit": "PERCENT_DIFFERENCE",
       "inputs": [
@@ -239,7 +247,8 @@
       "minLookback": 21,
       "lookback": 20,
       "parameters": {
-        "period": 20
+        "period": 20,
+        "alignment": "CALENDAR_DATE"
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
@@ -336,35 +345,35 @@
     },
     {
       "id": "dist_52w_high",
-      "name": "Distance from 52-Week Rolling High",
-      "formula": "(Close - RollingMax(High, 252, min_periods=40)) / RollingMax(High, 252, min_periods=40)",
+      "name": "Distance from True 52-Week (252-Session) High",
+      "formula": "(Close - RollingMax(High, 252, min_periods=252)) / RollingMax(High, 252, min_periods=252)",
       "unit": "PERCENT_RATIO",
       "inputs": [
         "OHLCV.High",
         "OHLCV.Close"
       ],
-      "minLookback": 40,
+      "minLookback": 252,
       "lookback": 252,
       "parameters": {
         "window": 252,
-        "minPeriods": 40
+        "minPeriods": 252
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
     {
       "id": "dist_52w_low",
-      "name": "Distance from 52-Week Rolling Low",
-      "formula": "(Close - RollingMin(Low, 252, min_periods=40)) / RollingMin(Low, 252, min_periods=40)",
+      "name": "Distance from True 52-Week (252-Session) Low",
+      "formula": "(Close - RollingMin(Low, 252, min_periods=252)) / RollingMin(Low, 252, min_periods=252)",
       "unit": "PERCENT_RATIO",
       "inputs": [
         "OHLCV.Low",
         "OHLCV.Close"
       ],
-      "minLookback": 40,
+      "minLookback": 252,
       "lookback": 252,
       "parameters": {
         "window": 252,
-        "minPeriods": 40
+        "minPeriods": 252
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
@@ -403,7 +412,7 @@
     {
       "id": "vol_20d",
       "name": "20-Day Annualized Return Volatility",
-      "formula": "Std(DailyReturns, 20) * sqrt(252)",
+      "formula": "Std(DailyReturns, 20, ddof=1) * sqrt(252)",
       "unit": "ANNUALIZED_PERCENT",
       "inputs": [
         "OHLCV.Close"
@@ -412,14 +421,15 @@
       "lookback": 20,
       "parameters": {
         "period": 20,
-        "annualizationFactor": 252
+        "annualizationFactor": 252,
+        "ddof": 1
       },
       "missingDataPolicy": "FAIL_CLOSED"
     },
     {
       "id": "vol_60d",
       "name": "60-Day Annualized Return Volatility",
-      "formula": "Std(DailyReturns, 60) * sqrt(252)",
+      "formula": "Std(DailyReturns, 60, ddof=1) * sqrt(252)",
       "unit": "ANNUALIZED_PERCENT",
       "inputs": [
         "OHLCV.Close"
@@ -428,7 +438,8 @@
       "lookback": 60,
       "parameters": {
         "period": 60,
-        "annualizationFactor": 252
+        "annualizationFactor": 252,
+        "ddof": 1
       },
       "missingDataPolicy": "FAIL_CLOSED"
     }

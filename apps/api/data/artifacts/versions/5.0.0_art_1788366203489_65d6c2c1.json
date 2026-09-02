@@ -183,7 +183,7 @@
       "dispersion": 0.0268,
       "sampleCount": 25,
       "uncertainty": 0.0054,
-      "fittedAt": "2026-09-02T16:23:38.899Z"
+      "fittedAt": "2026-09-02T16:23:23.481Z"
     },
     {
       "horizon": "5d",
@@ -195,7 +195,7 @@
       "dispersion": 0.0195,
       "sampleCount": 6,
       "uncertainty": 0.008,
-      "fittedAt": "2026-09-02T16:23:38.899Z"
+      "fittedAt": "2026-09-02T16:23:23.481Z"
     },
     {
       "horizon": "5d",
@@ -207,7 +207,7 @@
       "dispersion": 0.0158,
       "sampleCount": 7,
       "uncertainty": 0.006,
-      "fittedAt": "2026-09-02T16:23:38.899Z"
+      "fittedAt": "2026-09-02T16:23:23.482Z"
     },
     {
       "horizon": "5d",
@@ -219,7 +219,7 @@
       "dispersion": 0.0168,
       "sampleCount": 14,
       "uncertainty": 0.0045,
-      "fittedAt": "2026-09-02T16:23:38.900Z"
+      "fittedAt": "2026-09-02T16:23:23.486Z"
     }
   ],
   "empiricalQuantiles": {
@@ -260,7 +260,7 @@
     "versionCompatibility": true,
     "dateRangeIntegrity": true
   },
-  "createdAt": "2026-09-02T16:23:38.902Z",
+  "createdAt": "2026-09-02T16:23:23.488Z",
   "onnxModels": {
     "1d": {
       "filename": "model_1d.onnx",
@@ -278,6 +278,6 @@
       "status": "VALID"
     }
   },
-  "id": "art_1788366218903_286394ff",
-  "checksum": "bda2d77aa44636433b9755464bbb7badbcd4b1a12ab86b0279ca7712b99a61f2"
+  "id": "art_1788366203489_65d6c2c1",
+  "checksum": "8cb46a5a5f71419028ed07817b576c0382afe92caca741ed2d648b6e9430ccd9"
 }

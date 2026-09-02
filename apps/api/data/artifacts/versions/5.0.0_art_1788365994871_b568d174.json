@@ -2,7 +2,6 @@
   "modelVersion": "5.0.0",
   "modelType": "LEARNED_LIGHTGBM",
   "featureVersion": "v5.0.0-multi-factor-25",
-  "featureSchemaHash": "e34d088fa4b4a36f65611dcff43603cd00478ea6be64440d3f499b2c630ed4cd",
   "trainingStart": "2025-08-22",
   "trainingEnd": "2026-02-15",
   "validationStart": "2026-02-16",
@@ -183,7 +182,7 @@
       "dispersion": 0.0268,
       "sampleCount": 25,
       "uncertainty": 0.0054,
-      "fittedAt": "2026-09-02T16:23:38.899Z"
+      "fittedAt": "2026-09-02T16:19:54.869Z"
     },
     {
       "horizon": "5d",
@@ -195,7 +194,7 @@
       "dispersion": 0.0195,
       "sampleCount": 6,
       "uncertainty": 0.008,
-      "fittedAt": "2026-09-02T16:23:38.899Z"
+      "fittedAt": "2026-09-02T16:19:54.869Z"
     },
     {
       "horizon": "5d",
@@ -207,7 +206,7 @@
       "dispersion": 0.0158,
       "sampleCount": 7,
       "uncertainty": 0.006,
-      "fittedAt": "2026-09-02T16:23:38.899Z"
+      "fittedAt": "2026-09-02T16:19:54.869Z"
     },
     {
       "horizon": "5d",
@@ -219,7 +218,7 @@
       "dispersion": 0.0168,
       "sampleCount": 14,
       "uncertainty": 0.0045,
-      "fittedAt": "2026-09-02T16:23:38.900Z"
+      "fittedAt": "2026-09-02T16:19:54.869Z"
     }
   ],
   "empiricalQuantiles": {
@@ -260,7 +259,8 @@
     "versionCompatibility": true,
     "dateRangeIntegrity": true
   },
-  "createdAt": "2026-09-02T16:23:38.902Z",
+  "createdAt": "2026-09-02T16:19:54.870Z",
+  "featureSchemaHash": "e34d088fa4b4a36f65611dcff43603cd00478ea6be64440d3f499b2c630ed4cd",
   "onnxModels": {
     "1d": {
       "filename": "model_1d.onnx",
@@ -278,6 +278,6 @@
       "status": "VALID"
     }
   },
-  "id": "art_1788366218903_286394ff",
-  "checksum": "bda2d77aa44636433b9755464bbb7badbcd4b1a12ab86b0279ca7712b99a61f2"
+  "id": "art_1788365994871_b568d174",
+  "checksum": "21a32644bcefe59c2f496b560c29a9f1facb1b500b70ea429257c23620dc54bd"
 }

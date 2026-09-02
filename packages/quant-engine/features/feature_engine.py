@@ -123,8 +123,8 @@ def calculate_features(df: pd.DataFrame, benchmark_df: Optional[pd.DataFrame] = 
     prev_close = close.shift(1)
     df['gap_pct'] = (open_p - prev_close) / prev_close.replace(0, np.nan)
     
-    rolling_252_high = high.rolling(252, min_periods=40).max()
-    rolling_252_low = low.rolling(252, min_periods=40).min()
+    rolling_252_high = high.rolling(252, min_periods=252).max()
+    rolling_252_low = low.rolling(252, min_periods=252).min()
     df['dist_52w_high'] = (close - rolling_252_high) / rolling_252_high.replace(0, np.nan)
     df['dist_52w_low'] = (close - rolling_252_low) / rolling_252_low.replace(0, np.nan)
     

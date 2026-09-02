@@ -18,9 +18,9 @@ if ENGINE_ROOT not in sys.path:
 from features.feature_engine import FEATURE_NAMES, calculate_features
 
 
-def generate_synthetic_market_data(n_candles: int = 100, seed: int = 42):
+def generate_synthetic_market_data(n_candles: int = 300, seed: int = 42):
     np.random.seed(seed)
-    dates = pd.date_range("2025-01-01", periods=n_candles, freq="B")
+    dates = pd.date_range("2024-01-01", periods=n_candles, freq="B")
     
     # Generate realistic geometric Brownian motion
     dt = 1 / 252
@@ -71,26 +71,32 @@ def generate_synthetic_market_data(n_candles: int = 100, seed: int = 42):
 
 class TestFeatureParityGolden:
     def test_25_features_generated_with_zero_lookahead(self):
-        stock_df, bench_df = generate_synthetic_market_data(100)
+        stock_df, bench_df = generate_synthetic_market_data(300)
         feat_df = calculate_features(stock_df, bench_df)
         
         assert len(FEATURE_NAMES) == 25
         for feat in FEATURE_NAMES:
             assert feat in feat_df.columns
             
-        # Row 0 to 60 should have warmups (NaNs present)
+        # Row 0 to 60: beta & vol_60d are NaN
         assert np.isnan(feat_df['beta_nifty'].iloc[10])
         assert np.isnan(feat_df['vol_60d'].iloc[10])
         
-        # Row 99 (after 100 candles) should have complete features
+        # Row 99 (100 candles): 60d features are ready, but 252d 52-week features must be NaN
+        assert not np.isnan(feat_df['beta_nifty'].iloc[99])
+        assert np.isnan(feat_df['dist_52w_high'].iloc[99])
+        assert np.isnan(feat_df['dist_52w_low'].iloc[99])
+        assert bool(feat_df['featureWarmupComplete'].iloc[99]) is False
+        
+        # Row 299 (300 candles >= 252): all 25 features must be complete non-NaN
         assert bool(feat_df['featureWarmupComplete'].iloc[-1]) is True
         for feat in FEATURE_NAMES:
             val = float(feat_df[feat].iloc[-1])
-            assert not np.isnan(val), f"Feature '{feat}' is NaN on row 99"
-            assert not np.isinf(val), f"Feature '{feat}' is Inf on row 99"
+            assert not np.isnan(val), f"Feature '{feat}' is NaN on row 299"
+            assert not np.isinf(val), f"Feature '{feat}' is Inf on row 299"
 
     def test_export_golden_feature_vector(self):
-        stock_df, bench_df = generate_synthetic_market_data(100)
+        stock_df, bench_df = generate_synthetic_market_data(300)
         feat_df = calculate_features(stock_df, bench_df)
         
         last_row = feat_df.iloc[-1]

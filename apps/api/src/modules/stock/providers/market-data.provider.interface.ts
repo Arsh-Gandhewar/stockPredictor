@@ -22,6 +22,7 @@ export interface MarketQuote {
 
 export interface OHLCVCandle {
   time: string | number;
+  timestamp?: string | number;
   open: number;
   high: number;
   low: number;

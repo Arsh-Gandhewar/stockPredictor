@@ -1,13 +1,13 @@
 export interface HorizonPrediction {
-  probability: number; // raw model output (0.5 if INSUFFICIENT_DATA)
-  calibratedProbability: number;
-  expectedReturn?: number;
-  confidenceInterval?: [number, number];
+  probability: number | null; // null when INSUFFICIENT_DATA
+  calibratedProbability: number | null;
+  expectedReturn?: number | null;
+  confidenceInterval?: [number, number] | null;
   expectedGainConditionalUp?: number;
   expectedLossConditionalDown?: number;
   expectedValue?: number;
   expectedVolatility?: number;
-  uncertainty?: number;
+  uncertainty?: number | null;
   sampleCount?: number;
   estimationMethod?:
     | 'EMPIRICAL_FINE_BUCKET'
@@ -46,22 +46,22 @@ export type DataQuality = 'HIGH' | 'MEDIUM' | 'LOW';
 export type PositionRiskState = 'NORMAL' | 'CAUTION' | 'HIGH_RISK' | 'EXIT' | 'EMERGENCY';
 
 export interface RiskAssessment {
-  stopLossPrice: number;
-  targetPrice: number;
-  rewardRiskRatio: number;
-  positionSizeWeight: number;
-  downsideProbability: number;
-  volatility: number;
+  stopLossPrice: number | null;
+  targetPrice: number | null;
+  rewardRiskRatio: number | null;
+  positionSizeWeight: number | null;
+  downsideProbability: number | null;
+  volatility: number | null;
   liquidityFlag: boolean;
-  compositeRiskScore?: number;
+  compositeRiskScore?: number | null;
   riskState?: PositionRiskState;
-  annualizedVolatility?: number;
-  downsideDeviation?: number;
-  maxDrawdown60d?: number;
-  betaNifty?: number;
-  gapRiskPercent?: number;
-  tailRiskPercent?: number;
-  kellySuggestedWeight?: number;
+  annualizedVolatility?: number | null;
+  downsideDeviation?: number | null;
+  maxDrawdown60d?: number | null;
+  betaNifty?: number | null;
+  gapRiskPercent?: number | null;
+  tailRiskPercent?: number | null;
+  kellySuggestedWeight?: number | null;
 }
 
 export interface ScenarioDetail {

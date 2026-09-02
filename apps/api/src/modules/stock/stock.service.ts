@@ -23,7 +23,7 @@ export interface MovementCatalyst {
   catalystType: 'TECHNICAL_BREAKOUT' | 'EARNINGS_ANNOUNCEMENT' | 'SECTOR_RALLY' | 'VOLUME_SPIKE' | 'BROAD_MARKET' | 'PROFIT_BOOKING' | 'MOMENTUM_BREAKOUT' | 'ORDERBOOK_PIPELINE' | 'RANGE_ACCUMULATION';
   confidenceScore: number;
   keyFactors: string[];
-  invalidationLevel: number;
+  invalidationLevel?: number | null;
   newsSentiment?: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
   topHeadline?: string;
 }
@@ -71,9 +71,9 @@ export interface TopPick {
   newsImpactScore: number;
   topHeadline?: string;
   reasoning: string;
-  target: number;
-  stopLoss: number;
-  rewardRiskRatio: number;
+  target?: number | null;
+  stopLoss?: number | null;
+  rewardRiskRatio?: number | null;
   rank?: number;
 }
 
@@ -84,9 +84,9 @@ export interface HighRiskPick {
   change: number;
   changePercent: number;
   beta: number;
-  rewardRiskRatio: number;
-  targetPrice: number;
-  stopLossPrice: number;
+  rewardRiskRatio?: number | null;
+  targetPrice?: number | null;
+  stopLossPrice?: number | null;
   targetPercent: number;
   stopLossPercent: number;
   alphaScore: number;
@@ -251,14 +251,17 @@ export class StockService {
         : 'NEUTRAL';
       const topHeadline = newsEvidence?.description.replace(/^\[.*?\]\s*/, '').replace(/\s*\(Sentiment score:.*?\)/, '');
 
-      const confidenceScore = Math.round(p.prediction['20d'].calibratedProbability * 100);
+      const prob20d = p.prediction['20d'].calibratedProbability ?? 0.5;
+      const prob5d = p.prediction['5d'].calibratedProbability ?? 0.5;
+      const rrRatio = p.risk.rewardRiskRatio ?? 1.5;
+      const confidenceScore = Math.round(prob20d * 100);
       const convictionScore = Math.round(
         (p.decision === 'STRONG_BUY' ? 100 : p.decision === 'BUY' ? 80 : p.decision === 'ACCUMULATE' ? 60 : 40) +
         confidenceScore +
-        p.risk.rewardRiskRatio * 10
+        rrRatio * 10
       );
 
-      let reasoning = `Low-risk setup with ${(p.prediction['5d'].calibratedProbability * 100).toFixed(0)}% 5-day probability and 1:${p.risk.rewardRiskRatio} R:R.`;
+      let reasoning = `Low-risk setup with ${(prob5d * 100).toFixed(0)}% 5-day probability and 1:${rrRatio} R:R.`;
       if (topHeadline) {
         reasoning = `Catalyst (${newsSentiment}): "${topHeadline}". Safe growth conviction: ${p.decision}.`;
       }
@@ -277,17 +280,17 @@ export class StockService {
         recommendation: p.decision,
         confidenceScore,
         convictionScore,
-        calibrated5dProb: Math.round(p.prediction['5d'].calibratedProbability * 100),
-        calibrated20dProb: Math.round(p.prediction['20d'].calibratedProbability * 100),
+        calibrated5dProb: Math.round(prob5d * 100),
+        calibrated20dProb: Math.round(prob20d * 100),
         expectedReturn: parseFloat(((p.prediction['5d'].expectedReturn ?? 0) * 100).toFixed(1)),
-        downsideProbability: Math.round(p.risk.downsideProbability * 100),
+        downsideProbability: Math.round((p.risk.downsideProbability ?? 0.5) * 100),
         newsSentiment,
-        newsImpactScore: Math.round((p.prediction['20d'].calibratedProbability - 0.5) * 40),
+        newsImpactScore: Math.round((prob20d - 0.5) * 40),
         topHeadline,
         reasoning,
         target: p.risk.targetPrice,
         stopLoss: p.risk.stopLossPrice,
-        rewardRiskRatio: p.risk.rewardRiskRatio,
+        rewardRiskRatio: rrRatio,
         rank: idx + 1,
       };
     });
@@ -310,17 +313,24 @@ export class StockService {
         : 'NEUTRAL';
       const topHeadline = newsEvidence?.description.replace(/^\[.*?\]\s*/, '').replace(/\s*\(Sentiment score:.*?\)/, '');
 
-      const estimatedBeta = parseFloat((1.35 + p.risk.volatility * 25).toFixed(2));
-      const targetPercent = parseFloat((((p.risk.targetPrice - (p.stock.price || 1)) / (p.stock.price || 1)) * 100).toFixed(1));
-      const stopLossPercent = parseFloat(((((p.stock.price || 1) - p.risk.stopLossPrice) / (p.stock.price || 1)) * 100).toFixed(1));
+      const volatility = p.risk.volatility ?? 0.02;
+      const estimatedBeta = parseFloat((1.35 + volatility * 25).toFixed(2));
+      const targetPrice = p.risk.targetPrice ?? (p.stock.price || 1) * 1.1;
+      const stopLossPrice = p.risk.stopLossPrice ?? (p.stock.price || 1) * 0.95;
+      const targetPercent = parseFloat((((targetPrice - (p.stock.price || 1)) / (p.stock.price || 1)) * 100).toFixed(1));
+      const stopLossPercent = parseFloat(((((p.stock.price || 1) - stopLossPrice) / (p.stock.price || 1)) * 100).toFixed(1));
+
+      const prob20d = p.prediction['20d'].calibratedProbability ?? 0.5;
+      const prob5d = p.prediction['5d'].calibratedProbability ?? 0.5;
+      const rrRatio = p.risk.rewardRiskRatio ?? 1.5;
 
       const alphaScore = Math.round(
-        p.prediction['20d'].calibratedProbability * 100 +
-        p.risk.rewardRiskRatio * 20 +
-        p.risk.volatility * 500
+        prob20d * 100 +
+        rrRatio * 20 +
+        volatility * 500
       );
 
-      let catalystText = `High beta (${estimatedBeta}x) momentum setup with 1:${p.risk.rewardRiskRatio} R:R and ${p.decision} signal.`;
+      let catalystText = `High beta (${estimatedBeta}x) momentum setup with 1:${rrRatio} R:R and ${p.decision} signal.`;
       if (topHeadline) {
         catalystText += ` Catalyst: "${topHeadline}".`;
       }
@@ -332,12 +342,12 @@ export class StockService {
         change: p.stock.change || 0,
         changePercent: p.stock.changePercent || 0,
         beta: estimatedBeta,
-        rewardRiskRatio: p.risk.rewardRiskRatio,
-        targetPrice: p.risk.targetPrice,
-        stopLossPrice: p.risk.stopLossPrice,
+        rewardRiskRatio: rrRatio,
+        targetPrice,
+        stopLossPrice,
         targetPercent,
         targetUpsidePercent: targetPercent,
-        calibratedAlphaProb: Math.round(p.prediction['5d'].calibratedProbability * 100),
+        calibratedAlphaProb: Math.round(prob5d * 100),
         stopLossPercent,
         alphaScore,
         newsSentiment,
@@ -399,8 +409,9 @@ export class StockService {
       catalystType = 'RANGE_ACCUMULATION';
     }
 
+    const prob20d = pred.prediction['20d'].calibratedProbability ?? 0.5;
     const primaryDriver = pred.evidence.map((e) => e.description).join('. ') +
-      ` Model stance: ${pred.decision} (20d probability ${(pred.prediction['20d'].calibratedProbability * 100).toFixed(0)}%).`;
+      ` Model stance: ${pred.decision} (20d probability ${(prob20d * 100).toFixed(0)}%).`;
 
     const keyFactors = [
       ...pred.evidence.map((e) => e.description),
@@ -416,7 +427,7 @@ export class StockService {
       volumeSurgeRatio,
       primaryDriver,
       catalystType,
-      confidenceScore: Math.max(60, Math.round(Math.max(pred.prediction['20d'].calibratedProbability, 1 - pred.prediction['20d'].calibratedProbability, 0.65) * 100)),
+      confidenceScore: Math.max(60, Math.round(Math.max(prob20d, 1 - prob20d, 0.65) * 100)),
       keyFactors,
       invalidationLevel: pred.risk.stopLossPrice,
       newsSentiment,

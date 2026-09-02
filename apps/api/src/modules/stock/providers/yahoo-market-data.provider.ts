@@ -198,7 +198,10 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       queryPeriod1 = new Date(Date.now() - 190 * 24 * 60 * 60 * 1000);
     } else if (range === '1y') {
       interval = '1d';
-      queryPeriod1 = new Date(Date.now() - 370 * 24 * 60 * 60 * 1000);
+      queryPeriod1 = new Date(Date.now() - 430 * 24 * 60 * 60 * 1000);
+    } else if (range === '2y') {
+      interval = '1d';
+      queryPeriod1 = new Date(Date.now() - 730 * 24 * 60 * 60 * 1000);
     } else if (range === '5y') {
       interval = '1wk';
       queryPeriod1 = new Date(Date.now() - 5 * 365 * 24 * 60 * 60 * 1000);

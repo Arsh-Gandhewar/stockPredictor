@@ -29,8 +29,8 @@ export interface BacktestTrade {
   predictedProb: number;
   predictedDirection: 'UP' | 'DOWN';
   decision: string;
-  stopLossPrice: number;
-  targetPrice: number;
+  stopLossPrice?: number | null;
+  targetPrice?: number | null;
   grossReturn: number;
   netReturn: number;
   directionCorrect: boolean;
@@ -639,12 +639,19 @@ export class BacktestEngine {
           const positionType: PositionType = isLong ? 'LONG' : 'SHORT';
           const predictedDirection: 'UP' | 'DOWN' = isLong ? 'UP' : 'DOWN';
 
+          if (risk.stopLossPrice === null || risk.targetPrice === null) {
+            continue;
+          }
+
+          const rawStop = risk.stopLossPrice;
+          const rawTarget = risk.targetPrice;
+
           const stopLossPrice = isLong
-            ? risk.stopLossPrice
-            : parseFloat((quote.price + (quote.price - risk.stopLossPrice)).toFixed(2));
+            ? rawStop
+            : parseFloat((quote.price + (quote.price - rawStop)).toFixed(2));
           const targetPrice = isLong
-            ? risk.targetPrice
-            : parseFloat((quote.price - (risk.targetPrice - quote.price)).toFixed(2));
+            ? rawTarget
+            : parseFloat((quote.price - (rawTarget - quote.price)).toFixed(2));
 
           let exitReason: ExitReason = 'HORIZON_EXPIRY';
           let exitPrice = candles[i + offset].close;

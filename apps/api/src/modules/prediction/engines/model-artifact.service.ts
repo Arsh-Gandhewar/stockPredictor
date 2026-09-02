@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as crypto from 'crypto';
 import { ModelRegistry } from './model-registry';
 import { MODEL_CONFIG } from './model-config';
+import { getCanonicalFeatureSchemaHash } from './onnx-inference.engine';
 
 export interface EmpiricalDistributionBucket {
   horizon: '1d' | '5d' | '20d';
@@ -32,6 +33,7 @@ export interface ModelArtifact {
   modelVersion: string;
   modelType: string;
   featureVersion: string;
+  featureSchemaHash?: string;
   trainingStart: string;
   trainingEnd: string;
   validationStart: string;
@@ -271,9 +273,25 @@ export class ModelArtifactService {
     try {
       this.ensureCanonicalDirectories();
 
-      const artifactId = `art_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      const artifactId = (rawArtifact as any).id || `art_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      const canonicalSchemaHash = getCanonicalFeatureSchemaHash();
+      const existing = fs.existsSync(this.activeArtifactFile)
+        ? JSON.parse(fs.readFileSync(this.activeArtifactFile, 'utf-8'))
+        : {};
+
+      const onnxModels = rawArtifact.onnxModels || existing.onnxModels || {};
+      for (const h of ['1d', '5d', '20d'] as const) {
+        const mPath = path.join(this.activeDir, `model_${h}.onnx`);
+        if (fs.existsSync(mPath) && (!onnxModels[h] || !onnxModels[h].sha256)) {
+          const sha = crypto.createHash('sha256').update(fs.readFileSync(mPath)).digest('hex');
+          onnxModels[h] = { filename: `model_${h}.onnx`, sha256: sha, status: 'VALID' };
+        }
+      }
+
       const toChecksum = {
         ...rawArtifact,
+        featureSchemaHash: rawArtifact.featureSchemaHash || canonicalSchemaHash,
+        onnxModels,
         id: artifactId,
       };
 

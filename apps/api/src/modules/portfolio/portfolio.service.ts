@@ -932,12 +932,14 @@ export class PortfolioService {
         }
 
         const isSellDecision = prediction.decision === 'SELL' || prediction.decision === 'STRONG_SELL';
-        const isHighDownside = prediction.risk.downsideProbability > 0.60;
-        const isStopLossTriggered = currentPrice <= prediction.risk.stopLossPrice;
+        const downsideProb = prediction.risk.downsideProbability ?? 0.5;
+        const stopLossPrice = prediction.risk.stopLossPrice ?? (currentPrice * 0.95);
+        const isHighDownside = downsideProb > 0.60;
+        const isStopLossTriggered = currentPrice <= stopLossPrice;
         const isTargetReached = pos.targetPrice ? currentPrice >= pos.targetPrice : false;
         const isReduceDecision = prediction.decision === 'REDUCE';
 
-        const riskScore = prediction.risk.compositeRiskScore || Math.round(prediction.risk.downsideProbability * 100);
+        const riskScore = prediction.risk.compositeRiskScore || Math.round(downsideProb * 100);
         const isRiskScoreElevated = riskScore >= MODEL_CONFIG.RISK.STATE_THRESHOLDS.HIGH_RISK;
         const isEmergency = prediction.risk.riskState === 'EMERGENCY';
 
@@ -982,8 +984,8 @@ export class PortfolioService {
             decision: recommendation,
             urgency,
             targetExitPrice,
-            downsideProbability: prediction.risk.downsideProbability,
-            stopLossPrice: prediction.risk.stopLossPrice,
+            downsideProbability: prediction.risk.downsideProbability ?? undefined,
+            stopLossPrice: prediction.risk.stopLossPrice ?? undefined,
             evidence: prediction.evidence.map((e) => e.description).join('; '),
             invalidationConditions: prediction.invalidationConditions,
           });
@@ -1004,8 +1006,8 @@ export class PortfolioService {
             currentPrice,
             averagePrice: pos.averagePrice,
             unrealizedPnLPercent: pos.overallPnLPercent,
-            downsideProbability: Math.round(prediction.risk.downsideProbability * 100),
-            exitProbability: Math.round(prediction.risk.downsideProbability * 100),
+            downsideProbability: Math.round(downsideProb * 100),
+            exitProbability: Math.round(downsideProb * 100),
             compositeRiskScore: riskScore,
             riskState: prediction.risk.riskState || (riskScore >= 85 ? 'EXIT' : riskScore >= 65 ? 'HIGH_RISK' : 'CAUTION'),
             portfolioWeightPercent: pos.portfolioWeightPercent || 0,
@@ -1014,16 +1016,16 @@ export class PortfolioService {
             targetExitPrice,
             targetPrice: targetExitPrice,
             rewardRiskRatio: prediction.risk.rewardRiskRatio,
-            confidenceScore: Math.round(prediction.prediction['20d'].calibratedProbability * 100),
+            confidenceScore: Math.round((prediction.prediction['20d'].calibratedProbability ?? 0.5) * 100),
             financialReasoning:
               aiNarrative?.financialReasoning ||
               `Risk Guardian exit threshold reached (Risk Score: ${riskScore}/100): ${
                 isStopLossTriggered
-                  ? `Trailing stop loss breached at ₹${prediction.risk.stopLossPrice.toFixed(2)}`
+                  ? `Trailing stop loss breached at ₹${(prediction.risk.stopLossPrice ?? 0).toFixed(2)}`
                   : isTargetReached
                   ? `Profit target achieved at ₹${pos.targetPrice?.toFixed(2)}`
                   : isHighDownside
-                  ? `Elevated downside probability (${Math.round(prediction.risk.downsideProbability * 100)}%)`
+                  ? `Elevated downside probability (${Math.round((prediction.risk.downsideProbability ?? 0.5) * 100)}%)`
                   : `Model ${prediction.decision} signal emitted`
               }.`,
             newsImpact:

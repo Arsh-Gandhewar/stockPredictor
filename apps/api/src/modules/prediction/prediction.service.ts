@@ -227,7 +227,7 @@ export class QuantPredictionService implements OnModuleInit {
 
     const [quote, candles, indices] = await Promise.all([
       this.stockService.getQuote(ticker).catch(() => null),
-      this.stockService.getChartData(ticker, '6mo').catch(() => []),
+      this.stockService.getChartData(ticker, '1y').catch(() => []),
       this.stockService.getMarketSummary().catch(() => []),
     ]);
 
@@ -246,27 +246,27 @@ export class QuantPredictionService implements OnModuleInit {
           changePercent: quote?.changePercent ?? null,
         },
         prediction: {
-          '1d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
-          '5d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
-          '20d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
+          '1d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '5d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '20d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
         },
         risk: {
-          stopLossPrice: 0,
-          targetPrice: 0,
-          rewardRiskRatio: 1.0,
-          positionSizeWeight: 0,
-          downsideProbability: 0.5,
-          volatility: 0.02,
-          liquidityFlag: true,
-          compositeRiskScore: 100,
+          stopLossPrice: null,
+          targetPrice: null,
+          rewardRiskRatio: null,
+          positionSizeWeight: null,
+          downsideProbability: null,
+          volatility: null,
+          liquidityFlag: false,
+          compositeRiskScore: null,
           riskState: 'EXIT',
-          annualizedVolatility: 0.2,
-          downsideDeviation: 0.15,
-          maxDrawdown60d: 0.1,
-          betaNifty: 1.0,
-          gapRiskPercent: 1.0,
-          tailRiskPercent: 5.0,
-          kellySuggestedWeight: 0,
+          annualizedVolatility: null,
+          downsideDeviation: null,
+          maxDrawdown60d: null,
+          betaNifty: null,
+          gapRiskPercent: null,
+          tailRiskPercent: null,
+          kellySuggestedWeight: null,
         },
         scenarios: {
           bull: { targetPrice: null, expectedReturnPercent: null, percentile: 85, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
@@ -311,7 +311,7 @@ export class QuantPredictionService implements OnModuleInit {
 
     let benchmarkCandles: any[] = [];
     try {
-      benchmarkCandles = await this.stockService.getChartData('^NSEI', '6mo').catch(() => []);
+      benchmarkCandles = await this.stockService.getChartData('^NSEI', '1y').catch(() => []);
     } catch {}
 
     const featureResult = this.featureEngine.calculateFeatures(
@@ -333,27 +333,27 @@ export class QuantPredictionService implements OnModuleInit {
           changePercent: quote.changePercent ?? null,
         },
         prediction: {
-          '1d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
-          '5d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
-          '20d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
+          '1d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '5d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '20d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
         },
         risk: {
-          stopLossPrice: parseFloat((quote.price * 0.96).toFixed(2)),
-          targetPrice: parseFloat((quote.price * 1.06).toFixed(2)),
-          rewardRiskRatio: 1.5,
-          positionSizeWeight: 0,
-          downsideProbability: 0.5,
-          volatility: 0.02,
+          stopLossPrice: null,
+          targetPrice: null,
+          rewardRiskRatio: null,
+          positionSizeWeight: null,
+          downsideProbability: null,
+          volatility: null,
           liquidityFlag: false,
-          compositeRiskScore: 70,
-          riskState: 'CAUTION',
-          annualizedVolatility: 0.2,
-          downsideDeviation: 0.15,
-          maxDrawdown60d: 0.1,
-          betaNifty: 1.0,
-          gapRiskPercent: 0.5,
-          tailRiskPercent: 3.0,
-          kellySuggestedWeight: 0,
+          compositeRiskScore: null,
+          riskState: 'EXIT',
+          annualizedVolatility: null,
+          downsideDeviation: null,
+          maxDrawdown60d: null,
+          betaNifty: null,
+          gapRiskPercent: null,
+          tailRiskPercent: null,
+          kellySuggestedWeight: null,
         },
         scenarios: {
           bull: { targetPrice: null, expectedReturnPercent: null, percentile: 85, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
@@ -379,7 +379,7 @@ export class QuantPredictionService implements OnModuleInit {
         ],
         featureContributions: [],
         invalidationConditions: [
-          `Historical candles (${featureResult.candleCount}) insufficient for complete 25-factor feature model`,
+          `Historical candles (${featureResult.candleCount}) insufficient for complete 25-factor feature model (requires 252 candles)`,
         ],
         ranking: { rank: 0, percentile: 0, universeSize: 0 },
       };
@@ -518,12 +518,14 @@ export class QuantPredictionService implements OnModuleInit {
       weight: 0.10,
     });
 
-    const featureContributions = this.inferenceEngine.calculateFeatureContributions(features as any);
+    const featureContributions = this.inferenceEngine.calculateFeatureContributions(features);
 
     const invalidationConditions: string[] = [
-      `Price close below trailing ATR stop-loss level of ₹${risk.stopLossPrice.toFixed(2)} (${(
-        -(((quote.price - risk.stopLossPrice) / quote.price) * 100)
-      ).toFixed(1)}%)`,
+      risk.stopLossPrice !== null
+        ? `Price close below trailing ATR stop-loss level of ₹${risk.stopLossPrice.toFixed(2)} (${(
+            -(((quote.price - risk.stopLossPrice) / quote.price) * 100)
+          ).toFixed(1)}%)`
+        : `Volatility surge or trailing stop loss breach`,
       `Loss of structural 50-day SMA baseline support near ₹${
         features['sma_50_dist']
           ? (quote.price / (1 + features['sma_50_dist'])).toFixed(2)
@@ -655,7 +657,9 @@ export class QuantPredictionService implements OnModuleInit {
         }
 
         predictions.sort(
-          (a, b) => b.prediction['20d'].calibratedProbability - a.prediction['20d'].calibratedProbability
+          (a, b) =>
+            (b.prediction['20d'].calibratedProbability ?? -1) -
+            (a.prediction['20d'].calibratedProbability ?? -1)
         );
 
         predictions.forEach((p, idx) => {
@@ -702,8 +706,8 @@ export class QuantPredictionService implements OnModuleInit {
 
     let defensiveCandidates = all.filter((p) => {
       const isNotSell = p.decision !== 'SELL' && p.decision !== 'STRONG_SELL';
-      const downsideOk = p.risk.downsideProbability <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_DOWNSIDE_PROBABILITY;
-      const atrOk = p.risk.volatility <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_ATR_PERCENT;
+      const downsideOk = (p.risk.downsideProbability ?? 1.0) <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_DOWNSIDE_PROBABILITY;
+      const atrOk = (p.risk.volatility ?? 1.0) <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_ATR_PERCENT;
       const drawdownOk = (p.risk.maxDrawdown60d || 0) <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_MAX_DRAWDOWN;
       return isNotSell && downsideOk && atrOk && drawdownOk;
     });
@@ -715,51 +719,60 @@ export class QuantPredictionService implements OnModuleInit {
       defensiveCandidates = all;
     }
 
-    const scoredList = defensiveCandidates.map((p) => {
-      const pred = p.prediction['5d'];
-      const pUp = pred.calibratedProbability;
-      const pDown = p.risk.downsideProbability;
-      const expRet = typeof pred.expectedReturn === 'number' ? pred.expectedReturn : 0.015;
-      const expGain = pred.expectedGainConditionalUp || Math.max(0.005, expRet > 0 ? expRet : 0.015);
-      const expLoss = pred.expectedLossConditionalDown || Math.max(0.005, (p.stock.price! - p.risk.stopLossPrice) / p.stock.price!);
+    const scoredList = defensiveCandidates
+      .filter(
+        (p) =>
+          p.prediction['5d'].calibratedProbability !== null &&
+          p.risk.downsideProbability !== null &&
+          typeof p.stock.price === 'number' &&
+          p.stock.price > 0 &&
+          p.risk.stopLossPrice !== null
+      )
+      .map((p) => {
+        const pred = p.prediction['5d'];
+        const pUp = pred.calibratedProbability!;
+        const pDown = p.risk.downsideProbability!;
+        const expRet = typeof pred.expectedReturn === 'number' ? pred.expectedReturn : 0.015;
+        const expGain = pred.expectedGainConditionalUp || Math.max(0.005, expRet > 0 ? expRet : 0.015);
+        const expLoss = pred.expectedLossConditionalDown || Math.max(0.005, (p.stock.price! - p.risk.stopLossPrice!) / p.stock.price!);
 
-      const expectedValue = pUp * expGain - pDown * expLoss;
-      const downsideDev = Math.max(0.01, p.risk.downsideDeviation || (p.risk.volatility * 0.7));
-      const sortino = expectedValue / downsideDev;
+        const expectedValue = pUp * expGain - pDown * expLoss;
+        const downsideDev = Math.max(0.01, p.risk.downsideDeviation || ((p.risk.volatility || 0.02) * 0.7));
+        const sortino = expectedValue / downsideDev;
 
-      const normEv = Math.min(1.0, Math.max(0, (expectedValue + 0.02) / 0.05));
-      const normSortino = Math.min(1.0, Math.max(0, (sortino + 0.5) / 2.5));
-      const normRiskSafety = 1 - (p.risk.compositeRiskScore || 30) / 100;
-      const normLiquidity = p.risk.liquidityFlag ? 0.3 : 1.0;
+        const normEv = Math.min(1.0, Math.max(0, (expectedValue + 0.02) / 0.05));
+        const normSortino = Math.min(1.0, Math.max(0, (sortino + 0.5) / 2.5));
+        const normRiskSafety = 1 - (p.risk.compositeRiskScore || 30) / 100;
+        const normLiquidity = p.risk.liquidityFlag ? 0.3 : 1.0;
 
-      const cfg = MODEL_CONFIG.RANKING.LOW_RISK;
-      const compositeScore = parseFloat(
-        (
-          cfg.WEIGHT_EXPECTED_VALUE * normEv +
-          cfg.WEIGHT_SORTINO * normSortino +
-          cfg.WEIGHT_RISK_SAFETY * normRiskSafety +
-          cfg.WEIGHT_LIQUIDITY * normLiquidity
-        ).toFixed(4)
-      );
+        const cfg = MODEL_CONFIG.RANKING.LOW_RISK;
+        const compositeScore = parseFloat(
+          (
+            cfg.WEIGHT_EXPECTED_VALUE * normEv +
+            cfg.WEIGHT_SORTINO * normSortino +
+            cfg.WEIGHT_RISK_SAFETY * normRiskSafety +
+            cfg.WEIGHT_LIQUIDITY * normLiquidity
+          ).toFixed(4)
+        );
 
-      const breakdown: RankingScoreBreakdown = {
-        expectedValue: parseFloat((expectedValue * 100).toFixed(2)),
-        sortinoRatio: parseFloat(sortino.toFixed(2)),
-        riskScore: p.risk.compositeRiskScore || 25,
-        liquidityScore: normLiquidity,
-        compositeScore,
-        explanation: `Expected Sortino of ${sortino.toFixed(2)} with low composite risk score (${p.risk.compositeRiskScore || 25}/100) and steady EV of +${(expectedValue * 100).toFixed(2)}%`,
-      };
+        const breakdown: RankingScoreBreakdown = {
+          expectedValue: parseFloat((expectedValue * 100).toFixed(2)),
+          sortinoRatio: parseFloat(sortino.toFixed(2)),
+          riskScore: p.risk.compositeRiskScore || 25,
+          liquidityScore: normLiquidity,
+          compositeScore,
+          explanation: `Expected Sortino of ${sortino.toFixed(2)} with low composite risk score (${p.risk.compositeRiskScore || 25}/100) and steady EV of +${(expectedValue * 100).toFixed(2)}%`,
+        };
 
-      p.ranking = {
-        rank: 0,
-        percentile: 0,
-        universeSize: defensiveCandidates.length,
-        breakdown,
-      };
+        p.ranking = {
+          rank: 0,
+          percentile: 0,
+          universeSize: defensiveCandidates.length,
+          breakdown,
+        };
 
-      return { prediction: p, compositeScore };
-    });
+        return { prediction: p, compositeScore };
+      });
 
     scoredList.sort((a, b) => b.compositeScore - a.compositeScore);
 
@@ -779,8 +792,8 @@ export class QuantPredictionService implements OnModuleInit {
 
     let highBetaCandidates = all.filter((p) => {
       const isNotSell = p.decision !== 'SELL' && p.decision !== 'STRONG_SELL';
-      const hasVol = p.risk.volatility >= MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_ATR_PERCENT;
-      const hasRR = p.risk.rewardRiskRatio >= MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_REWARD_RISK_RATIO;
+      const hasVol = (p.risk.volatility || 0) >= MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_ATR_PERCENT;
+      const hasRR = (p.risk.rewardRiskRatio || 0) >= MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_REWARD_RISK_RATIO;
       return isNotSell && (hasVol || hasRR);
     });
 
@@ -791,17 +804,27 @@ export class QuantPredictionService implements OnModuleInit {
       highBetaCandidates = all;
     }
 
-    const scoredList = highBetaCandidates.map((p) => {
-      const pred = p.prediction['5d'];
-      const pUp = pred.calibratedProbability;
-      const pDown = p.risk.downsideProbability;
-      const expGain = pred.expectedGainConditionalUp || Math.max(0.01, (p.risk.targetPrice - p.stock.price!) / p.stock.price!);
-      const expLoss = pred.expectedLossConditionalDown || Math.max(0.01, (p.stock.price! - p.risk.stopLossPrice) / p.stock.price!);
+    const scoredList = highBetaCandidates
+      .filter(
+        (p) =>
+          p.prediction['5d'].calibratedProbability !== null &&
+          p.risk.downsideProbability !== null &&
+          typeof p.stock.price === 'number' &&
+          p.stock.price > 0 &&
+          p.risk.stopLossPrice !== null &&
+          p.risk.targetPrice !== null
+      )
+      .map((p) => {
+        const pred = p.prediction['5d'];
+        const pUp = pred.calibratedProbability!;
+        const pDown = p.risk.downsideProbability!;
+        const expGain = pred.expectedGainConditionalUp || Math.max(0.01, (p.risk.targetPrice! - p.stock.price!) / p.stock.price!);
+        const expLoss = pred.expectedLossConditionalDown || Math.max(0.01, (p.stock.price! - p.risk.stopLossPrice!) / p.stock.price!);
 
-      const expectedValue = pUp * expGain - pDown * expLoss;
-      const payoffAsymmetry = expLoss > 0 ? expGain / expLoss : 2.0;
-      const rrRatio = p.risk.rewardRiskRatio || 2.0;
-      const relStrength = (p.risk.betaNifty || 1.0) >= 1.1 ? 1.0 : 0.6;
+        const expectedValue = pUp * expGain - pDown * expLoss;
+        const payoffAsymmetry = expLoss > 0 ? expGain / expLoss : 2.0;
+        const rrRatio = p.risk.rewardRiskRatio || 2.0;
+        const relStrength = (p.risk.betaNifty || 1.0) >= 1.1 ? 1.0 : 0.6;
 
       const annualizedVol = p.risk.annualizedVolatility || 0.30;
       const excessiveVolPenalty = annualizedVol > 0.45 ? (annualizedVol - 0.45) * 1.5 : 0;
