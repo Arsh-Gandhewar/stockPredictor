@@ -226,13 +226,76 @@ export class QuantPredictionService implements OnModuleInit {
     if (cached && cached.expiresAt > Date.now()) return cached.data;
 
     const [quote, candles, indices] = await Promise.all([
-      this.stockService.getQuote(ticker),
-      this.stockService.getChartData(ticker, '6mo'),
+      this.stockService.getQuote(ticker).catch(() => null),
+      this.stockService.getChartData(ticker, '6mo').catch(() => []),
       this.stockService.getMarketSummary().catch(() => []),
     ]);
 
     const universe = this.marketProvider.getUniverse();
     const meta = universe.find((u) => u.ticker === ticker);
+
+    // 1. Strict Fail-Closed Market Quote Validation
+    if (!quote || typeof quote.price !== 'number' || isNaN(quote.price) || !isFinite(quote.price) || quote.price <= 0) {
+      const failClosedPrediction: StockPrediction = {
+        stock: {
+          ticker,
+          name: meta?.name || ticker,
+          sector: meta?.sector || 'Unknown',
+          price: quote?.price || 0,
+          change: quote?.change ?? null,
+          changePercent: quote?.changePercent ?? null,
+        },
+        prediction: {
+          '1d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '5d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '20d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+        },
+        risk: {
+          stopLossPrice: 0,
+          targetPrice: 0,
+          rewardRiskRatio: 1.0,
+          positionSizeWeight: 0,
+          downsideProbability: 0.5,
+          volatility: 0.02,
+          liquidityFlag: true,
+          compositeRiskScore: 100,
+          riskState: 'EXIT',
+          annualizedVolatility: 0.2,
+          downsideDeviation: 0.15,
+          maxDrawdown60d: 0.1,
+          betaNifty: 1.0,
+          gapRiskPercent: 1.0,
+          tailRiskPercent: 5.0,
+          kellySuggestedWeight: 0,
+        },
+        scenarios: {
+          bull: { targetPrice: null, expectedReturnPercent: null, percentile: 85, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
+          base: { targetPrice: null, expectedReturnPercent: null, percentile: 50, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
+          bear: { targetPrice: null, expectedReturnPercent: null, percentile: 15, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
+          probabilityStatus: 'NOT_ESTIMATED',
+        },
+        marketRegime: 'SIDEWAYS',
+        decision: 'NO_TRADE',
+        signalQuality: 'LOW',
+        dataQuality: 'LOW',
+        modelVersion: ModelRegistry.getModelVersion(),
+        calibrationVersion: this.activeArtifact?.calibrationVersion || 'UNAVAILABLE',
+        predictionTime: new Date().toISOString(),
+        dataTime: quote?.timestamp || new Date().toISOString(),
+        isStale: true,
+        evidence: [
+          {
+            type: 'TECHNICAL',
+            description: 'PRICE_DATA_UNAVAILABLE: Valid point-in-time market quote is missing. Model inference blocked.',
+            weight: 1.0,
+          },
+        ],
+        featureContributions: [],
+        invalidationConditions: ['Live market quote unavailable or invalid'],
+        ranking: { rank: 0, percentile: 0, universeSize: 0 },
+      };
+      return failClosedPrediction;
+    }
 
     const newsData = await this.newsService.getSentimentScoreForStock(
       ticker,
@@ -251,17 +314,82 @@ export class QuantPredictionService implements OnModuleInit {
       benchmarkCandles = await this.stockService.getChartData('^NSEI', '6mo').catch(() => []);
     } catch {}
 
-    const features = this.featureEngine.calculateFeatures(
+    const featureResult = this.featureEngine.calculateFeatures(
       quote,
       candles,
-      structuredNews.score,
       benchmarkCandles
     );
 
-    let dataQuality: DataQuality =
-      candles.length >= 50 ? 'HIGH' : candles.length >= 20 ? 'MEDIUM' : 'LOW';
+    // 2. Strict Fail-Closed Feature Availability & Lookback Check
+    if (!featureResult.isComplete || !featureResult.features) {
+      const missingSummary = featureResult.missingFeatures.slice(0, 4).join(', ');
+      const failClosedPrediction: StockPrediction = {
+        stock: {
+          ticker,
+          name: quote.name || meta?.name || ticker,
+          sector: meta?.sector || 'Unknown',
+          price: quote.price,
+          change: quote.change ?? null,
+          changePercent: quote.changePercent ?? null,
+        },
+        prediction: {
+          '1d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '5d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '20d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+        },
+        risk: {
+          stopLossPrice: parseFloat((quote.price * 0.96).toFixed(2)),
+          targetPrice: parseFloat((quote.price * 1.06).toFixed(2)),
+          rewardRiskRatio: 1.5,
+          positionSizeWeight: 0,
+          downsideProbability: 0.5,
+          volatility: 0.02,
+          liquidityFlag: false,
+          compositeRiskScore: 70,
+          riskState: 'CAUTION',
+          annualizedVolatility: 0.2,
+          downsideDeviation: 0.15,
+          maxDrawdown60d: 0.1,
+          betaNifty: 1.0,
+          gapRiskPercent: 0.5,
+          tailRiskPercent: 3.0,
+          kellySuggestedWeight: 0,
+        },
+        scenarios: {
+          bull: { targetPrice: null, expectedReturnPercent: null, percentile: 85, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
+          base: { targetPrice: null, expectedReturnPercent: null, percentile: 50, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
+          bear: { targetPrice: null, expectedReturnPercent: null, percentile: 15, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
+          probabilityStatus: 'NOT_ESTIMATED',
+        },
+        marketRegime: 'SIDEWAYS',
+        decision: 'NO_TRADE',
+        signalQuality: 'LOW',
+        dataQuality: featureResult.dataQuality === 'INSUFFICIENT_BENCHMARK' ? 'MEDIUM' : 'LOW',
+        modelVersion: ModelRegistry.getModelVersion(),
+        calibrationVersion: this.activeArtifact?.calibrationVersion || 'UNAVAILABLE',
+        predictionTime: new Date().toISOString(),
+        dataTime: quote.timestamp || new Date().toISOString(),
+        isStale: false,
+        evidence: [
+          {
+            type: 'TECHNICAL',
+            description: `Inference blocked: ${featureResult.dataQuality} (missing ${missingSummary}${featureResult.missingFeatures.length > 4 ? ` + ${featureResult.missingFeatures.length - 4} more` : ''})`,
+            weight: 1.0,
+          },
+        ],
+        featureContributions: [],
+        invalidationConditions: [
+          `Historical candles (${featureResult.candleCount}) insufficient for complete 25-factor feature model`,
+        ],
+        ranking: { rank: 0, percentile: 0, universeSize: 0 },
+      };
+      return failClosedPrediction;
+    }
 
-    // Multi-horizon raw predictions evaluated natively via ONNX Engine
+    const features = featureResult.features;
+    const dataQuality: DataQuality = 'HIGH';
+
+    // Multi-horizon raw predictions evaluated natively via ONNX Engine with ModelFeatureVector25
     const pred1d_raw = await this.onnxEngine.evaluate(features, '1d');
     const pred5d_raw = await this.onnxEngine.evaluate(features, '5d');
     const pred20d_raw = await this.onnxEngine.evaluate(features, '20d');
@@ -271,10 +399,7 @@ export class QuantPredictionService implements OnModuleInit {
     const pred5d = this.calibrationEngine.apply(pred5d_raw);
     const pred20d = this.calib20d.apply(pred20d_raw);
 
-    if (features['atr_percent'] == null) {
-      dataQuality = 'LOW';
-    }
-    const assetVolatility = features['atr_percent'] || 0; // The prompt said "remove volatility heuristic fallback", we will pass 0 or handled by LOW quality
+    const assetVolatility = features.atr_percent;
 
     // Hierarchical Empirical Return Estimations with volatility scaling
     const est1d = this.inferenceEngine.estimateExpectedReturn(pred1d, '1d', assetVolatility);
@@ -477,11 +602,23 @@ export class QuantPredictionService implements OnModuleInit {
     return prediction;
   }
 
+  private lastValidUniverseSnapshot: StockPrediction[] | null = null;
+  private lastUniverseFailureTime: number = 0;
+  private universeFailureCount: number = 0;
+
   async getUniversePredictions(): Promise<StockPrediction[]> {
     const universeCacheKey = `${this.artifactChecksum}:__universe_predictions__`;
     const cached = this.cache.get(universeCacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.data as unknown as StockPrediction[];
+    }
+
+    // Circuit breaker: If repeated upstream failures, back off before retry
+    const now = Date.now();
+    if (this.universeFailureCount >= 3 && now - this.lastUniverseFailureTime < 30_000) {
+      if (this.lastValidUniverseSnapshot && this.lastValidUniverseSnapshot.length > 0) {
+        return this.lastValidUniverseSnapshot.map((p) => ({ ...p, isStale: true }));
+      }
     }
 
     // Share active in-flight evaluation across concurrent requests
@@ -530,13 +667,28 @@ export class QuantPredictionService implements OnModuleInit {
         });
 
         if (predictions.length > 0) {
+          this.universeFailureCount = 0;
+          this.lastValidUniverseSnapshot = predictions;
           this.cache.set(universeCacheKey, {
             data: predictions as unknown as StockPrediction,
             expiresAt: Date.now() + 180_000, // 3 minutes TTL
           });
+          return predictions;
+        } else {
+          this.universeFailureCount++;
+          this.lastUniverseFailureTime = Date.now();
+          if (this.lastValidUniverseSnapshot && this.lastValidUniverseSnapshot.length > 0) {
+            return this.lastValidUniverseSnapshot.map((p) => ({ ...p, isStale: true }));
+          }
+          return [];
         }
-
-        return predictions;
+      } catch (err) {
+        this.universeFailureCount++;
+        this.lastUniverseFailureTime = Date.now();
+        if (this.lastValidUniverseSnapshot && this.lastValidUniverseSnapshot.length > 0) {
+          return this.lastValidUniverseSnapshot.map((p) => ({ ...p, isStale: true }));
+        }
+        return [];
       } finally {
         this.inFlightUniversePromise = null;
       }

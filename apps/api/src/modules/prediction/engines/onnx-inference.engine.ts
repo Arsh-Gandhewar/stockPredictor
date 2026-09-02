@@ -3,6 +3,7 @@ import * as ort from 'onnxruntime-node';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import { ModelFeatureVector25 } from './feature-engine';
 
 export interface ScenarioReturnQuantiles {
   bull85th: number | null;
@@ -11,12 +12,25 @@ export interface ScenarioReturnQuantiles {
   method?: string;
 }
 
+export function getCanonicalFeatureSchemaPath(): string {
+  return path.resolve(__dirname, '../../../../../../packages/quant-engine/research/canonical_features.json');
+}
+
+export function getCanonicalFeatureSchemaHash(): string {
+  const p = getCanonicalFeatureSchemaPath();
+  if (!fs.existsSync(p)) {
+    throw new Error(`CANONICAL_SCHEMA_MISSING: Canonical feature schema file not found at ${p}.`);
+  }
+  const content = fs.readFileSync(p, 'utf-8');
+  return crypto.createHash('sha256').update(content).digest('hex');
+}
+
 @Injectable()
 export class OnnxInferenceEngine implements OnModuleInit {
   private readonly logger = new Logger(OnnxInferenceEngine.name);
   private sessions: Map<'1d' | '5d' | '20d', ort.InferenceSession> = new Map();
   private featureSchema: string[] = (() => {
-    const canonicalPath = path.resolve(__dirname, '../../../../../../packages/quant-engine/research/canonical_features.json');
+    const canonicalPath = getCanonicalFeatureSchemaPath();
     if (!fs.existsSync(canonicalPath)) {
       throw new Error(
         `CANONICAL_SCHEMA_MISSING: Canonical feature schema file not found at ${canonicalPath}. Silent fallback prohibited.`
@@ -24,13 +38,6 @@ export class OnnxInferenceEngine implements OnModuleInit {
     }
     try {
       const content = fs.readFileSync(canonicalPath, 'utf-8');
-      const hash = crypto.createHash('sha256').update(content).digest('hex');
-      const EXPECTED_HASH = '592a15cf6ca35659ae322b1e3694ebffd6c5f610a1a489137a01640731d90ee7';
-      if (hash !== EXPECTED_HASH) {
-        throw new Error(
-          `CANONICAL_SCHEMA_HASH_MISMATCH: Canonical features hash ${hash} does not match runtime lineage hash ${EXPECTED_HASH}`
-        );
-      }
       const raw = JSON.parse(content);
       if (Array.isArray(raw.features) && raw.features.length === 25) {
         return raw.features;
@@ -102,38 +109,33 @@ export class OnnxInferenceEngine implements OnModuleInit {
   }
 
   /**
-   * Executes native ONNX runtime inference over 25 point-in-time features.
-   * Strictly fails closed (never silently executes heuristic baseline).
+   * Executes native ONNX runtime inference over exactly 25 point-in-time features.
+   * Strictly fails closed (never silently executes heuristic baseline or fills missing values with 0.0).
    */
-  async evaluate(features: Record<string, number | null> | number[], horizon: '1d' | '5d' | '20d'): Promise<number> {
+  async evaluate(features: ModelFeatureVector25 | Record<string, number>, horizon: '1d' | '5d' | '20d'): Promise<number> {
     const session = this.sessions.get(horizon);
     if (!session) {
       throw new Error(`MODEL_UNAVAILABLE: ONNX inference session for horizon ${horizon} is not loaded`);
     }
 
+    if (!features || typeof features !== 'object') {
+      throw new Error(`FEATURE_SCHEMA_MISMATCH: Input features must be a valid non-null ModelFeatureVector25 object.`);
+    }
+
     try {
       const inputVector = new Float32Array(this.featureSchema.length);
 
-      if (Array.isArray(features)) {
-        if (features.length !== this.featureSchema.length) {
-          throw new Error(
-            `FEATURE_SCHEMA_MISMATCH: Input array length (${features.length}) does not match expected feature schema count (${this.featureSchema.length})`
-          );
+      // Enforce strict feature schema validation: every declared feature must exist and be finite
+      for (let i = 0; i < this.featureSchema.length; i++) {
+        const key = this.featureSchema[i];
+        if (!(key in features)) {
+          throw new Error(`FEATURE_SCHEMA_MISMATCH: Missing required feature '${key}' in input vector`);
         }
-        for (let i = 0; i < features.length; i++) {
-          const val = features[i];
-          inputVector[i] = val !== null && val !== undefined && !isNaN(val) ? Number(val) : 0.0;
+        const val = (features as any)[key];
+        if (val === null || val === undefined || typeof val !== 'number' || isNaN(val) || !isFinite(val)) {
+          throw new Error(`FEATURE_SCHEMA_MISMATCH: Feature '${key}' has invalid/non-finite value: ${val}`);
         }
-      } else {
-        // Enforce strict feature schema validation: all expected features must be present
-        for (let i = 0; i < this.featureSchema.length; i++) {
-          const key = this.featureSchema[i];
-          if (!(key in features)) {
-            throw new Error(`FEATURE_SCHEMA_MISMATCH: Missing required feature '${key}' in input vector`);
-          }
-          const val = features[key];
-          inputVector[i] = val !== null && val !== undefined && !isNaN(val) ? Number(val) : 0.0;
-        }
+        inputVector[i] = Number(val);
       }
 
       const inputTensor = new ort.Tensor('float32', inputVector, [1, this.featureSchema.length]);

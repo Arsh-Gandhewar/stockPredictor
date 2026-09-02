@@ -20,7 +20,7 @@ SCHEMA_EXACT: bool = True
 
 _SCHEMA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'canonical_features.json')
 if os.path.exists(_SCHEMA_FILE):
-    with open(_SCHEMA_FILE, 'r', encoding='utf-8') as _f:
+    with open(_SCHEMA_FILE, 'r', encoding='utf-8-sig') as _f:
         _loaded_schema = json.load(_f)
         CANONICAL_FEATURE_SCHEMA = _loaded_schema.get('features', [])
         CANONICAL_FEATURE_COUNT: int = len(CANONICAL_FEATURE_SCHEMA)

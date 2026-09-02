@@ -1,7 +1,8 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { RiskAssessment } from '../prediction.types';
 import { MarketQuote } from '../../stock/providers/market-data.provider.interface';
 import { MODEL_CONFIG } from './model-config';
+import { ModelFeatureVector25 } from './feature-engine';
 
 export type PositionRiskState = 'NORMAL' | 'CAUTION' | 'HIGH_RISK' | 'EXIT' | 'EMERGENCY';
 
@@ -20,15 +21,16 @@ export interface ExtendedRiskMetrics extends RiskAssessment {
 @Injectable()
 export class RiskEngine {
   /**
-   * Calculates multi-dimensional risk assessment and continuous composite RiskScore (0-100).
+   * Calculates multi-dimensional risk assessment and continuous composite RiskScore (0-100)
+   * from typed 25-feature model vector.
    */
   calculateRisk(
     quote: MarketQuote,
-    features: Record<string, number | null>,
+    features: ModelFeatureVector25,
     downsideProbability: number
   ): ExtendedRiskMetrics {
-    const price = quote.price || 1.0;
-    const atr = features['atr_14'] || price * 0.02;
+    const price = quote.price > 0 ? quote.price : 1.0;
+    const atr = features.atr_percent * price;
 
     // ── Dynamic ATR-based Stop Loss & Target ──
     const stopMultiplier = MODEL_CONFIG.RISK.STOP_LOSS_ATR_MULTIPLIER; // 2.0
@@ -42,20 +44,19 @@ export class RiskEngine {
     const rewardRiskRatio = parseFloat((rewardPerShare / riskPerShare).toFixed(2));
 
     // ── Multi-Factor Risk Features Extraction ──
-    const annualizedVol = features['annualized_volatility'] || (atr / price) * Math.sqrt(252);
-    const downsideDev = features['downside_deviation'] || annualizedVol * 0.7;
-    const maxDrawdown60d = features['max_drawdown_60d'] || 0.05;
-    const betaNifty = features['beta_nifty'] || 1.0;
-    const atrPercent = features['atr_percent'] || (atr / price);
-    const gapRisk = features['gap_risk'] || 0.005;
-    const tailRisk = Math.abs(features['tail_risk_5pct'] || -0.03);
-    const liquidityScore = features['liquidity_score'] || 6.0; // Log10 turnover
+    const annualizedVol = features.annualized_volatility;
+    const downsideDev = features.downside_deviation;
+    const maxDrawdown60d = Math.abs(features.dist_52w_low);
+    const betaNifty = features.beta_nifty;
+    const atrPercent = features.atr_percent;
+    const gapRisk = Math.abs(features.gap_pct);
+    const tailRisk = features.downside_deviation / Math.sqrt(252);
+    const liquidityScore = Math.max(1.0, Math.log10(Math.max(1, price * (quote.volume || 100000))));
 
     // Illiquidity flag: Daily volume < 50k shares OR Turnover < ₹25 Lakhs (log10 < 6.4)
     const liquidityFlag = (quote.volume || 0) < 50000 || liquidityScore < 6.4;
 
     // ── Multi-Factor Continuous Composite RiskScore (0 - 100) ──
-    // Each factor is normalized to [0, 1] using empirical scale bounds
     const normVol = Math.min(1.0, annualizedVol / 0.50);
     const normDownsideDev = Math.min(1.0, downsideDev / 0.35);
     const normDrawdown = Math.min(1.0, maxDrawdown60d / 0.25);
@@ -76,12 +77,10 @@ export class RiskEngine {
       weights.TAIL_RISK * normTail +
       weights.ILLIQUIDITY * normIlliquidity;
 
-    // Blended with downside probability: 60% Multi-factor metrics + 40% Predicted downside probability
     const compositeRiskScore = Math.round(
       Math.min(100, Math.max(0, (rawRiskScore * 60 + downsideProbability * 40)))
     );
 
-    // ── Dynamic Risk State Mapping (0 - 100) ──
     let riskState: PositionRiskState = 'NORMAL';
     if (compositeRiskScore >= MODEL_CONFIG.RISK.STATE_THRESHOLDS.EXIT) {
       riskState = 'EXIT';
@@ -91,30 +90,32 @@ export class RiskEngine {
       riskState = 'CAUTION';
     }
 
-    // Emergency condition: Tail risk shock or immediate stop loss hit
     if (tailRisk > 0.08 || (price <= stopLossPrice)) {
       riskState = 'EMERGENCY';
     }
 
-    // ── Quarter-Kelly Position Sizing ──
+    // Quarter-Kelly Position Sizing
     const winProb = 1 - downsideProbability;
-    const b = Math.max(1.0, rewardRiskRatio);
-    const kelly = Math.max(0, (winProb * b - (1 - winProb)) / b);
-    const suggestedWeight = Math.min(
-      MODEL_CONFIG.RISK.MAX_PORTFOLIO_WEIGHT_PER_STOCK,
-      Math.max(
-        MODEL_CONFIG.RISK.MIN_PORTFOLIO_WEIGHT_PER_STOCK,
-        kelly * MODEL_CONFIG.RISK.KELLY_FRACTION * (liquidityFlag ? 0.5 : 1.0)
-      )
+    const b = rewardRiskRatio > 0 ? rewardRiskRatio : 1.0;
+    const fullKelly = (winProb * (b + 1) - 1) / b;
+    const quarterKelly = Math.max(0, fullKelly * MODEL_CONFIG.RISK.KELLY_FRACTION);
+    const kellySuggestedWeight = parseFloat(
+      Math.min(MODEL_CONFIG.PORTFOLIO.MAX_SINGLE_STOCK_WEIGHT, quarterKelly).toFixed(4)
     );
+
+    let positionSizeWeight = kellySuggestedWeight;
+    if (riskState === 'CAUTION') positionSizeWeight *= 0.6;
+    if (riskState === 'HIGH_RISK') positionSizeWeight *= 0.3;
+    if (riskState === 'EXIT' || riskState === 'EMERGENCY') positionSizeWeight = 0;
+    positionSizeWeight = parseFloat(positionSizeWeight.toFixed(4));
 
     return {
       stopLossPrice,
       targetPrice,
       rewardRiskRatio,
-      positionSizeWeight: parseFloat(suggestedWeight.toFixed(4)),
-      downsideProbability: parseFloat(downsideProbability.toFixed(4)),
-      volatility: parseFloat((atr / price).toFixed(4)),
+      positionSizeWeight,
+      downsideProbability,
+      volatility: parseFloat(atrPercent.toFixed(4)),
       liquidityFlag,
       compositeRiskScore,
       riskState,
@@ -124,19 +125,7 @@ export class RiskEngine {
       betaNifty: parseFloat(betaNifty.toFixed(2)),
       gapRiskPercent: parseFloat((gapRisk * 100).toFixed(2)),
       tailRiskPercent: parseFloat((tailRisk * 100).toFixed(2)),
-      kellySuggestedWeight: parseFloat(suggestedWeight.toFixed(4)),
+      kellySuggestedWeight,
     };
-  }
-
-  /**
-   * Evaluates input data quality score between 0.0 and 1.0.
-   */
-  assessDataQuality(features: Record<string, number | null>): number {
-    let quality = 1.0;
-    if (features['rsi_14'] === null || features['rsi_14'] === undefined) quality -= 0.25;
-    if (features['macd_hist'] === null || features['macd_hist'] === undefined) quality -= 0.20;
-    if (features['sma_50_dist'] === null || features['sma_50_dist'] === undefined) quality -= 0.25;
-    if (features['atr_14'] === null || features['atr_14'] === undefined) quality -= 0.15;
-    return Math.max(0.1, Math.min(1.0, quality));
   }
 }
