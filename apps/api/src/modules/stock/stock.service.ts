@@ -279,7 +279,7 @@ export class StockService {
         convictionScore,
         calibrated5dProb: Math.round(p.prediction['5d'].calibratedProbability * 100),
         calibrated20dProb: Math.round(p.prediction['20d'].calibratedProbability * 100),
-        expectedReturn: parseFloat((p.prediction['5d'].expectedReturn * 100).toFixed(1)),
+        expectedReturn: parseFloat(((p.prediction['5d'].expectedReturn ?? 0) * 100).toFixed(1)),
         downsideProbability: Math.round(p.risk.downsideProbability * 100),
         newsSentiment,
         newsImpactScore: Math.round((p.prediction['20d'].calibratedProbability - 0.5) * 40),

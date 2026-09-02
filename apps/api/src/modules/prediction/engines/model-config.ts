@@ -205,4 +205,10 @@ export const MODEL_CONFIG = {
     LOOKBACK_DATA_RANGE: '1y',
     MIN_CANDLES_REQUIRED: 75,
   },
+
+  // ── Portfolio Construction & Sizing Bounds ──
+  PORTFOLIO: {
+    MAX_SINGLE_STOCK_WEIGHT: 0.20, // Max 20% allocation in any single stock
+    MAX_CONCURRENT_POSITIONS: 5,
+  },
 } as const;

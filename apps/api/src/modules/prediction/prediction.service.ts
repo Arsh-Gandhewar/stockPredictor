@@ -246,9 +246,9 @@ export class QuantPredictionService implements OnModuleInit {
           changePercent: quote?.changePercent ?? null,
         },
         prediction: {
-          '1d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
-          '5d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
-          '20d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '1d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
+          '5d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
+          '20d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
         },
         risk: {
           stopLossPrice: 0,
@@ -333,9 +333,9 @@ export class QuantPredictionService implements OnModuleInit {
           changePercent: quote.changePercent ?? null,
         },
         prediction: {
-          '1d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
-          '5d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
-          '20d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '1d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
+          '5d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
+          '20d': { probability: 0.5, calibratedProbability: 0.5, uncertainty: 0, estimationMethod: 'INSUFFICIENT_DATA' },
         },
         risk: {
           stopLossPrice: parseFloat((quote.price * 0.96).toFixed(2)),
@@ -518,7 +518,7 @@ export class QuantPredictionService implements OnModuleInit {
       weight: 0.10,
     });
 
-    const featureContributions = this.inferenceEngine.calculateFeatureContributions(features);
+    const featureContributions = this.inferenceEngine.calculateFeatureContributions(features as any);
 
     const invalidationConditions: string[] = [
       `Price close below trailing ATR stop-loss level of ₹${risk.stopLossPrice.toFixed(2)} (${(
@@ -719,7 +719,8 @@ export class QuantPredictionService implements OnModuleInit {
       const pred = p.prediction['5d'];
       const pUp = pred.calibratedProbability;
       const pDown = p.risk.downsideProbability;
-      const expGain = pred.expectedGainConditionalUp || Math.max(0.005, pred.expectedReturn > 0 ? pred.expectedReturn : 0.015);
+      const expRet = typeof pred.expectedReturn === 'number' ? pred.expectedReturn : 0.015;
+      const expGain = pred.expectedGainConditionalUp || Math.max(0.005, expRet > 0 ? expRet : 0.015);
       const expLoss = pred.expectedLossConditionalDown || Math.max(0.005, (p.stock.price! - p.risk.stopLossPrice) / p.stock.price!);
 
       const expectedValue = pUp * expGain - pDown * expLoss;

@@ -1,8 +1,8 @@
 export interface HorizonPrediction {
-  probability: number; // raw model output
+  probability: number; // raw model output (0.5 if INSUFFICIENT_DATA)
   calibratedProbability: number;
-  expectedReturn: number;
-  confidenceInterval: [number, number];
+  expectedReturn?: number;
+  confidenceInterval?: [number, number];
   expectedGainConditionalUp?: number;
   expectedLossConditionalDown?: number;
   expectedValue?: number;
@@ -15,7 +15,8 @@ export interface HorizonPrediction {
     | 'EMPIRICAL_HORIZON_WIDE'
     | 'FALLBACK_DIFFUSION'
     | 'EMPIRICAL_TWO_STAGE'
-    | 'ESTIMATED_DIFFUSION';
+    | 'ESTIMATED_DIFFUSION'
+    | 'INSUFFICIENT_DATA';
 }
 
 export type Decision =
@@ -139,8 +140,8 @@ export interface StockPrediction {
     name: string;
     sector: string;
     price?: number;
-    change?: number;
-    changePercent?: number;
+    change?: number | null;
+    changePercent?: number | null;
   };
   prediction: {
     '1d': HorizonPrediction;

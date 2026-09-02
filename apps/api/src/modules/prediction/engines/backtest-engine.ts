@@ -545,12 +545,16 @@ export class BacktestEngine {
       };
 
       const benchSlice = benchmarkCandles.slice(0, Math.min(i + 1, benchmarkCandles.length));
-      if (benchSlice.length === 0) {
+      if (benchSlice.length < 61) {
         throw new Error(
           'INSUFFICIENT_DATA: Historical benchmark candles for ^NSEI are missing; cannot substitute stock price as benchmark.'
         );
       }
-      const features = this.featureEngine.calculateFeatures(quote, historicalCandles, 0, benchSlice);
+      const featResult = this.featureEngine.calculateFeatures(quote, historicalCandles, benchSlice);
+      if (!featResult.isComplete || !featResult.features) {
+        continue;
+      }
+      const features = featResult.features;
 
       const benchCurr = benchSlice[benchSlice.length - 1].close;
       const benchPrev = benchSlice.length > 1 ? benchSlice[benchSlice.length - 2].close : benchCurr;
@@ -586,7 +590,7 @@ export class BacktestEngine {
       if (partition === 'TRAIN' && i + 5 < candles.length) {
         const fwdReturn = (candles[i + 5].close - candles[i].close) / candles[i].close;
         trainingSamples.push({
-          features,
+          features: { ...features },
           outcome: fwdReturn > 0 ? 1 : 0,
         });
       }
@@ -594,12 +598,12 @@ export class BacktestEngine {
       const horizons: ('1d' | '5d' | '20d')[] = ['1d', '5d', '20d'];
 
       for (const horizon of horizons) {
-        const rawProb = this.inferenceEngine.evaluate(features, horizon);
+        const rawProb = this.inferenceEngine.evaluate(features as any, horizon);
         const calibProb = this.calibrationEngine.apply(rawProb);
 
         let downsideProb = 1 - calibProb;
         if (horizon !== '20d') {
-          const pred20d_raw = this.inferenceEngine.evaluate(features, '20d');
+          const pred20d_raw = this.inferenceEngine.evaluate(features as any, '20d');
           const pred20d_calib = this.calibrationEngine.apply(pred20d_raw);
           downsideProb = 1 - pred20d_calib;
         }
