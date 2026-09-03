@@ -228,8 +228,27 @@ export class ModelInferenceEngine {
     const horizonWide = this.empiricalBuckets.find(
       (b) => b.horizon === horizon && b.bucketType === 'HORIZON_WIDE' && b.sampleCount >= STATISTICAL_GATES.MIN_HORIZON_WIDE_SAMPLES
     );
-    const wideGain = horizonWide ? horizonWide.meanGainConditionalUp * volScale : 0.035 * volScale;
-    const wideLoss = horizonWide ? horizonWide.meanLossConditionalDown * volScale : 0.020 * volScale;
+    if (!horizonWide) {
+      return {
+        probability: p,
+        expectedGainConditionalUp: null,
+        expectedLossConditionalDown: null,
+        expectedValue: null,
+        expectedReturn: null,
+        expectedVolatility: marketVol,
+        confidenceInterval: null,
+        meanConfidenceInterval: null,
+        predictiveInterval: null,
+        marketVolatility: marketVol,
+        estimationUncertainty: null,
+        uncertainty: null,
+        sampleCount: 0,
+        method: 'INSUFFICIENT_DATA',
+        reason: 'No horizon-wide empirical prior available; fail-closed without hardcoded priors.',
+      };
+    }
+    const wideGain = horizonWide.meanGainConditionalUp * volScale;
+    const wideLoss = horizonWide.meanLossConditionalDown * volScale;
 
     const fineBucket = this.empiricalBuckets.find(
       (b) => b.horizon === horizon && b.bucketType === 'FINE' && p >= b.probLower && p < b.probUpper && b.sampleCount >= STATISTICAL_GATES.MIN_FINE_BUCKET_SAMPLES
@@ -382,7 +401,7 @@ export class ModelInferenceEngine {
       ret_5d: 0.045,
       roc_12: 0.035,
       ret_20d: 0.055,
-      regime_trend: 0.030,
+      vol_20d: -0.020,
     };
 
     const contributions: { feature: string; contribution: number }[] = [];

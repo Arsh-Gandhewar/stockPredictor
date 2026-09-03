@@ -6,7 +6,7 @@ import { MODEL_CONFIG } from './model-config';
  * parameter lineage, calibration states, and model operational health.
  */
 
-export type ModelType = 'BASELINE_HEURISTIC' | 'LEARNED_LIGHTGBM';
+export type ModelType = 'BASELINE_HEURISTIC' | 'LEARNED_LIGHTGBM' | 'ONNX_ENSEMBLE';
 
 export interface ModelMetadata {
   modelVersion: string;
@@ -28,11 +28,11 @@ export interface ModelMetadata {
 export class ModelRegistry {
   private static readonly ACTIVE_MODEL: ModelMetadata = {
     modelVersion: MODEL_CONFIG.VERSION,
-    modelType: 'LEARNED_LIGHTGBM',
+    modelType: 'ONNX_ENSEMBLE',
     calibrationVersion: MODEL_CONFIG.CALIBRATION_VERSION,
     featureSchemaVersion: MODEL_CONFIG.FEATURE_SCHEMA_VERSION,
     status: 'ACTIVE',
-    description: 'QuantX Institutional Multi-Horizon LightGBM Engine with Out-of-Sample Isotonic Calibration and ONNX Runtime Inference (v5.0.0)',
+    description: 'QuantX Institutional Multi-Horizon ONNX Ensemble Engine with Out-of-Sample Isotonic Calibration and Runtime Parity (v5.1.0)',
     trainingWindow: 'Rolling 24-month walk-forward train window',
     validationWindow: 'Rolling 6-month calibration and hyperparameter validation window',
     testWindow: 'Rolling 6-month out-of-sample forward step',

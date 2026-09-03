@@ -171,10 +171,33 @@ export class FeatureEngine {
       };
     }
 
-    // Filter out market holiday dummy bars where volume is 0 and high === low === open === close
-    const activeCandles = candles.filter(
-      (c) => !(c.volume === 0 && c.high === c.low && c.open === c.close)
-    );
+    // 3. Strict Temporal Structure & Point-in-Time Causality Validation
+    const decisionTime = quote?.timestamp ? new Date(quote.timestamp).getTime() : Date.now();
+    const cutoffTimeMs = isNaN(decisionTime) ? Date.now() : decisionTime;
+
+    // Filter out market holiday dummy bars and enforce strict PIT causality:
+    // Only observations occurring on or before decision cutoff are visible to the feature pipeline.
+    const activeCandles = candles
+      .filter((c) => !(c.volume === 0 && c.high === c.low && c.open === c.close))
+      .filter((c) => {
+        const rawTime = c.timestamp ?? (c as any).time;
+        const timeVal = typeof rawTime === 'string' || typeof rawTime === 'number'
+          ? new Date(rawTime).getTime()
+          : NaN;
+        return isNaN(timeVal) || timeVal <= cutoffTimeMs + 1000;
+      });
+
+    const activeBenchmark = benchmarkCandles
+      ? benchmarkCandles
+          .filter((b) => !(b.volume === 0 && b.high === b.low && b.open === b.close))
+          .filter((b) => {
+            const rawTime = b.timestamp ?? (b as any).time;
+            const timeVal = typeof rawTime === 'string' || typeof rawTime === 'number'
+              ? new Date(rawTime).getTime()
+              : NaN;
+            return isNaN(timeVal) || timeVal <= cutoffTimeMs + 1000;
+          })
+      : undefined;
 
     const n = activeCandles.length;
     const closes: number[] = [];
@@ -184,10 +207,6 @@ export class FeatureEngine {
     const volumes: number[] = [];
     const timestamps: number[] = [];
     const dateSet = new Set<string>();
-
-    // 3. Strict Temporal Structure & Field-Level Validation
-    const decisionTime = quote?.timestamp ? new Date(quote.timestamp).getTime() : Date.now();
-    const cutoffTimeMs = isNaN(decisionTime) ? Date.now() : decisionTime;
 
     for (let i = 0; i < n; i++) {
       const c = activeCandles[i];
@@ -206,12 +225,12 @@ export class FeatureEngine {
           failureReasons: { candles: `INVALID_PRICE_DATA: Invalid non-positive OHLC candle at index ${i}.` },
           dataQuality: 'INVALID_PRICE_DATA',
           candleCount: n,
-          benchmarkCandleCount: benchmarkCandles?.length || 0,
+          benchmarkCandleCount: activeBenchmark?.length || 0,
         };
       }
 
       // Temporal validation
-      const rawTime = c.timestamp ?? c.time;
+      const rawTime = c.timestamp ?? (c as any).time;
       const timeVal = typeof rawTime === 'string' || typeof rawTime === 'number'
         ? new Date(rawTime).getTime()
         : NaN;
@@ -226,22 +245,7 @@ export class FeatureEngine {
           failureReasons: { candles: `INVALID_TIMESTAMP: Unparseable timestamp at candle index ${i}.` },
           dataQuality: 'INVALID_PRICE_DATA',
           candleCount: n,
-          benchmarkCandleCount: benchmarkCandles?.length || 0,
-        };
-      }
-
-      // Reject future-dated candles beyond decision cutoff
-      if (timeVal > cutoffTimeMs + 60000) {
-        return {
-          features: null,
-          rawFeatures,
-          availabilityMask,
-          isComplete: false,
-          missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-          failureReasons: { candles: `FUTURE_CANDLE_LEAKAGE: Candle at index ${i} has timestamp ${new Date(timeVal).toISOString()} after decision cutoff ${new Date(cutoffTimeMs).toISOString()}.` },
-          dataQuality: 'INVALID_PRICE_DATA',
-          candleCount: n,
-          benchmarkCandleCount: benchmarkCandles?.length || 0,
+          benchmarkCandleCount: activeBenchmark?.length || 0,
         };
       }
 
@@ -500,12 +504,12 @@ export class FeatureEngine {
       }
 
       // ── Benchmark Features: beta_nifty & relative_strength_nifty with EXACT Date Matching ──
-      if (benchmarkCandles && Array.isArray(benchmarkCandles) && benchmarkCandles.length >= 61) {
+      if (activeBenchmark && Array.isArray(activeBenchmark) && activeBenchmark.length >= 61) {
         // Map benchmark candles by date string (YYYY-MM-DD)
         const benchMap = new Map<string, number>();
-        for (const b of benchmarkCandles) {
+        for (const b of activeBenchmark) {
           if (typeof b.close === 'number' && isFinite(b.close) && b.close > 0) {
-            const bRawTime = b.timestamp ?? b.time;
+            const bRawTime = b.timestamp ?? (b as any).time;
             const bDate = new Date(bRawTime).toISOString().slice(0, 10);
             benchMap.set(bDate, b.close);
           }
@@ -574,8 +578,8 @@ export class FeatureEngine {
           failureReasons['relative_strength_nifty'] = `Need >= 21 candles for 20d relative strength, got ${n}`;
         }
       } else {
-        failureReasons['beta_nifty'] = `Benchmark candles missing or < 61 (got ${benchmarkCandles?.length || 0})`;
-        failureReasons['relative_strength_nifty'] = `Benchmark candles missing or < 21 (got ${benchmarkCandles?.length || 0})`;
+        failureReasons['beta_nifty'] = `Benchmark candles missing or < 61 (got ${activeBenchmark?.length || 0})`;
+        failureReasons['relative_strength_nifty'] = `Benchmark candles missing or < 21 (got ${activeBenchmark?.length || 0})`;
       }
     } catch (err: any) {
       this.logger.error(`Feature computation exception: ${err.message}`, err.stack);

@@ -16,6 +16,8 @@ import { ModelArtifactService } from './engines/model-artifact.service';
 import { ProductionScorecardService } from './engines/production-scorecard';
 import { OnnxInferenceEngine } from './engines/onnx-inference.engine';
 import { RuntimeVerificationService } from './engines/runtime-verification.service';
+import { TestEvidenceService } from './engines/test-evidence.service';
+import { UniverseRegistry } from './engines/universe-registry';
 
 @Module({
   imports: [forwardRef(() => StockModule), NewsModule, DatabaseModule],
@@ -34,7 +36,9 @@ import { RuntimeVerificationService } from './engines/runtime-verification.servi
     ModelArtifactService,
     ProductionScorecardService,
     RuntimeVerificationService,
+    TestEvidenceService,
+    UniverseRegistry,
   ],
-  exports: [QuantPredictionService, RuntimeVerificationService],
+  exports: [QuantPredictionService, RuntimeVerificationService, TestEvidenceService, UniverseRegistry],
 })
 export class PredictionModule {}

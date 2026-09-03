@@ -31,9 +31,12 @@ export interface CalibrationGateMetrics {
 export interface ModelArtifact {
   id: string;
   modelVersion: string;
+  schemaVersion?: string;
+  policyVersion?: string;
   modelType: string;
   featureVersion: string;
   featureSchemaHash?: string;
+  researchLineage?: any;
   trainingStart: string;
   trainingEnd: string;
   validationStart: string;
@@ -120,7 +123,11 @@ export class ModelArtifactService {
   private readonly logger = new Logger(ModelArtifactService.name);
 
   // Single Canonical Artifact Directory
-  private readonly baseArtifactDir = path.resolve(process.cwd(), 'data/artifacts');
+  private readonly baseArtifactDir = fs.existsSync(path.resolve(process.cwd(), 'data/artifacts/active/model-artifact.json'))
+    ? path.resolve(process.cwd(), 'data/artifacts')
+    : fs.existsSync(path.resolve(process.cwd(), 'apps/api/data/artifacts/active/model-artifact.json'))
+    ? path.resolve(process.cwd(), 'apps/api/data/artifacts')
+    : path.resolve(__dirname, '../../../../data/artifacts');
   private readonly activeDir = path.join(this.baseArtifactDir, 'active');
   private readonly versionsDir = path.join(this.baseArtifactDir, 'versions');
   private readonly activeArtifactFile = path.join(this.activeDir, 'model-artifact.json');
@@ -185,13 +192,13 @@ export class ModelArtifactService {
     }
 
     // 2. Version & Schema Compatibility Gate
-    const modelVerMatch = artifact.modelVersion === ModelRegistry.getModelVersion() || artifact.modelVersion === '5.0.0';
-    const featureVerMatch = artifact.featureVersion?.includes('v5.0.0') || artifact.featureVersion?.includes('v4.0.0') || artifact.featureVersion?.includes('v2.0.0');
+    const modelVerMatch = artifact.modelVersion === ModelRegistry.getModelVersion() || artifact.modelVersion === '5.1.0' || artifact.modelVersion === '5.0.0';
+    const featureVerMatch = artifact.featureVersion?.includes('v5.1.0') || artifact.featureVersion?.includes('v5.0.0') || artifact.featureVersion?.includes('v4.0.0') || artifact.featureVersion?.includes('v2.0.0');
     if (modelVerMatch && featureVerMatch) {
       gateDetails.versionCompatibility = true;
     } else {
       if (!modelVerMatch) blockingReasons.push(`Model version mismatch: expected ${ModelRegistry.getModelVersion()}, got ${artifact.modelVersion}`);
-      if (!featureVerMatch) blockingReasons.push(`Feature version mismatch: expected v5.0.0-multi-factor-25, got ${artifact.featureVersion}`);
+      if (!featureVerMatch) blockingReasons.push(`Feature version mismatch: expected v5.1.0-multi-factor-25, got ${artifact.featureVersion}`);
     }
 
     // 3. Chronological Date Range Integrity Gate (Train <= Val <= Test <= Holdout)

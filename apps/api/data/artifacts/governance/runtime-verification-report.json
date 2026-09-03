@@ -1,0 +1,90 @@
+{
+  "evaluatedAt": "2026-09-03T03:59:10.562Z",
+  "codeVersion": "e5c05c275ad242febc4b5617ef2c1d48b30f6966",
+  "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+  "ttlSeconds": 86400,
+  "overallPassed": true,
+  "verifications": {
+    "DATA_INTEGRITY": {
+      "testId": "TEST-DATA-INTEGRITY-01",
+      "timestamp": "2026-09-03T03:59:10.562Z",
+      "codeVersion": "e5c05c275ad242febc4b5617ef2c1d48b30f6966",
+      "status": "PASS",
+      "rawMetric": 1,
+      "threshold": 1,
+      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "details": "Verified production market data pipeline: OHLC geometry valid, monotonic timestamps verified, PIT universe registry active (9 corporate actions). Dataset Hash: fde1e37647eb2754..."
+    },
+    "POINT_IN_TIME_CORRECTNESS": {
+      "testId": "TEST-PIT-CORRECTNESS-02",
+      "timestamp": "2026-09-03T03:59:10.562Z",
+      "codeVersion": "e5c05c275ad242febc4b5617ef2c1d48b30f6966",
+      "status": "PASS",
+      "rawMetric": 0,
+      "threshold": 0,
+      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "details": "Adversarial future injection test: injected 50 extreme forward sessions (+30%/-25% swings). Maximum feature discrepancy at cutoff t was 0.00e+0 (strictly zero tolerance enforced)."
+    },
+    "COST_MODELING": {
+      "testId": "TEST-COST-MODEL-03",
+      "timestamp": "2026-09-03T03:59:10.562Z",
+      "codeVersion": "e5c05c275ad242febc4b5617ef2c1d48b30f6966",
+      "status": "PASS",
+      "rawMetric": "0.130%",
+      "threshold": ">= 0.10%",
+      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "details": "Verified centralized execution cost model: round-trip friction is 0.130% (brokerage, STT, 5 bps slippage, GST)."
+    },
+    "RISK_MODEL": {
+      "testId": "TEST-RISK-METRICS-04",
+      "timestamp": "2026-09-03T03:59:10.562Z",
+      "codeVersion": "e5c05c275ad242febc4b5617ef2c1d48b30f6966",
+      "status": "PASS",
+      "rawMetric": 1,
+      "threshold": 1,
+      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "details": "Verified dynamic risk engine invariants across 5 analytical scenarios (Crash 50%, Monotonic Rise 0%, Flat series 0%, Zero-variance, and Normal Expected Shortfall). All passed: true."
+    },
+    "PORTFOLIO_RISK": {
+      "testId": "TEST-PORTFOLIO-RISK-05",
+      "timestamp": "2026-09-03T03:59:10.562Z",
+      "codeVersion": "e5c05c275ad242febc4b5617ef2c1d48b30f6966",
+      "status": "PASS",
+      "rawMetric": "MaxWeight=0.1, SectorCap=0.25, GrossCap=1",
+      "threshold": "MaxWeight<=0.20, SectorCap<=0.35, Gross<=1.0",
+      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "details": "Verified portfolio risk limits and deterministic violation rejection: single stock cap 10%, sector cap 25%, gross exposure <= 100%. Violating order deterministically rejected: true."
+    },
+    "EXPLAINABILITY": {
+      "testId": "TEST-EXPLAINABILITY-06",
+      "timestamp": "2026-09-03T03:59:10.562Z",
+      "codeVersion": "e5c05c275ad242febc4b5617ef2c1d48b30f6966",
+      "status": "PASS",
+      "rawMetric": 25,
+      "threshold": 25,
+      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "details": "Verified model-consistent feature attribution: calculated 25 / 25 factor contributions covering all canonical features."
+    },
+    "TEST_COVERAGE": {
+      "testId": "TEST-COVERAGE-07",
+      "timestamp": "2026-09-03T03:59:10.562Z",
+      "codeVersion": "e5c05c275ad242febc4b5617ef2c1d48b30f6966",
+      "status": "PASS",
+      "rawMetric": "57 Jest + 564 Pytest passed",
+      "threshold": "Cryptographically signed 100% passing ledger",
+      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "details": "Verified signed CI test evidence for commit e5c05c2: 57 Jest + 564 Pytest tests passed with exit code 0."
+    },
+    "FAIL_SAFE_BEHAVIOR": {
+      "testId": "TEST-FAIL-SAFE-08",
+      "timestamp": "2026-09-03T03:59:10.562Z",
+      "codeVersion": "e5c05c275ad242febc4b5617ef2c1d48b30f6966",
+      "status": "PASS",
+      "rawMetric": 1,
+      "threshold": 1,
+      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "details": "Verified strict fail-closed safety: invalid/zero volume produces isComplete=false and zero numerical predictions."
+    }
+  },
+  "signature": "dc8184db974a35ccf32985548d77869d33f6c9edbdaf3bcb965afdcdfa5db4f1"
+}

@@ -340,18 +340,27 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
       // Step D: Save to Canonical Location (with original backup preservation)
       const fs = require('fs');
       const path = require('path');
-      const activePath = path.resolve(__dirname, '../../../../data/artifacts/active/model-artifact.json');
+      const getArtifactPath = (filename: string) => {
+        const p1 = path.resolve(__dirname, '../../../data/artifacts/active', filename);
+        if (fs.existsSync(p1)) return p1;
+        const p2 = path.resolve(__dirname, '../../../../apps/api/data/artifacts/active', filename);
+        if (fs.existsSync(p2)) return p2;
+        return p1;
+      };
+      const activePath = getArtifactPath('model-artifact.json');
       const originalContent = fs.existsSync(activePath) ? fs.readFileSync(activePath, 'utf8') : null;
       const originalJson = originalContent ? JSON.parse(originalContent) : {};
 
       try {
         const artifactData: Omit<ModelArtifact, 'checksum' | 'id'> = {
-          modelVersion: '5.0.0',
+          modelVersion: '5.1.0',
+          schemaVersion: '5.1.0',
+          policyVersion: 'v5.1.0-mvo-constrained',
           modelType: 'ONNX_ENSEMBLE',
-          featureVersion: 'v5.0.0-multi-factor-25',
+          featureVersion: 'v5.1.0-multi-factor-25',
           featureSchemaHash: getCanonicalFeatureSchemaHash(),
           featureSchema: FeatureEngine.CANONICAL_FEATURE_KEYS,
-          onnxModels: {
+          onnxModels: originalJson.onnxModels || {
             '1d': { filename: 'model_1d.onnx', sha256: 'e2ba796cfec92eeb73a367932aeccdbcf388521c68bf33766a55626678a4b682', status: 'VALID' },
             '5d': { filename: 'model_5d.onnx', sha256: '219244e3c64f10df121f79f05c709b1b809d4eab27995bcfe10b019ba5c959e8', status: 'VALID' },
             '20d': { filename: 'model_20d.onnx', sha256: '38a1e862f89d04499e1ab7fb168c6606e21cb2dd6e5299d97b441221ce8cba57', status: 'VALID' },
@@ -367,7 +376,7 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
           horizon: '5d',
           fittingMethod: 'PAV + Empirical Two-Stage',
           parameters: model.getWeights(),
-          calibrationVersion: 'v5.0.0-isotonic',
+          calibrationVersion: 'v5.1.0-isotonic-hac',
           calibrationKnots: knots,
           calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
           calibrationMetrics: {
@@ -401,13 +410,13 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
           conditionalReturns: {
             '5d': { p15: -0.02, p50: 0.01, p85: 0.04, sampleCount: 100 },
           },
-          backtest: {
+          backtest: originalJson.backtest || {
             totalTrades: 72,
             winRate: 56.5,
-            cagr: 22.35,
-            sharpe: 2.6,
-            maxDrawdown: -9.0,
-            dailyEquitySeries: originalContent ? JSON.parse(originalContent).backtest?.dailyEquitySeries || [] : Array.from({ length: 252 }, (_, i) => ({ date: `2024-01-${(i%28)+1}`, portfolioValue: 1000000 * Math.pow(1.2235, i / 252) })),
+            cagr: 37.18,
+            sharpe: 4.13,
+            maxDrawdown: -8.65,
+            dailyEquitySeries: [],
           },
           survivorshipStatus: 'RESOLVED',
           survivorshipDisclosure: 'Historical dynamic index membership reconstructed; point-in-time universe fully resolved.',
@@ -447,7 +456,7 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
         expect(estimation.method).not.toBe('INSUFFICIENT_DATA');
         expect(estimation.sampleCount).toBeGreaterThan(0);
       } finally {
-        const canonicalBackup = path.resolve(__dirname, '../../../../data/artifacts/active/model-artifact.canonical.json');
+        const canonicalBackup = getArtifactPath('model-artifact.canonical.json');
         if (fs.existsSync(canonicalBackup)) {
           fs.writeFileSync(activePath, fs.readFileSync(canonicalBackup, 'utf8'), 'utf8');
         } else if (originalContent) {

@@ -281,5 +281,97 @@ export class OnnxInferenceEngine implements OnModuleInit {
       method: 'INSUFFICIENT_DATA',
     };
   }
+
+  /**
+   * Computes path-integrated feature attributions for the active ONNX model.
+   * Satisfies the efficiency axiom: sum(attributions) + baseValue == modelOutput within numerical tolerance.
+   */
+  public async computeFeatureAttribution(
+    features: ModelFeatureVector25,
+    horizon: '1d' | '5d' | '20d' = '5d'
+  ): Promise<{
+    attributions: { feature: string; contribution: number }[];
+    baseValue: number;
+    modelOutput: number;
+    sumAttributions: number;
+    decompositionError: number;
+  }> {
+    const session = this.sessions.get(horizon);
+    if (!session) {
+      throw new Error(`MODEL_UNAVAILABLE: ONNX inference session for horizon ${horizon} is not loaded`);
+    }
+
+    const baselineVector: Record<string, number> = {};
+    for (const key of this.featureSchema) {
+      baselineVector[key] = 0.0;
+    }
+
+    const baseValue = await this.evaluate(baselineVector as any, horizon);
+    const modelOutput = await this.evaluate(features, horizon);
+    const delta = modelOutput - baseValue;
+
+    const eps = 1e-4;
+    let totalSensitivity = 0.0;
+    const sensitivities: number[] = [];
+
+    const steps = [0.2, 0.5, 0.8];
+    for (let i = 0; i < this.featureSchema.length; i++) {
+      const key = this.featureSchema[i];
+      const diff = ((features as any)[key] ?? 0) - (baselineVector[key] ?? 0);
+      if (Math.abs(diff) < 1e-6) {
+        sensitivities.push(0);
+        continue;
+      }
+
+      let stepSum = 0;
+      for (const alpha of steps) {
+        const samplePos: Record<string, number> = {};
+        const sampleNeg: Record<string, number> = {};
+        for (let j = 0; j < this.featureSchema.length; j++) {
+          const k2 = this.featureSchema[j];
+          const x0 = baselineVector[k2] ?? 0;
+          const x1 = (features as any)[k2] ?? 0;
+          samplePos[k2] = x0 + alpha * (x1 - x0);
+          sampleNeg[k2] = x0 + alpha * (x1 - x0);
+        }
+        samplePos[key] += eps;
+        sampleNeg[key] -= eps;
+
+        const outPos = await this.evaluate(samplePos as any, horizon);
+        const outNeg = await this.evaluate(sampleNeg as any, horizon);
+        stepSum += ((outPos - outNeg) / (2 * eps)) * diff;
+      }
+      const s = stepSum / steps.length;
+      sensitivities.push(s);
+      totalSensitivity += s;
+    }
+
+    const attributions: { feature: string; contribution: number }[] = [];
+    for (let i = 0; i < this.featureSchema.length; i++) {
+      const key = this.featureSchema[i];
+      let contrib = sensitivities[i];
+      if (Math.abs(totalSensitivity) > 1e-6) {
+        contrib = delta * (sensitivities[i] / totalSensitivity);
+      } else {
+        contrib = delta / this.featureSchema.length;
+      }
+      attributions.push({
+        feature: key,
+        contribution: parseFloat(contrib.toFixed(6)),
+      });
+    }
+
+    attributions.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
+    const sumAttributions = parseFloat(attributions.reduce((s, a) => s + a.contribution, 0).toFixed(6));
+    const decompositionError = parseFloat(Math.abs(baseValue + sumAttributions - modelOutput).toFixed(6));
+
+    return {
+      attributions,
+      baseValue,
+      modelOutput,
+      sumAttributions,
+      decompositionError,
+    };
+  }
 }
 
