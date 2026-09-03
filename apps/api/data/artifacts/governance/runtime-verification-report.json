@@ -1,14 +1,14 @@
 {
-  "evaluatedAt": "2026-09-03T04:01:29.351Z",
-  "codeVersion": "a3e0fbd02d25bd4f803b8820254a30efb667ac3f",
+  "evaluatedAt": "2026-09-03T08:24:44.008Z",
+  "codeVersion": "5bd1d7a7d3daba76ce2904899e65458cc98a9551",
   "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
   "ttlSeconds": 86400,
   "overallPassed": true,
   "verifications": {
     "DATA_INTEGRITY": {
       "testId": "TEST-DATA-INTEGRITY-01",
-      "timestamp": "2026-09-03T04:01:29.351Z",
-      "codeVersion": "a3e0fbd02d25bd4f803b8820254a30efb667ac3f",
+      "timestamp": "2026-09-03T08:24:44.008Z",
+      "codeVersion": "5bd1d7a7d3daba76ce2904899e65458cc98a9551",
       "status": "PASS",
       "rawMetric": 1,
       "threshold": 1,
@@ -17,8 +17,8 @@
     },
     "POINT_IN_TIME_CORRECTNESS": {
       "testId": "TEST-PIT-CORRECTNESS-02",
-      "timestamp": "2026-09-03T04:01:29.351Z",
-      "codeVersion": "a3e0fbd02d25bd4f803b8820254a30efb667ac3f",
+      "timestamp": "2026-09-03T08:24:44.008Z",
+      "codeVersion": "5bd1d7a7d3daba76ce2904899e65458cc98a9551",
       "status": "PASS",
       "rawMetric": 0,
       "threshold": 0,
@@ -27,8 +27,8 @@
     },
     "COST_MODELING": {
       "testId": "TEST-COST-MODEL-03",
-      "timestamp": "2026-09-03T04:01:29.351Z",
-      "codeVersion": "a3e0fbd02d25bd4f803b8820254a30efb667ac3f",
+      "timestamp": "2026-09-03T08:24:44.008Z",
+      "codeVersion": "5bd1d7a7d3daba76ce2904899e65458cc98a9551",
       "status": "PASS",
       "rawMetric": "0.130%",
       "threshold": ">= 0.10%",
@@ -37,8 +37,8 @@
     },
     "RISK_MODEL": {
       "testId": "TEST-RISK-METRICS-04",
-      "timestamp": "2026-09-03T04:01:29.351Z",
-      "codeVersion": "a3e0fbd02d25bd4f803b8820254a30efb667ac3f",
+      "timestamp": "2026-09-03T08:24:44.008Z",
+      "codeVersion": "5bd1d7a7d3daba76ce2904899e65458cc98a9551",
       "status": "PASS",
       "rawMetric": 1,
       "threshold": 1,
@@ -47,8 +47,8 @@
     },
     "PORTFOLIO_RISK": {
       "testId": "TEST-PORTFOLIO-RISK-05",
-      "timestamp": "2026-09-03T04:01:29.351Z",
-      "codeVersion": "a3e0fbd02d25bd4f803b8820254a30efb667ac3f",
+      "timestamp": "2026-09-03T08:24:44.008Z",
+      "codeVersion": "5bd1d7a7d3daba76ce2904899e65458cc98a9551",
       "status": "PASS",
       "rawMetric": "MaxWeight=0.1, SectorCap=0.25, GrossCap=1",
       "threshold": "MaxWeight<=0.20, SectorCap<=0.35, Gross<=1.0",
@@ -57,8 +57,8 @@
     },
     "EXPLAINABILITY": {
       "testId": "TEST-EXPLAINABILITY-06",
-      "timestamp": "2026-09-03T04:01:29.351Z",
-      "codeVersion": "a3e0fbd02d25bd4f803b8820254a30efb667ac3f",
+      "timestamp": "2026-09-03T08:24:44.008Z",
+      "codeVersion": "5bd1d7a7d3daba76ce2904899e65458cc98a9551",
       "status": "PASS",
       "rawMetric": 25,
       "threshold": 25,
@@ -67,18 +67,18 @@
     },
     "TEST_COVERAGE": {
       "testId": "TEST-COVERAGE-07",
-      "timestamp": "2026-09-03T04:01:29.351Z",
-      "codeVersion": "a3e0fbd02d25bd4f803b8820254a30efb667ac3f",
+      "timestamp": "2026-09-03T08:24:44.008Z",
+      "codeVersion": "5bd1d7a7d3daba76ce2904899e65458cc98a9551",
       "status": "PASS",
       "rawMetric": "57 Jest + 564 Pytest passed",
       "threshold": "Cryptographically signed 100% passing ledger",
       "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
-      "details": "Verified signed CI test evidence for commit a3e0fbd: 57 Jest + 564 Pytest tests passed with exit code 0."
+      "details": "Verified signed CI test evidence for commit 5bd1d7a: 57 Jest + 564 Pytest tests passed with exit code 0."
     },
     "FAIL_SAFE_BEHAVIOR": {
       "testId": "TEST-FAIL-SAFE-08",
-      "timestamp": "2026-09-03T04:01:29.351Z",
-      "codeVersion": "a3e0fbd02d25bd4f803b8820254a30efb667ac3f",
+      "timestamp": "2026-09-03T08:24:44.008Z",
+      "codeVersion": "5bd1d7a7d3daba76ce2904899e65458cc98a9551",
       "status": "PASS",
       "rawMetric": 1,
       "threshold": 1,
@@ -86,5 +86,5 @@
       "details": "Verified strict fail-closed safety: invalid/zero volume produces isComplete=false and zero numerical predictions."
     }
   },
-  "signature": "3191506990a03a347310642c879dbeb3204e88b0d214552023c7463bf933ca64"
+  "signature": "c168b80746b83c9d255433059aefa3807e09972cb0214ba7c67e17e79bec2a52"
 }

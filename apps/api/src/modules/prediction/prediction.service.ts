@@ -26,6 +26,7 @@ import { ProductionScorecardService } from './engines/production-scorecard';
 import { RuntimeVerificationService } from './engines/runtime-verification.service';
 import { MODEL_CONFIG } from './engines/model-config';
 import { ModelRegistry } from './engines/model-registry';
+import { UniverseRegistry } from './engines/universe-registry';
 
 export interface ProductionGovernanceStatus {
   productionReady: boolean;
@@ -84,6 +85,7 @@ export class QuantPredictionService implements OnModuleInit {
     private readonly runtimeVerificationService: RuntimeVerificationService
   ) {}
 
+  private readonly universeRegistry = new UniverseRegistry();
   private inFlightUniversePromise: Promise<StockPrediction[]> | null = null;
 
   onModuleInit() {
@@ -171,6 +173,10 @@ export class QuantPredictionService implements OnModuleInit {
     applyKnots(this.calib1d, artifact.calibration?.['1d']);
     applyKnots(this.calibrationEngine, artifact.calibration?.['5d']);
     applyKnots(this.calib20d, artifact.calibration?.['20d']);
+
+    if (artifact.empiricalDistributions && Array.isArray(artifact.empiricalDistributions)) {
+      this.inferenceEngine.setEmpiricalBuckets(artifact.empiricalDistributions);
+    }
 
     this.artifactChecksum = artifact.checksum || '';
     this.cache.clear();
@@ -642,14 +648,7 @@ export class QuantPredictionService implements OnModuleInit {
         // Pre-warm benchmark chart into memory
         await this.stockService.getChartData('^NSEI', '6mo').catch(() => []);
 
-        const scanList = [
-          'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ITC.NS',
-          'HINDUNILVR.NS', 'SUNPHARMA.NS', 'BHARTIARTL.NS', 'LT.NS', 'MARUTI.NS',
-          'NESTLEIND.NS', 'BRITANNIA.NS', 'CIPLA.NS', 'KOTAKBANK.NS', 'TITAN.NS',
-          'ASIANPAINT.NS', 'POWERGRID.NS', 'NTPC.NS', 'ULTRACEMCO.NS', 'BAJAJ-AUTO.NS',
-          'TATASTEEL.NS', 'JSWSTEEL.NS', 'HINDALCO.NS', 'BEL.NS', 'HAL.NS',
-          'TRENT.NS', 'TATAMOTORS.NS', 'COALINDIA.NS', 'ZOMATO.NS', 'DIXON.NS'
-        ];
+        const scanList = this.universeRegistry.getUniverseAt(new Date());
 
         const predictions: StockPrediction[] = [];
         const batchSize = 6;
@@ -710,7 +709,7 @@ export class QuantPredictionService implements OnModuleInit {
     return this.inFlightUniversePromise;
   }
 
-  async getTopRankedStocks(): Promise<StockPrediction[]> {
+  async getTopRankedStocks(horizon: '5d' | '20d' = '5d'): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
 
     let defensiveCandidates = all.filter((p) => {
@@ -731,14 +730,14 @@ export class QuantPredictionService implements OnModuleInit {
     const scoredList = defensiveCandidates
       .filter(
         (p) =>
-          p.prediction['5d'].calibratedProbability !== null &&
+          p.prediction[horizon]?.calibratedProbability !== null &&
           p.risk.downsideProbability !== null &&
           typeof p.stock.price === 'number' &&
           p.stock.price > 0 &&
           p.risk.stopLossPrice !== null
       )
       .map((p) => {
-        const pred = p.prediction['5d'];
+        const pred = p.prediction[horizon];
         const pUp = pred.calibratedProbability!;
         const pDown = p.risk.downsideProbability!;
         const expRet = typeof pred.expectedReturn === 'number' ? pred.expectedReturn : 0.015;
@@ -785,7 +784,29 @@ export class QuantPredictionService implements OnModuleInit {
 
     scoredList.sort((a, b) => b.compositeScore - a.compositeScore);
 
-    const topDefensive = scoredList.slice(0, 10).map((item, idx) => {
+    // Greedy orthogonalized selection: enforce max 1 stock per sector in top picks
+    const selected: typeof scoredList = [];
+    const seenSectors = new Set<string>();
+
+    for (const item of scoredList) {
+      const sector = item.prediction.stock.sector || 'UNKNOWN';
+      if (!seenSectors.has(sector)) {
+        selected.push(item);
+        seenSectors.add(sector);
+      }
+      if (selected.length >= 10) break;
+    }
+
+    if (selected.length < 10) {
+      for (const item of scoredList) {
+        if (!selected.includes(item)) {
+          selected.push(item);
+        }
+        if (selected.length >= 10) break;
+      }
+    }
+
+    const topDefensive = selected.map((item, idx) => {
       item.prediction.ranking!.rank = idx + 1;
       item.prediction.ranking!.percentile = parseFloat(
         (100 - (idx / Math.max(1, scoredList.length)) * 100).toFixed(1)

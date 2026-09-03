@@ -1,4 +1,4 @@
-﻿"""
+"""
 Point-in-Time Universe Management with Survivorship Bias Limitation Disclosure.
 Integrates with the centralized HistoricalUniverseEngine.
 """
@@ -53,7 +53,11 @@ INDICES = {
     "VIX": "^INDIAVIX"
 }
 
-TICKER_SECTOR_MAP: Dict[str, str] = {s["ticker"]: s["sector"] for s in NSE_UNIVERSE}
+TICKER_SECTOR_MAP: Dict[str, str] = {ticker: meta["sector"] for ticker, meta in HISTORICAL_SECURITY_MASTER.items()}
+HISTORICAL_EXPANDED_UNIVERSE: List[Dict[str, str]] = [
+    {"ticker": ticker, "name": meta.get("name", ticker), "sector": meta.get("sector", "UNKNOWN")}
+    for ticker, meta in HISTORICAL_SECURITY_MASTER.items()
+]
 
 # Explicit survivorship bias limitation disclosure
 SURVIVORSHIP_BIAS_DISCLOSURE = (

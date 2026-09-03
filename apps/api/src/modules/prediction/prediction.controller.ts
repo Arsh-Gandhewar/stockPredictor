@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query } from '@nestjs/common';
 import { QuantPredictionService } from './prediction.service';
 
 @Controller('prediction')
@@ -56,8 +56,9 @@ export class PredictionController {
   }
 
   @Get('top-ranked')
-  async getTopRanked() {
-    return this.predictionService.getTopRankedStocks();
+  async getTopRanked(@Query('horizon') horizon?: string) {
+    const validHorizon = horizon === '20d' ? '20d' : '5d';
+    return this.predictionService.getTopRankedStocks(validHorizon);
   }
 
   @Get('high-risk')

@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantX Historical Universe Engine.
 Enforces point-in-time universe construction, prevents survivorship bias,
 look-ahead universe selection, and retroactive current-universe contamination.
@@ -43,8 +43,9 @@ class HistoricalUniverseRecord:
         return asdict(self)
 
 
-# Authoritative Security Metadata Master (Point-in-Time Foundation)
+# Authoritative Security Metadata Master (Point-in-Time Foundation spanning 1996-2026)
 HISTORICAL_SECURITY_MASTER: Dict[str, Dict[str, Any]] = {
+    # Core Bluechips
     "RELIANCE.NS": {"name": "Reliance Industries", "sector": "Energy", "listingDate": "1977-11-29", "delistingDate": None, "aliases": []},
     "TCS.NS": {"name": "Tata Consultancy Services", "sector": "IT", "listingDate": "2004-08-25", "delistingDate": None, "aliases": []},
     "HDFCBANK.NS": {"name": "HDFC Bank", "sector": "Financials", "listingDate": "1995-05-19", "delistingDate": None, "aliases": []},
@@ -70,7 +71,44 @@ HISTORICAL_SECURITY_MASTER: Dict[str, Dict[str, Any]] = {
     "DIXON.NS": {"name": "Dixon Technologies", "sector": "Industrials", "listingDate": "2017-09-18", "delistingDate": None, "aliases": []},
     "COCHINSHIP.NS": {"name": "Cochin Shipyard", "sector": "Industrials", "listingDate": "2017-08-11", "delistingDate": None, "aliases": []},
     "POLICYBZR.NS": {"name": "PB Fintech", "sector": "Financials", "listingDate": "2021-11-15", "delistingDate": None, "aliases": []},
+    # Liquid & Historical Constituents (Survivorship Bias & Era Coverage Foundations)
+    "M&M.NS": {"name": "Mahindra & Mahindra", "sector": "Automobile", "listingDate": "1950-01-01", "delistingDate": None, "aliases": []},
+    "WIPRO.NS": {"name": "Wipro", "sector": "IT", "listingDate": "1995-01-01", "delistingDate": None, "aliases": []},
+    "HCLTECH.NS": {"name": "HCL Technologies", "sector": "IT", "listingDate": "1999-12-08", "delistingDate": None, "aliases": []},
+    "ONGC.NS": {"name": "Oil & Natural Gas Corp", "sector": "Energy", "listingDate": "1994-01-01", "delistingDate": None, "aliases": []},
+    "JSWSTEEL.NS": {"name": "JSW Steel", "sector": "Materials", "listingDate": "2003-05-08", "delistingDate": None, "aliases": []},
+    "ADANIPORTS.NS": {"name": "Adani Ports", "sector": "Industrials", "listingDate": "2007-11-27", "delistingDate": None, "aliases": []},
+    "BAJAJFINSV.NS": {"name": "Bajaj Finserv", "sector": "Financials", "listingDate": "2008-05-26", "delistingDate": None, "aliases": []},
+    "VEDL.NS": {"name": "Vedanta Limited", "sector": "Materials", "listingDate": "1996-01-01", "delistingDate": None, "aliases": []},
+    "SAIL.NS": {"name": "Steel Authority of India", "sector": "Materials", "listingDate": "1996-01-01", "delistingDate": None, "aliases": []},
+    "PNB.NS": {"name": "Punjab National Bank", "sector": "Financials", "listingDate": "2002-07-01", "delistingDate": None, "aliases": []},
+    "YESBANK.NS": {"name": "Yes Bank", "sector": "Financials", "listingDate": "2005-07-12", "delistingDate": "2020-03-27", "aliases": []},
+    "ZEEL.NS": {"name": "Zee Entertainment", "sector": "Communication Services", "listingDate": "2002-07-01", "delistingDate": None, "aliases": []},
+    "IDEA.NS": {"name": "Vodafone Idea", "sector": "Telecom", "listingDate": "2007-03-09", "delistingDate": None, "aliases": []},
+    "RCOM.NS": {"name": "Reliance Communications", "sector": "Telecom", "listingDate": "2006-03-06", "delistingDate": "2019-06-28", "aliases": []},
+    "SUZLON.NS": {"name": "Suzlon Energy", "sector": "Industrials", "listingDate": "2005-10-19", "delistingDate": None, "aliases": []},
+    "GAIL.NS": {"name": "GAIL India", "sector": "Energy", "listingDate": "1997-04-02", "delistingDate": None, "aliases": []},
+    "BPCL.NS": {"name": "Bharat Petroleum", "sector": "Energy", "listingDate": "1996-01-02", "delistingDate": None, "aliases": []},
+    "IOC.NS": {"name": "Indian Oil Corp", "sector": "Energy", "listingDate": "1996-04-15", "delistingDate": None, "aliases": []},
+    "CIPLA.NS": {"name": "Cipla", "sector": "Healthcare", "listingDate": "1996-01-01", "delistingDate": None, "aliases": []},
+    "DRREDDY.NS": {"name": "Dr. Reddy's Laboratories", "sector": "Healthcare", "listingDate": "1996-01-01", "delistingDate": None, "aliases": []},
+    "GRASIM.NS": {"name": "Grasim Industries", "sector": "Materials", "listingDate": "2002-07-01", "delistingDate": None, "aliases": []},
+    "HEROMOTOCO.NS": {"name": "Hero MotoCorp", "sector": "Automobile", "listingDate": "2002-07-01", "delistingDate": None, "aliases": []},
+    "HINDALCO.NS": {"name": "Hindalco Industries", "sector": "Materials", "listingDate": "1996-01-01", "delistingDate": None, "aliases": []},
+    "DIVISLAB.NS": {"name": "Divi's Laboratories", "sector": "Healthcare", "listingDate": "2003-03-12", "delistingDate": None, "aliases": []},
+    "UPL.NS": {"name": "UPL Limited", "sector": "Materials", "listingDate": "2002-07-01", "delistingDate": None, "aliases": []},
+    "TECHM.NS": {"name": "Tech Mahindra", "sector": "IT", "listingDate": "2006-08-28", "delistingDate": None, "aliases": []},
+    "EICHERMOT.NS": {"name": "Eicher Motors", "sector": "Automobile", "listingDate": "1996-01-01", "delistingDate": None, "aliases": []},
+    "SHRIRAMFIN.NS": {"name": "Shriram Finance", "sector": "Financials", "listingDate": "2002-07-01", "delistingDate": None, "aliases": []},
+    "TRENT.NS": {"name": "Trent Limited", "sector": "Consumer Goods", "listingDate": "2002-07-01", "delistingDate": None, "aliases": []},
+    "BEL.NS": {"name": "Bharat Electronics", "sector": "Industrials", "listingDate": "2002-07-01", "delistingDate": None, "aliases": []},
+    "HAL.NS": {"name": "Hindustan Aeronautics", "sector": "Industrials", "listingDate": "2018-04-02", "delistingDate": None, "aliases": []},
 }
+
+HISTORICAL_DATA_WINDOW_START = "2007-09-17"
+FEATURE_WARMUP_COMPLETE_DATE = "2007-12-10"
+FULL_VIX_START_DATE = "2008-03-03"
+HISTORICAL_DATA_WINDOW_END = "2026-09-03"
 
 SURVIVORSHIP_BIAS_STATUS = "NOT_FULLY_RESOLVED"
 FULL_HISTORICAL_TOP500_CERTIFICATION = False

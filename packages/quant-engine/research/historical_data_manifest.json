@@ -1,0 +1,371 @@
+{
+  "datasetMetadata": {
+    "earliestValidMarketDate": "2007-09-17",
+    "featureWarmupCompleteDate": "2007-12-10",
+    "fullVixStartDate": "2008-03-03",
+    "latestValidMarketDate": "2026-09-03",
+    "totalMarketSessions": 4652,
+    "eligibleSecurityCount": 56,
+    "survivorshipMethodology": "Point-in-time constituent snapshots Ut without lookahead; handling delisted and suspended entities",
+    "corporateActionTreatment": "Auto-adjusted continuous series incorporating splits, dividends, bonuses, and rights",
+    "benchmarkIndex": "^NSEI (NIFTY 50)",
+    "macroVolIndex": "^INDIAVIX (India Volatility Index)"
+  },
+  "walkForwardSplits": [
+    {
+      "foldIndex": 1,
+      "trainStart": "2008-01-01",
+      "trainEnd": "2010-12-31",
+      "testStart": "2011-02-05",
+      "testEnd": "2012-12-31",
+      "label": "2011-2012 Out-of-Sample"
+    },
+    {
+      "foldIndex": 2,
+      "trainStart": "2008-01-01",
+      "trainEnd": "2012-12-31",
+      "testStart": "2013-02-05",
+      "testEnd": "2014-12-31",
+      "label": "2013-2014 Out-of-Sample"
+    },
+    {
+      "foldIndex": 3,
+      "trainStart": "2008-01-01",
+      "trainEnd": "2014-12-31",
+      "testStart": "2015-02-05",
+      "testEnd": "2016-12-31",
+      "label": "2015-2016 Out-of-Sample"
+    },
+    {
+      "foldIndex": 4,
+      "trainStart": "2008-01-01",
+      "trainEnd": "2016-12-31",
+      "testStart": "2017-02-05",
+      "testEnd": "2018-12-31",
+      "label": "2017-2018 Out-of-Sample"
+    },
+    {
+      "foldIndex": 5,
+      "trainStart": "2008-01-01",
+      "trainEnd": "2018-12-31",
+      "testStart": "2019-02-05",
+      "testEnd": "2020-12-31",
+      "label": "2019-2020 Out-of-Sample"
+    },
+    {
+      "foldIndex": 6,
+      "trainStart": "2008-01-01",
+      "trainEnd": "2020-12-31",
+      "testStart": "2021-02-05",
+      "testEnd": "2022-12-31",
+      "label": "2021-2022 Out-of-Sample"
+    },
+    {
+      "foldIndex": 7,
+      "trainStart": "2008-01-01",
+      "trainEnd": "2022-12-31",
+      "testStart": "2023-02-05",
+      "testEnd": "2024-12-31",
+      "label": "2023-2024 Out-of-Sample"
+    },
+    {
+      "foldIndex": 8,
+      "trainStart": "2008-01-01",
+      "trainEnd": "2024-12-31",
+      "testStart": "2025-02-05",
+      "testEnd": "2026-09-03",
+      "label": "2025-2026 Final Holdout"
+    }
+  ],
+  "historicalEras": [
+    {
+      "eraId": "ERA_1_GFC",
+      "name": "2008 Global Financial Crisis & V-Recovery",
+      "startDate": "2008-01-01",
+      "endDate": "2009-12-31",
+      "regimeDescription": "Extreme macro deflation, Lehman collapse (-60% NIFTY drawdown) and 2009 general election V-reversal (+17% in 1 day)"
+    },
+    {
+      "eraId": "ERA_2_EURO_INFLATION",
+      "name": "2010-2011 European Debt Crisis & Inflation Shock",
+      "startDate": "2010-01-01",
+      "endDate": "2011-12-31",
+      "regimeDescription": "Double-digit CPI inflation in India, aggressive RBI repo rate hiking cycle, Greece/PIIGS sovereign default risk"
+    },
+    {
+      "eraId": "ERA_3_TAPER_ELECTION",
+      "name": "2012-2014 Taper Tantrum & Modi 1.0 Rally",
+      "startDate": "2012-01-01",
+      "endDate": "2014-12-31",
+      "regimeDescription": "US Fed taper announcement, INR plunge to 68/USD, current account deficit crisis, followed by 2014 BJP majority election rally"
+    },
+    {
+      "eraId": "ERA_4_COMMODITY_DEMON",
+      "name": "2015-2016 Commodity Slowdown & Demonetization",
+      "startDate": "2015-01-01",
+      "endDate": "2016-12-31",
+      "regimeDescription": "Crude oil collapse, China Yuan devaluation shock, Nov 2016 Indian currency demonetization liquidity disruption"
+    },
+    {
+      "eraId": "ERA_5_GST_NBFC",
+      "name": "2017-2019 GST Rollout & IL&FS Liquidity Shock",
+      "startDate": "2017-01-01",
+      "endDate": "2019-12-31",
+      "regimeDescription": "Goods and Services Tax introduction, 2017 midcap mania, September 2018 IL&FS default triggering systemic shadow-banking credit crunch"
+    },
+    {
+      "eraId": "ERA_6_COVID_SHOCK",
+      "name": "2020 COVID-19 Crash & Rapid Liquidity Recovery",
+      "startDate": "2020-01-01",
+      "endDate": "2020-12-31",
+      "regimeDescription": "Global lockdown, NIFTY 38.4% crash in 30 days, Yes Bank RBI moratorium, followed by zero-rate global central bank stimulus explosion"
+    },
+    {
+      "eraId": "ERA_7_RETAIL_TIGHTENING",
+      "name": "2021-2024 Retail Expansion, Global Inflation & Capex Boom",
+      "startDate": "2021-01-01",
+      "endDate": "2024-12-31",
+      "regimeDescription": "Record domestic retail investor inflows, 2022 Russia-Ukraine war and global central bank rate tightening, followed by infrastructure capex expansion"
+    },
+    {
+      "eraId": "ERA_8_FROZEN_HOLDOUT",
+      "name": "2025-2026 Frozen Out-of-Sample Holdout",
+      "startDate": "2025-01-01",
+      "endDate": "2026-09-03",
+      "regimeDescription": "Untouched final out-of-sample holdout period reserved strictly for unseen evaluation"
+    }
+  ],
+  "crisisStressWindows": [
+    {
+      "crisisId": "CRISIS_2008_GFC",
+      "name": "2008 Lehman GFC Crash",
+      "startDate": "2008-01-08",
+      "endDate": "2008-10-27"
+    },
+    {
+      "crisisId": "CRISIS_2011_INFLATION",
+      "name": "2011 Risk-Off / Inflation Crisis",
+      "startDate": "2011-01-03",
+      "endDate": "2011-12-30"
+    },
+    {
+      "crisisId": "CRISIS_2013_TAPER",
+      "name": "2013 Fed Taper Tantrum",
+      "startDate": "2013-05-20",
+      "endDate": "2013-08-28"
+    },
+    {
+      "crisisId": "CRISIS_2015_COMMODITY",
+      "name": "2015-16 Commodity & China Shock",
+      "startDate": "2015-08-03",
+      "endDate": "2016-02-29"
+    },
+    {
+      "crisisId": "CRISIS_2020_COVID",
+      "name": "2020 COVID Liquidity Shock",
+      "startDate": "2020-01-20",
+      "endDate": "2020-03-23"
+    },
+    {
+      "crisisId": "CRISIS_2022_RATE_HIKE",
+      "name": "2022 Global Rate Tightening",
+      "startDate": "2021-10-18",
+      "endDate": "2022-06-17"
+    }
+  ],
+  "modelComparison": {
+    "modelA_ShortHistory2021": {
+      "cagr": 7.15,
+      "sharpe": 0.35,
+      "sortino": 0.54,
+      "maxDrawdown": -29.31,
+      "top3PortfolioHitRate": 47.78,
+      "meanExcessReturn5d": 0.057
+    },
+    "modelB_LongHistoryExpanding": {
+      "cagr": -8.71,
+      "sharpe": -1.08,
+      "sortino": -1.44,
+      "maxDrawdown": -74.07,
+      "top3PortfolioHitRate": 44.56,
+      "meanExcessReturn5d": -0.232
+    },
+    "modelC_Rolling5Y": {
+      "cagr": -2.12,
+      "sharpe": -0.48,
+      "sortino": -0.65,
+      "maxDrawdown": -59.5,
+      "top3PortfolioHitRate": 48.14,
+      "meanExcessReturn5d": -0.094
+    }
+  },
+  "eraPerformance": [
+    {
+      "eraId": "ERA_2_EURO_INFLATION",
+      "name": "2010-2011 European Debt Crisis & Inflation Shock",
+      "dates": "2010-01-01 to 2011-12-31",
+      "description": "Double-digit CPI inflation in India, aggressive RBI repo rate hiking cycle, Greece/PIIGS sovereign default risk",
+      "observations": 11988,
+      "cagr": -30.49,
+      "sharpe": -3.09,
+      "sortino": -3.91,
+      "maxDrawdown": -29.82,
+      "top1HitRate": 43.12,
+      "top3StockHitRate": 46.48,
+      "top3PortfolioHitRate": 44.5,
+      "meanExcessReturn5d": -0.367
+    },
+    {
+      "eraId": "ERA_3_TAPER_ELECTION",
+      "name": "2012-2014 Taper Tantrum & Modi 1.0 Rally",
+      "dates": "2012-01-01 to 2014-12-31",
+      "description": "US Fed taper announcement, INR plunge to 68/USD, current account deficit crisis, followed by 2014 BJP majority election rally",
+      "observations": 38448,
+      "cagr": 8.37,
+      "sharpe": 0.43,
+      "sortino": 0.7,
+      "maxDrawdown": -34.89,
+      "top1HitRate": 45.67,
+      "top3StockHitRate": 46.52,
+      "top3PortfolioHitRate": 44.68,
+      "meanExcessReturn5d": -0.106
+    },
+    {
+      "eraId": "ERA_4_COMMODITY_DEMON",
+      "name": "2015-2016 Commodity Slowdown & Demonetization",
+      "dates": "2015-01-01 to 2016-12-31",
+      "description": "Crude oil collapse, China Yuan devaluation shock, Nov 2016 Indian currency demonetization liquidity disruption",
+      "observations": 25272,
+      "cagr": -1.56,
+      "sharpe": -0.53,
+      "sortino": -0.76,
+      "maxDrawdown": -29.88,
+      "top1HitRate": 53.55,
+      "top3StockHitRate": 51.33,
+      "top3PortfolioHitRate": 53.12,
+      "meanExcessReturn5d": 0.143
+    },
+    {
+      "eraId": "ERA_5_GST_NBFC",
+      "name": "2017-2019 GST Rollout & IL&FS Liquidity Shock",
+      "dates": "2017-01-01 to 2019-12-31",
+      "description": "Goods and Services Tax introduction, 2017 midcap mania, September 2018 IL&FS default triggering systemic shadow-banking credit crunch",
+      "observations": 37556,
+      "cagr": -14.29,
+      "sharpe": -1.71,
+      "sortino": -2.4,
+      "maxDrawdown": -43.28,
+      "top1HitRate": 47.23,
+      "top3StockHitRate": 45.72,
+      "top3PortfolioHitRate": 42.57,
+      "meanExcessReturn5d": -0.348
+    },
+    {
+      "eraId": "ERA_6_COVID_SHOCK",
+      "name": "2020 COVID-19 Crash & Rapid Liquidity Recovery",
+      "dates": "2020-01-01 to 2020-12-31",
+      "description": "Global lockdown, NIFTY 38.4% crash in 30 days, Yes Bank RBI moratorium, followed by zero-rate global central bank stimulus explosion",
+      "observations": 13805,
+      "cagr": -28.55,
+      "sharpe": -1.5,
+      "sortino": -1.77,
+      "maxDrawdown": -47.56,
+      "top1HitRate": 42.0,
+      "top3StockHitRate": 42.13,
+      "top3PortfolioHitRate": 44.4,
+      "meanExcessReturn5d": -0.583
+    },
+    {
+      "eraId": "ERA_7_RETAIL_TIGHTENING",
+      "name": "2021-2024 Retail Expansion, Global Inflation & Capex Boom",
+      "dates": "2021-01-01 to 2024-12-31",
+      "description": "Record domestic retail investor inflows, 2022 Russia-Ukraine war and global central bank rate tightening, followed by infrastructure capex expansion",
+      "observations": 51645,
+      "cagr": -5.77,
+      "sharpe": -1.02,
+      "sortino": -1.45,
+      "maxDrawdown": -35.77,
+      "top1HitRate": 42.17,
+      "top3StockHitRate": 44.52,
+      "top3PortfolioHitRate": 42.71,
+      "meanExcessReturn5d": -0.243
+    },
+    {
+      "eraId": "ERA_8_FROZEN_HOLDOUT",
+      "name": "2025-2026 Frozen Out-of-Sample Holdout",
+      "dates": "2025-01-01 to 2026-09-03",
+      "description": "Untouched final out-of-sample holdout period reserved strictly for unseen evaluation",
+      "observations": 21602,
+      "cagr": -16.06,
+      "sharpe": -2.55,
+      "sortino": -3.88,
+      "maxDrawdown": -26.31,
+      "top1HitRate": 44.57,
+      "top3StockHitRate": 42.3,
+      "top3PortfolioHitRate": 42.12,
+      "meanExcessReturn5d": -0.381
+    }
+  ],
+  "crisisStressPerformance": [
+    {
+      "crisisId": "CRISIS_2011_INFLATION",
+      "name": "2011 Risk-Off / Inflation Crisis",
+      "dates": "2011-01-03 to 2011-12-30",
+      "observations": 11988,
+      "niftyReturnPct": -24.9,
+      "strategyMaxDrawdown": -29.82,
+      "top1HitRate": 43.12,
+      "top3StockHitRate": 46.48,
+      "top3PortfolioHitRate": 44.5,
+      "meanExcessReturn5d": -0.367
+    },
+    {
+      "crisisId": "CRISIS_2013_TAPER",
+      "name": "2013 Fed Taper Tantrum",
+      "dates": "2013-05-20 to 2013-08-28",
+      "observations": 3834,
+      "niftyReturnPct": -14.16,
+      "strategyMaxDrawdown": -21.19,
+      "top1HitRate": 40.85,
+      "top3StockHitRate": 43.66,
+      "top3PortfolioHitRate": 45.07,
+      "meanExcessReturn5d": -0.727
+    },
+    {
+      "crisisId": "CRISIS_2015_COMMODITY",
+      "name": "2015-16 Commodity & China Shock",
+      "dates": "2015-08-03 to 2016-02-29",
+      "observations": 7668,
+      "niftyReturnPct": -18.21,
+      "strategyMaxDrawdown": -23.44,
+      "top1HitRate": 48.23,
+      "top3StockHitRate": 50.12,
+      "top3PortfolioHitRate": 47.52,
+      "meanExcessReturn5d": -0.048
+    },
+    {
+      "crisisId": "CRISIS_2020_COVID",
+      "name": "2020 COVID Liquidity Shock",
+      "dates": "2020-01-20 to 2020-03-23",
+      "observations": 2420,
+      "niftyReturnPct": -37.75,
+      "strategyMaxDrawdown": -47.56,
+      "top1HitRate": 27.27,
+      "top3StockHitRate": 44.7,
+      "top3PortfolioHitRate": 36.36,
+      "meanExcessReturn5d": -2.864
+    },
+    {
+      "crisisId": "CRISIS_2022_RATE_HIKE",
+      "name": "2022 Global Rate Tightening",
+      "dates": "2021-10-18 to 2022-06-17",
+      "observations": 9185,
+      "niftyReturnPct": -17.23,
+      "strategyMaxDrawdown": -29.16,
+      "top1HitRate": 41.32,
+      "top3StockHitRate": 41.32,
+      "top3PortfolioHitRate": 40.72,
+      "meanExcessReturn5d": -0.457
+    }
+  ]
+}

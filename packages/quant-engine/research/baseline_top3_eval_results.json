@@ -1,0 +1,234 @@
+{
+  "unconstrained_5d": {
+    "diversificationMode": "UNCONSTRAINED",
+    "rankingMetric": "risk_adjusted_ev",
+    "evaluationDaysCount": 495,
+    "totalStockEvaluations": 1485,
+    "hitRates5d": {
+      "top1HitRateVsNifty": 50.91,
+      "top3StockHitRateVsNifty": 46.06,
+      "top3PortfolioHitRateVsNifty": 44.85,
+      "top1AbsoluteWinRate": 51.11,
+      "top3StockAbsoluteWinRate": 48.01,
+      "top3PortfolioAbsoluteWinRate": 45.25,
+      "meanPortfolioNetReturnPct": 0.166,
+      "meanNiftyReturnPct": 0.111,
+      "meanExcessReturnPct": 0.055
+    },
+    "hitRates20d": {
+      "top1HitRateVsNifty": 50.91,
+      "top3StockHitRateVsNifty": 48.89,
+      "top3PortfolioHitRateVsNifty": 48.48,
+      "meanPortfolioNetReturnPct": 1.183,
+      "meanNiftyReturnPct": 0.458,
+      "meanExcessReturnPct": 0.725
+    },
+    "backtestMetrics": {
+      "cagr": 4.5,
+      "sharpe": 0.13,
+      "sortino": 0.23,
+      "maxDrawdown": -24.17,
+      "profitFactor": 1.08,
+      "annualTurnoverEstPct": 3120.0
+    },
+    "factorCrowding": {
+      "sectorClusteringPct": 44.44,
+      "meanPairwiseCorrelation": 0.236,
+      "meanPortfolioBeta": 1.0
+    },
+    "fractileSpreadAnalysis": {
+      "fractileSlices": [
+        {
+          "fractile": "Top 1%",
+          "sampleCount": 0,
+          "meanNet5d": 0.0,
+          "excessVsUniverse5d": 0.141,
+          "hitRateVsNifty5d": 0.0,
+          "meanNet20d": 0.0,
+          "excessVsUniverse20d": -0.451,
+          "hitRateVsNifty20d": 0.0
+        },
+        {
+          "fractile": "Top 2%",
+          "sampleCount": 0,
+          "meanNet5d": 0.0,
+          "excessVsUniverse5d": 0.141,
+          "hitRateVsNifty5d": 0.0,
+          "meanNet20d": 0.0,
+          "excessVsUniverse20d": -0.451,
+          "hitRateVsNifty20d": 0.0
+        },
+        {
+          "fractile": "Top 5%",
+          "sampleCount": 495,
+          "meanNet5d": 0.44,
+          "excessVsUniverse5d": 0.581,
+          "hitRateVsNifty5d": 50.91,
+          "meanNet20d": 1.541,
+          "excessVsUniverse20d": 1.09,
+          "hitRateVsNifty20d": 50.91
+        },
+        {
+          "fractile": "Top 10% (D1)",
+          "sampleCount": 990,
+          "meanNet5d": 0.228,
+          "excessVsUniverse5d": 0.37,
+          "hitRateVsNifty5d": 47.07,
+          "meanNet20d": 1.295,
+          "excessVsUniverse20d": 0.843,
+          "hitRateVsNifty20d": 49.8
+        },
+        {
+          "fractile": "Top 20% (D2)",
+          "sampleCount": 1980,
+          "meanNet5d": 0.184,
+          "excessVsUniverse5d": 0.326,
+          "hitRateVsNifty5d": 46.67,
+          "meanNet20d": 1.365,
+          "excessVsUniverse20d": 0.914,
+          "hitRateVsNifty20d": 49.19
+        },
+        {
+          "fractile": "Top 50%",
+          "sampleCount": 5939,
+          "meanNet5d": -0.04,
+          "excessVsUniverse5d": 0.101,
+          "hitRateVsNifty5d": 45.13,
+          "meanNet20d": 1.006,
+          "excessVsUniverse20d": 0.555,
+          "hitRateVsNifty20d": 48.98
+        },
+        {
+          "fractile": "Full Universe Baseline",
+          "sampleCount": 11880,
+          "meanNet5d": -0.141,
+          "excessVsUniverse5d": 0.0,
+          "hitRateVsNifty5d": 43.79,
+          "meanNet20d": 0.451,
+          "excessVsUniverse20d": 0.0,
+          "hitRateVsNifty20d": 47.22
+        }
+      ],
+      "isMonotonic5d": true,
+      "isMonotonic20d": true,
+      "top10vsUniverseSpread5d": 0.369,
+      "top10vsUniverseSpread20d": 0.844
+    }
+  },
+  "constrained_5d": {
+    "diversificationMode": "CONSTRAINED",
+    "rankingMetric": "risk_adjusted_ev",
+    "evaluationDaysCount": 495,
+    "totalStockEvaluations": 1485,
+    "hitRates5d": {
+      "top1HitRateVsNifty": 50.91,
+      "top3StockHitRateVsNifty": 46.8,
+      "top3PortfolioHitRateVsNifty": 45.45,
+      "top1AbsoluteWinRate": 51.11,
+      "top3StockAbsoluteWinRate": 48.35,
+      "top3PortfolioAbsoluteWinRate": 45.86,
+      "meanPortfolioNetReturnPct": 0.247,
+      "meanNiftyReturnPct": 0.111,
+      "meanExcessReturnPct": 0.136
+    },
+    "hitRates20d": {
+      "top1HitRateVsNifty": 50.91,
+      "top3StockHitRateVsNifty": 47.95,
+      "top3PortfolioHitRateVsNifty": 45.66,
+      "meanPortfolioNetReturnPct": 1.092,
+      "meanNiftyReturnPct": 0.458,
+      "meanExcessReturnPct": 0.635
+    },
+    "backtestMetrics": {
+      "cagr": 9.06,
+      "sharpe": 0.5,
+      "sortino": 0.92,
+      "maxDrawdown": -23.38,
+      "profitFactor": 1.15,
+      "annualTurnoverEstPct": 3120.0
+    },
+    "factorCrowding": {
+      "sectorClusteringPct": 0.0,
+      "meanPairwiseCorrelation": 0.203,
+      "meanPortfolioBeta": 1.0
+    },
+    "fractileSpreadAnalysis": {
+      "fractileSlices": [
+        {
+          "fractile": "Top 1%",
+          "sampleCount": 0,
+          "meanNet5d": 0.0,
+          "excessVsUniverse5d": 0.141,
+          "hitRateVsNifty5d": 0.0,
+          "meanNet20d": 0.0,
+          "excessVsUniverse20d": -0.451,
+          "hitRateVsNifty20d": 0.0
+        },
+        {
+          "fractile": "Top 2%",
+          "sampleCount": 0,
+          "meanNet5d": 0.0,
+          "excessVsUniverse5d": 0.141,
+          "hitRateVsNifty5d": 0.0,
+          "meanNet20d": 0.0,
+          "excessVsUniverse20d": -0.451,
+          "hitRateVsNifty20d": 0.0
+        },
+        {
+          "fractile": "Top 5%",
+          "sampleCount": 495,
+          "meanNet5d": 0.44,
+          "excessVsUniverse5d": 0.581,
+          "hitRateVsNifty5d": 50.91,
+          "meanNet20d": 1.541,
+          "excessVsUniverse20d": 1.09,
+          "hitRateVsNifty20d": 50.91
+        },
+        {
+          "fractile": "Top 10% (D1)",
+          "sampleCount": 990,
+          "meanNet5d": 0.228,
+          "excessVsUniverse5d": 0.37,
+          "hitRateVsNifty5d": 47.07,
+          "meanNet20d": 1.295,
+          "excessVsUniverse20d": 0.843,
+          "hitRateVsNifty20d": 49.8
+        },
+        {
+          "fractile": "Top 20% (D2)",
+          "sampleCount": 1980,
+          "meanNet5d": 0.184,
+          "excessVsUniverse5d": 0.326,
+          "hitRateVsNifty5d": 46.67,
+          "meanNet20d": 1.365,
+          "excessVsUniverse20d": 0.914,
+          "hitRateVsNifty20d": 49.19
+        },
+        {
+          "fractile": "Top 50%",
+          "sampleCount": 5939,
+          "meanNet5d": -0.04,
+          "excessVsUniverse5d": 0.101,
+          "hitRateVsNifty5d": 45.13,
+          "meanNet20d": 1.006,
+          "excessVsUniverse20d": 0.555,
+          "hitRateVsNifty20d": 48.98
+        },
+        {
+          "fractile": "Full Universe Baseline",
+          "sampleCount": 11880,
+          "meanNet5d": -0.141,
+          "excessVsUniverse5d": 0.0,
+          "hitRateVsNifty5d": 43.79,
+          "meanNet20d": 0.451,
+          "excessVsUniverse20d": 0.0,
+          "hitRateVsNifty20d": 47.22
+        }
+      ],
+      "isMonotonic5d": true,
+      "isMonotonic20d": true,
+      "top10vsUniverseSpread5d": 0.369,
+      "top10vsUniverseSpread20d": 0.844
+    }
+  }
+}

@@ -603,7 +603,8 @@ def select_and_allocate_portfolio(
             
         # Check Correlated Cluster Exposure (50%) (Section 16)
         cluster_notional = sized_notional
-        for p in open_positions:
+        all_active = list(open_positions) + [{'ticker': s.ticker, 'notional': s.sizedNotional, 'currentPrice': 1.0, 'entryPrice': 1.0} for s in selected_orders]
+        for p in all_active:
             corr = compute_historical_correlation(cand.ticker, p['ticker'], historical_candles, as_of_date)
             if corr is not None and corr >= 0.75:
                 pos_val = p['notional'] * (p['currentPrice'] / p['entryPrice'])
@@ -709,8 +710,25 @@ def rank_cross_sectional_opportunities(
         eligible = group[group['is_ev_eligible']].copy()
         if not eligible.empty:
             eligible.sort_values(by='risk_adj_ev', ascending=False, inplace=True)
-            top = eligible.head(top_n)
-            selected_dfs.append(top)
+            chosen = []
+            seen_sectors = set()
+            # First pass: pick highest risk_adj_ev per distinct sector
+            for _, cand_row in eligible.iterrows():
+                sec = cand_row.get('sector', TICKER_SECTOR_MAP.get(cand_row.get('ticker'), 'UNKNOWN'))
+                if sec not in seen_sectors:
+                    chosen.append(cand_row)
+                    seen_sectors.add(sec)
+                if len(chosen) >= top_n:
+                    break
+            # Second pass fallback: fill remaining slots if universe lacked distinct sectors
+            if len(chosen) < top_n:
+                for _, cand_row in eligible.iterrows():
+                    if cand_row['ticker'] not in [c['ticker'] for c in chosen]:
+                        chosen.append(cand_row)
+                    if len(chosen) >= top_n:
+                        break
+            if chosen:
+                selected_dfs.append(pd.DataFrame(chosen))
             
     if selected_dfs:
         df_final = pd.concat(selected_dfs, axis=0)

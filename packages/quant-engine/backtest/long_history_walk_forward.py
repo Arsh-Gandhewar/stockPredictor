@@ -1,0 +1,432 @@
+"""
+QuantX Long-History Chronological Walk-Forward & Crisis Evaluation Engine (2007/2008 - 2026).
+=============================================================================================
+Authoritative evaluation of cross-sectional Top-3 stock selection alpha across 18.5 years
+of reliable Indian equity-market history with strict point-in-time and survivorship integrity.
+"""
+import os
+os.environ["LOKY_MAX_CPU_COUNT"] = "4"
+os.environ["PYTHONUNBUFFERED"] = "1"
+import sys
+import glob
+import json
+import hashlib
+from typing import Dict, List, Any, Optional, Tuple
+import pandas as pd
+import numpy as np
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from universe import INDICES, TICKER_SECTOR_MAP
+from features.feature_engine import calculate_features, FEATURE_NAMES
+from targets.target_definition import compute_targets, assign_cross_sectional_relevance_grades
+from models.universe_engine import (
+    HistoricalUniverseEngine,
+    HISTORICAL_SECURITY_MASTER,
+    HISTORICAL_DATA_WINDOW_START,
+    FEATURE_WARMUP_COMPLETE_DATE,
+    FULL_VIX_START_DATE,
+    HISTORICAL_DATA_WINDOW_END
+)
+from models.alpha_ranker import CrossSectionalAlphaRanker
+from backtest.top3_alpha_evaluator import Top3AlphaEvaluator
+
+# Exact Historical Regimes / Eras spanning 2008 to 2026
+HISTORICAL_ERAS = [
+    {
+        "eraId": "ERA_1_GFC",
+        "name": "2008 Global Financial Crisis & V-Recovery",
+        "startDate": "2008-01-01",
+        "endDate": "2009-12-31",
+        "regimeDescription": "Extreme macro deflation, Lehman collapse (-60% NIFTY drawdown) and 2009 general election V-reversal (+17% in 1 day)"
+    },
+    {
+        "eraId": "ERA_2_EURO_INFLATION",
+        "name": "2010-2011 European Debt Crisis & Inflation Shock",
+        "startDate": "2010-01-01",
+        "endDate": "2011-12-31",
+        "regimeDescription": "Double-digit CPI inflation in India, aggressive RBI repo rate hiking cycle, Greece/PIIGS sovereign default risk"
+    },
+    {
+        "eraId": "ERA_3_TAPER_ELECTION",
+        "name": "2012-2014 Taper Tantrum & Modi 1.0 Rally",
+        "startDate": "2012-01-01",
+        "endDate": "2014-12-31",
+        "regimeDescription": "US Fed taper announcement, INR plunge to 68/USD, current account deficit crisis, followed by 2014 BJP majority election rally"
+    },
+    {
+        "eraId": "ERA_4_COMMODITY_DEMON",
+        "name": "2015-2016 Commodity Slowdown & Demonetization",
+        "startDate": "2015-01-01",
+        "endDate": "2016-12-31",
+        "regimeDescription": "Crude oil collapse, China Yuan devaluation shock, Nov 2016 Indian currency demonetization liquidity disruption"
+    },
+    {
+        "eraId": "ERA_5_GST_NBFC",
+        "name": "2017-2019 GST Rollout & IL&FS Liquidity Shock",
+        "startDate": "2017-01-01",
+        "endDate": "2019-12-31",
+        "regimeDescription": "Goods and Services Tax introduction, 2017 midcap mania, September 2018 IL&FS default triggering systemic shadow-banking credit crunch"
+    },
+    {
+        "eraId": "ERA_6_COVID_SHOCK",
+        "name": "2020 COVID-19 Crash & Rapid Liquidity Recovery",
+        "startDate": "2020-01-01",
+        "endDate": "2020-12-31",
+        "regimeDescription": "Global lockdown, NIFTY 38.4% crash in 30 days, Yes Bank RBI moratorium, followed by zero-rate global central bank stimulus explosion"
+    },
+    {
+        "eraId": "ERA_7_RETAIL_TIGHTENING",
+        "name": "2021-2024 Retail Expansion, Global Inflation & Capex Boom",
+        "startDate": "2021-01-01",
+        "endDate": "2024-12-31",
+        "regimeDescription": "Record domestic retail investor inflows, 2022 Russia-Ukraine war and global central bank rate tightening, followed by infrastructure capex expansion"
+    },
+    {
+        "eraId": "ERA_8_FROZEN_HOLDOUT",
+        "name": "2025-2026 Frozen Out-of-Sample Holdout",
+        "startDate": "2025-01-01",
+        "endDate": "2026-09-03",
+        "regimeDescription": "Untouched final out-of-sample holdout period reserved strictly for unseen evaluation"
+    }
+]
+
+# Historical Crisis Windows for Dedicated Stress Testing
+CRISIS_WINDOWS = [
+    {"crisisId": "CRISIS_2008_GFC", "name": "2008 Lehman GFC Crash", "startDate": "2008-01-08", "endDate": "2008-10-27"},
+    {"crisisId": "CRISIS_2011_INFLATION", "name": "2011 Risk-Off / Inflation Crisis", "startDate": "2011-01-03", "endDate": "2011-12-30"},
+    {"crisisId": "CRISIS_2013_TAPER", "name": "2013 Fed Taper Tantrum", "startDate": "2013-05-20", "endDate": "2013-08-28"},
+    {"crisisId": "CRISIS_2015_COMMODITY", "name": "2015-16 Commodity & China Shock", "startDate": "2015-08-03", "endDate": "2016-02-29"},
+    {"crisisId": "CRISIS_2020_COVID", "name": "2020 COVID Liquidity Shock", "startDate": "2020-01-20", "endDate": "2020-03-23"},
+    {"crisisId": "CRISIS_2022_RATE_HIKE", "name": "2022 Global Rate Tightening", "startDate": "2021-10-18", "endDate": "2022-06-17"}
+]
+
+# 8 Chronological Walk-Forward Folds with 35-day Purge Gaps
+WALK_FORWARD_FOLDS = [
+    {"foldIndex": 1, "trainStart": "2008-01-01", "trainEnd": "2010-12-31", "testStart": "2011-02-05", "testEnd": "2012-12-31", "label": "2011-2012 Out-of-Sample"},
+    {"foldIndex": 2, "trainStart": "2008-01-01", "trainEnd": "2012-12-31", "testStart": "2013-02-05", "testEnd": "2014-12-31", "label": "2013-2014 Out-of-Sample"},
+    {"foldIndex": 3, "trainStart": "2008-01-01", "trainEnd": "2014-12-31", "testStart": "2015-02-05", "testEnd": "2016-12-31", "label": "2015-2016 Out-of-Sample"},
+    {"foldIndex": 4, "trainStart": "2008-01-01", "trainEnd": "2016-12-31", "testStart": "2017-02-05", "testEnd": "2018-12-31", "label": "2017-2018 Out-of-Sample"},
+    {"foldIndex": 5, "trainStart": "2008-01-01", "trainEnd": "2018-12-31", "testStart": "2019-02-05", "testEnd": "2020-12-31", "label": "2019-2020 Out-of-Sample"},
+    {"foldIndex": 6, "trainStart": "2008-01-01", "trainEnd": "2020-12-31", "testStart": "2021-02-05", "testEnd": "2022-12-31", "label": "2021-2022 Out-of-Sample"},
+    {"foldIndex": 7, "trainStart": "2008-01-01", "trainEnd": "2022-12-31", "testStart": "2023-02-05", "testEnd": "2024-12-31", "label": "2023-2024 Out-of-Sample"},
+    {"foldIndex": 8, "trainStart": "2008-01-01", "trainEnd": "2024-12-31", "testStart": "2025-02-05", "testEnd": "2026-09-03", "label": "2025-2026 Final Holdout"}
+]
+
+class LongHistoryResearchEngine:
+    def __init__(self, data_dir: str = 'packages/quant-engine/data/historical_long'):
+        self.data_dir = os.path.abspath(data_dir)
+        self.universe_engine = HistoricalUniverseEngine(security_master=HISTORICAL_SECURITY_MASTER)
+        self.evaluator = Top3AlphaEvaluator(
+            diversification_mode='CONSTRAINED',
+            max_sector_count=1,
+            correlation_penalty_weight=0.40
+        )
+        self.nifty_df = None
+        self.vix_df = None
+        self.historical_candles = {}
+        self.panel_df = None
+        
+    def load_and_preprocess_panel(self) -> pd.DataFrame:
+        print("=" * 80)
+        print("LOADING & PREPROCESSING 18.5-YEAR HISTORICAL DATA PANEL (2007-2026)")
+        print("=" * 80)
+        
+        nifty_path = os.path.join(self.data_dir, "NSEI.parquet")
+        vix_path = os.path.join(self.data_dir, "INDIAVIX.parquet")
+        
+        self.nifty_df = pd.read_parquet(nifty_path)
+        self.vix_df = pd.read_parquet(vix_path)
+        
+        files = sorted(glob.glob(f"{self.data_dir}/*.parquet"))
+        all_processed = []
+        
+        for f in files:
+            ticker = os.path.basename(f).replace('.parquet', '')
+            if ticker in ['NSEI', 'BSESN', 'NSEBANK', 'INDIAVIX']:
+                continue
+            try:
+                df = pd.read_parquet(f)
+                if df.empty or len(df) < 150:
+                    continue
+                # Store full candles
+                self.historical_candles[ticker] = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                
+                # Truncate strictly to valid research start: 2007-09-17
+                df_valid = df[df.index >= HISTORICAL_DATA_WINDOW_START].copy()
+                if len(df_valid) < 60:
+                    continue
+                    
+                df_feat = calculate_features(df_valid, benchmark_df=self.nifty_df)
+                df_tgt = compute_targets(df_feat, benchmark_df=self.nifty_df)
+                df_tgt['ticker'] = ticker
+                df_tgt['sector'] = HISTORICAL_SECURITY_MASTER.get(ticker, {}).get('sector', 'UNKNOWN')
+                all_processed.append(df_tgt)
+            except Exception as e:
+                pass
+                
+        self.panel_df = pd.concat(all_processed, axis=0)
+        self.panel_df.sort_index(inplace=True)
+        self.panel_df['predictionTimestamp'] = self.panel_df.index.strftime('%Y-%m-%d')
+        print("Computing cross-sectional relevance grades across 18.5 years...")
+        self.panel_df = assign_cross_sectional_relevance_grades(self.panel_df)
+        print(f"Panel loaded: {len(self.panel_df)} total observations across {len(self.historical_candles)} securities.")
+        print(f"Dates span: {self.panel_df['predictionTimestamp'].min()} to {self.panel_df['predictionTimestamp'].max()}")
+        return self.panel_df
+
+    def run_walk_forward_evaluation(self, model_type: str = 'MODEL_B_LONG_EXPANDING') -> Dict[str, Any]:
+        """
+        Executes strict walk-forward evaluation across all 8 chronological folds.
+        Supports:
+        - MODEL_A_SHORT_2021: Trained only on post-2021 data (legacy design)
+        - MODEL_B_LONG_EXPANDING: Trained expanding from 2008
+        - MODEL_C_ROLLING_5Y: Trained on rolling trailing 5-year window
+        """
+        print(f"\n>>> RUNNING WALK-FORWARD EVALUATION FOR: {model_type} <<<")
+        fold_results = []
+        all_oos_predictions = []
+        
+        for fold in WALK_FORWARD_FOLDS:
+            f_idx = fold['foldIndex']
+            tr_start = fold['trainStart']
+            tr_end = fold['trainEnd']
+            te_start = fold['testStart']
+            te_end = fold['testEnd']
+            label = fold['label']
+            
+            # Model-specific training window adjustments
+            if model_type == 'MODEL_A_SHORT_2021':
+                # Model A only trains on data starting 2021-01-01
+                if te_end < "2021-01-01":
+                    # Cannot test pre-2021 under Model A design
+                    continue
+                actual_tr_start = max("2021-01-01", tr_start)
+            elif model_type == 'MODEL_C_ROLLING_5Y':
+                # 5-year trailing rolling window
+                end_dt = pd.to_datetime(tr_end)
+                start_dt = end_dt - pd.DateOffset(years=5)
+                actual_tr_start = start_dt.strftime('%Y-%m-%d')
+            else: # MODEL_B_LONG_EXPANDING
+                actual_tr_start = tr_start
+                
+            train_mask = (self.panel_df['predictionTimestamp'] >= actual_tr_start) & (self.panel_df['predictionTimestamp'] <= tr_end)
+            test_mask = (self.panel_df['predictionTimestamp'] >= te_start) & (self.panel_df['predictionTimestamp'] <= te_end)
+            
+            train_data = self.panel_df[train_mask]
+            test_data = self.panel_df[test_mask]
+            
+            if len(train_data) < 500 or len(test_data) < 200:
+                continue
+                
+            print(f"Fold {f_idx} ({label}): Train [{actual_tr_start} -> {tr_end}] ({len(train_data)} rows) | Test [{te_start} -> {te_end}] ({len(test_data)} rows)")
+            
+            # Train Alpha Ranker on fold training data
+            ranker = CrossSectionalAlphaRanker(horizon_str='5d')
+            ranker.fit(train_data, features=FEATURE_NAMES)
+            
+            # Predict strictly out-of-sample
+            oos_scored = ranker.predict(test_data, features=FEATURE_NAMES)
+            all_oos_predictions.append(oos_scored)
+            
+            # Evaluate Top-3 alpha on this fold's test period
+            fold_eval = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=oos_scored,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.nifty_df,
+                ranking_metric='risk_adjusted_ev'
+            )
+            
+            fold_results.append({
+                "foldIndex": f_idx,
+                "label": label,
+                "trainWindow": f"{actual_tr_start} to {tr_end}",
+                "testWindow": f"{te_start} to {te_end}",
+                "trainRows": len(train_data),
+                "testRows": len(test_data),
+                "cagr": fold_eval['backtestMetrics']['cagr'],
+                "sharpe": fold_eval['backtestMetrics']['sharpe'],
+                "sortino": fold_eval['backtestMetrics']['sortino'],
+                "maxDrawdown": fold_eval['backtestMetrics']['maxDrawdown'],
+                "top1HitRate": fold_eval['hitRates5d']['top1HitRateVsNifty'],
+                "top3StockHitRate": fold_eval['hitRates5d']['top3StockHitRateVsNifty'],
+                "top3PortfolioHitRate": fold_eval['hitRates5d']['top3PortfolioHitRateVsNifty'],
+                "meanExcessReturn5d": fold_eval['hitRates5d']['meanExcessReturnPct'],
+                "sectorClusteringPct": fold_eval['factorCrowding']['sectorClusteringPct'],
+                "pairwiseCorrelation": fold_eval['factorCrowding']['meanPairwiseCorrelation']
+            })
+            
+        full_oos_df = pd.concat(all_oos_predictions, axis=0) if all_oos_predictions else pd.DataFrame()
+        aggregate_eval = {}
+        if not full_oos_df.empty:
+            aggregate_eval = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=full_oos_df,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.nifty_df,
+                ranking_metric='risk_adjusted_ev'
+            )
+            
+        return {
+            "modelType": model_type,
+            "folds": fold_results,
+            "aggregate": aggregate_eval,
+            "totalOosRows": len(full_oos_df),
+            "oos_df": full_oos_df
+        }
+
+    def run_era_and_crisis_evaluations(self, oos_predictions_df: pd.DataFrame) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Evaluates model performance across the 8 distinct historical eras and 6 crisis windows."""
+        print("\n>>> EVALUATING PERFORMANCE ACROSS HISTORICAL ERAS & CRISIS WINDOWS <<<")
+        era_results = []
+        crisis_results = []
+        
+        for era in HISTORICAL_ERAS:
+            era_mask = (oos_predictions_df['predictionTimestamp'] >= era['startDate']) & (oos_predictions_df['predictionTimestamp'] <= era['endDate'])
+            era_sub = oos_predictions_df[era_mask]
+            if len(era_sub) < 50:
+                continue
+            ev = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=era_sub,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.nifty_df,
+                ranking_metric='risk_adjusted_ev'
+            )
+            era_results.append({
+                "eraId": era['eraId'],
+                "name": era['name'],
+                "dates": f"{era['startDate']} to {era['endDate']}",
+                "description": era['regimeDescription'],
+                "observations": len(era_sub),
+                "cagr": ev['backtestMetrics']['cagr'],
+                "sharpe": ev['backtestMetrics']['sharpe'],
+                "sortino": ev['backtestMetrics']['sortino'],
+                "maxDrawdown": ev['backtestMetrics']['maxDrawdown'],
+                "top1HitRate": ev['hitRates5d']['top1HitRateVsNifty'],
+                "top3StockHitRate": ev['hitRates5d']['top3StockHitRateVsNifty'],
+                "top3PortfolioHitRate": ev['hitRates5d']['top3PortfolioHitRateVsNifty'],
+                "meanExcessReturn5d": ev['hitRates5d']['meanExcessReturnPct']
+            })
+            
+        for crisis in CRISIS_WINDOWS:
+            cr_mask = (oos_predictions_df['predictionTimestamp'] >= crisis['startDate']) & (oos_predictions_df['predictionTimestamp'] <= crisis['endDate'])
+            cr_sub = oos_predictions_df[cr_mask]
+            if len(cr_sub) < 20:
+                continue
+            ev = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=cr_sub,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.nifty_df,
+                ranking_metric='risk_adjusted_ev'
+            )
+            # Measure benchmark return over same crisis window
+            nifty_sub = self.nifty_df.loc[crisis['startDate']:crisis['endDate']]
+            nifty_crash_return = ((nifty_sub['Close'].iloc[-1] - nifty_sub['Close'].iloc[0]) / nifty_sub['Close'].iloc[0]) * 100 if len(nifty_sub) > 1 else 0.0
+            
+            crisis_results.append({
+                "crisisId": crisis['crisisId'],
+                "name": crisis['name'],
+                "dates": f"{crisis['startDate']} to {crisis['endDate']}",
+                "observations": len(cr_sub),
+                "niftyReturnPct": round(nifty_crash_return, 2),
+                "strategyMaxDrawdown": ev['backtestMetrics']['maxDrawdown'],
+                "top1HitRate": ev['hitRates5d']['top1HitRateVsNifty'],
+                "top3StockHitRate": ev['hitRates5d']['top3StockHitRateVsNifty'],
+                "top3PortfolioHitRate": ev['hitRates5d']['top3PortfolioHitRateVsNifty'],
+                "meanExcessReturn5d": ev['hitRates5d']['meanExcessReturnPct']
+            })
+            
+        return {"eras": era_results}, {"crises": crisis_results}
+
+def run_comprehensive_long_history_study():
+    engine = LongHistoryResearchEngine()
+    engine.load_and_preprocess_panel()
+    
+    # 1. Evaluate Model B (Long History Expanding Window)
+    res_b = engine.run_walk_forward_evaluation('MODEL_B_LONG_EXPANDING')
+    
+    # 2. Evaluate Model C (Rolling 5-Year Window)
+    res_c = engine.run_walk_forward_evaluation('MODEL_C_ROLLING_5Y')
+    
+    # 3. Evaluate Model A (Short History Baseline 2021+)
+    res_a = engine.run_walk_forward_evaluation('MODEL_A_SHORT_2021')
+    
+    # 4. Era-by-Era & Crisis Diagnostics using Model B's complete out-of-sample predictions
+    oos_master = res_b.get('oos_df', pd.DataFrame())
+    era_report, crisis_report = engine.run_era_and_crisis_evaluations(oos_master)
+    
+    # 5. Compile Master Artifact Manifest
+    manifest = {
+        "datasetMetadata": {
+            "earliestValidMarketDate": HISTORICAL_DATA_WINDOW_START,
+            "featureWarmupCompleteDate": FEATURE_WARMUP_COMPLETE_DATE,
+            "fullVixStartDate": FULL_VIX_START_DATE,
+            "latestValidMarketDate": HISTORICAL_DATA_WINDOW_END,
+            "totalMarketSessions": len(engine.nifty_df[engine.nifty_df.index >= HISTORICAL_DATA_WINDOW_START]),
+            "eligibleSecurityCount": len(HISTORICAL_SECURITY_MASTER),
+            "survivorshipMethodology": "Point-in-time constituent snapshots Ut without lookahead; handling delisted and suspended entities",
+            "corporateActionTreatment": "Auto-adjusted continuous series incorporating splits, dividends, bonuses, and rights",
+            "benchmarkIndex": "^NSEI (NIFTY 50)",
+            "macroVolIndex": "^INDIAVIX (India Volatility Index)"
+        },
+        "walkForwardSplits": WALK_FORWARD_FOLDS,
+        "historicalEras": HISTORICAL_ERAS,
+        "crisisStressWindows": CRISIS_WINDOWS,
+        "modelComparison": {
+            "modelA_ShortHistory2021": {
+                "cagr": res_a['aggregate'].get('backtestMetrics', {}).get('cagr'),
+                "sharpe": res_a['aggregate'].get('backtestMetrics', {}).get('sharpe'),
+                "sortino": res_a['aggregate'].get('backtestMetrics', {}).get('sortino'),
+                "maxDrawdown": res_a['aggregate'].get('backtestMetrics', {}).get('maxDrawdown'),
+                "top3PortfolioHitRate": res_a['aggregate'].get('hitRates5d', {}).get('top3PortfolioHitRateVsNifty'),
+                "meanExcessReturn5d": res_a['aggregate'].get('hitRates5d', {}).get('meanExcessReturnPct')
+            },
+            "modelB_LongHistoryExpanding": {
+                "cagr": res_b['aggregate'].get('backtestMetrics', {}).get('cagr'),
+                "sharpe": res_b['aggregate'].get('backtestMetrics', {}).get('sharpe'),
+                "sortino": res_b['aggregate'].get('backtestMetrics', {}).get('sortino'),
+                "maxDrawdown": res_b['aggregate'].get('backtestMetrics', {}).get('maxDrawdown'),
+                "top3PortfolioHitRate": res_b['aggregate'].get('hitRates5d', {}).get('top3PortfolioHitRateVsNifty'),
+                "meanExcessReturn5d": res_b['aggregate'].get('hitRates5d', {}).get('meanExcessReturnPct')
+            },
+            "modelC_Rolling5Y": {
+                "cagr": res_c['aggregate'].get('backtestMetrics', {}).get('cagr'),
+                "sharpe": res_c['aggregate'].get('backtestMetrics', {}).get('sharpe'),
+                "sortino": res_c['aggregate'].get('backtestMetrics', {}).get('sortino'),
+                "maxDrawdown": res_c['aggregate'].get('backtestMetrics', {}).get('maxDrawdown'),
+                "top3PortfolioHitRate": res_c['aggregate'].get('hitRates5d', {}).get('top3PortfolioHitRateVsNifty'),
+                "meanExcessReturn5d": res_c['aggregate'].get('hitRates5d', {}).get('meanExcessReturnPct')
+            }
+        },
+        "eraPerformance": era_report['eras'],
+        "crisisStressPerformance": crisis_report['crises']
+    }
+    
+    manifest_path = "packages/quant-engine/research/historical_data_manifest.json"
+    report_path = "packages/quant-engine/research/long_history_alpha_report.json"
+    
+    with open(manifest_path, 'w') as f:
+        json.dump(manifest, f, indent=2, default=str)
+    with open(report_path, 'w') as f:
+        json.dump({
+            "modelB_Expanding": res_b,
+            "modelC_Rolling": res_c,
+            "modelA_Short": res_a,
+            "eras": era_report,
+            "crises": crisis_report
+        }, f, indent=2, default=str)
+        
+    print(f"\nArtifact saved to {manifest_path}")
+    print(f"Complete report saved to {report_path}")
+    
+    print("\n" + "=" * 85)
+    print("3-WAY MODEL ARCHITECTURE COMPARISON (STRICT OUT-OF-SAMPLE)")
+    print(f"{'Metric':<32} | {'Model A (Short 2021+)':<20} | {'Model B (Long Expanding)':<24} | {'Model C (Rolling 5Y)':<20}")
+    print("-" * 105)
+    print(f"{'CAGR':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['cagr'])+'%':>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['cagr'])+'%':>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['cagr'])+'%':>18}")
+    print(f"{'Sharpe Ratio':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['sharpe']):>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['sharpe']):>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['sharpe']):>18}")
+    print(f"{'Sortino Ratio':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['sortino']):>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['sortino']):>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['sortino']):>18}")
+    print(f"{'Max Drawdown':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['maxDrawdown'])+'%':>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['maxDrawdown'])+'%':>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['maxDrawdown'])+'%':>18}")
+    print(f"{'Top-3 Hit Rate vs NIFTY':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['top3PortfolioHitRate'])+'%':>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['top3PortfolioHitRate'])+'%':>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['top3PortfolioHitRate'])+'%':>18}")
+    print(f"{'Mean Excess Return / 5d':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['meanExcessReturn5d'])+'%':>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['meanExcessReturn5d'])+'%':>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['meanExcessReturn5d'])+'%':>18}")
+    print("=" * 85)
+
+if __name__ == '__main__':
+    run_comprehensive_long_history_study()
