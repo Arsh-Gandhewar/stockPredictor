@@ -1,17 +1,27 @@
 {
   "datasetMetadata": {
-    "earliestValidMarketDate": "2007-09-17",
-    "featureWarmupCompleteDate": "2007-12-10",
+    "earliestValidMarketDate": "2002-07-01",
+    "fullNiftyStartDate": "2007-09-17",
     "fullVixStartDate": "2008-03-03",
     "latestValidMarketDate": "2026-09-03",
-    "totalMarketSessions": 4652,
+    "totalMarketSessions": 5949,
     "eligibleSecurityCount": 56,
-    "survivorshipMethodology": "Point-in-time constituent snapshots Ut without lookahead; handling delisted and suspended entities",
+    "survivorshipStatus": "PARTIALLY_RESOLVED",
+    "survivorshipMethodology": "Partially resolved: Point-in-time constituent snapshots Ut across expanded 56-security panel; full NIFTY 500 survivorship pending comprehensive corporate depository ingestion",
+    "survivorshipCertification": "PARTIAL_PANEL_ONLY (56 Securities)",
     "corporateActionTreatment": "Auto-adjusted continuous series incorporating splits, dividends, bonuses, and rights",
-    "benchmarkIndex": "^NSEI (NIFTY 50)",
+    "benchmarkIndex": "^NSEI (NIFTY 50) spliced with ^BSESN (SENSEX) pre-Sept 2007",
     "macroVolIndex": "^INDIAVIX (India Volatility Index)"
   },
   "walkForwardSplits": [
+    {
+      "foldIndex": 0,
+      "trainStart": "2002-07-01",
+      "trainEnd": "2007-12-31",
+      "testStart": "2008-01-08",
+      "testEnd": "2009-12-31",
+      "label": "2008-2009 GFC Out-of-Sample"
+    },
     {
       "foldIndex": 1,
       "trainStart": "2008-01-01",
@@ -175,45 +185,62 @@
   ],
   "modelComparison": {
     "modelA_ShortHistory2021": {
-      "cagr": 7.15,
-      "sharpe": 0.35,
-      "sortino": 0.54,
-      "maxDrawdown": -29.31,
-      "top3PortfolioHitRate": 47.78,
-      "meanExcessReturn5d": 0.057
+      "cagr": 0.17,
+      "sharpe": -0.45,
+      "sortino": -0.7,
+      "maxDrawdown": -31.45,
+      "top3PortfolioHitRate": 44.67,
+      "meanExcessReturn5d": -0.116
     },
     "modelB_LongHistoryExpanding": {
-      "cagr": -8.71,
-      "sharpe": -1.08,
-      "sortino": -1.44,
-      "maxDrawdown": -74.07,
-      "top3PortfolioHitRate": 44.56,
-      "meanExcessReturn5d": -0.232
+      "cagr": 5.84,
+      "sharpe": 0.21,
+      "sortino": 0.27,
+      "maxDrawdown": -59.75,
+      "top3PortfolioHitRate": 47.79,
+      "meanExcessReturn5d": 0.08
     },
     "modelC_Rolling5Y": {
-      "cagr": -2.12,
-      "sharpe": -0.48,
-      "sortino": -0.65,
-      "maxDrawdown": -59.5,
-      "top3PortfolioHitRate": 48.14,
-      "meanExcessReturn5d": -0.094
+      "cagr": -1.16,
+      "sharpe": -0.4,
+      "sortino": -0.5,
+      "maxDrawdown": -59.8,
+      "top3PortfolioHitRate": 46.91,
+      "meanExcessReturn5d": -0.057
     }
   },
   "eraPerformance": [
+    {
+      "eraId": "ERA_1_GFC",
+      "name": "2008 Global Financial Crisis & V-Recovery",
+      "dates": "2008-01-01 to 2009-12-31",
+      "description": "Extreme macro deflation, Lehman collapse (-60% NIFTY drawdown) and 2009 general election V-reversal (+17% in 1 day)",
+      "observations": 25652,
+      "cagr": 10.63,
+      "sharpe": 0.39,
+      "sortino": 0.44,
+      "maxDrawdown": -59.75,
+      "annualTurnoverPct": 5361.3,
+      "top1HitRate": 49.9,
+      "top3StockHitRate": 51.21,
+      "top3PortfolioHitRate": 52.18,
+      "meanExcessReturn5d": 0.448
+    },
     {
       "eraId": "ERA_2_EURO_INFLATION",
       "name": "2010-2011 European Debt Crisis & Inflation Shock",
       "dates": "2010-01-01 to 2011-12-31",
       "description": "Double-digit CPI inflation in India, aggressive RBI repo rate hiking cycle, Greece/PIIGS sovereign default risk",
       "observations": 11988,
-      "cagr": -30.49,
-      "sharpe": -3.09,
-      "sortino": -3.91,
-      "maxDrawdown": -29.82,
-      "top1HitRate": 43.12,
-      "top3StockHitRate": 46.48,
-      "top3PortfolioHitRate": 44.5,
-      "meanExcessReturn5d": -0.367
+      "cagr": 2.77,
+      "sharpe": -0.18,
+      "sortino": -0.31,
+      "maxDrawdown": -9.88,
+      "annualTurnoverPct": 5972.5,
+      "top1HitRate": 58.72,
+      "top3StockHitRate": 55.81,
+      "top3PortfolioHitRate": 61.47,
+      "meanExcessReturn5d": 0.347
     },
     {
       "eraId": "ERA_3_TAPER_ELECTION",
@@ -221,14 +248,15 @@
       "dates": "2012-01-01 to 2014-12-31",
       "description": "US Fed taper announcement, INR plunge to 68/USD, current account deficit crisis, followed by 2014 BJP majority election rally",
       "observations": 38448,
-      "cagr": 8.37,
-      "sharpe": 0.43,
-      "sortino": 0.7,
-      "maxDrawdown": -34.89,
-      "top1HitRate": 45.67,
-      "top3StockHitRate": 46.52,
-      "top3PortfolioHitRate": 44.68,
-      "meanExcessReturn5d": -0.106
+      "cagr": 28.46,
+      "sharpe": 2.49,
+      "sortino": 4.46,
+      "maxDrawdown": -10.16,
+      "annualTurnoverPct": 5135.3,
+      "top1HitRate": 47.94,
+      "top3StockHitRate": 50.02,
+      "top3PortfolioHitRate": 51.21,
+      "meanExcessReturn5d": 0.201
     },
     {
       "eraId": "ERA_4_COMMODITY_DEMON",
@@ -236,14 +264,15 @@
       "dates": "2015-01-01 to 2016-12-31",
       "description": "Crude oil collapse, China Yuan devaluation shock, Nov 2016 Indian currency demonetization liquidity disruption",
       "observations": 25272,
-      "cagr": -1.56,
-      "sharpe": -0.53,
-      "sortino": -0.76,
-      "maxDrawdown": -29.88,
-      "top1HitRate": 53.55,
-      "top3StockHitRate": 51.33,
-      "top3PortfolioHitRate": 53.12,
-      "meanExcessReturn5d": 0.143
+      "cagr": -8.72,
+      "sharpe": -1.41,
+      "sortino": -2.13,
+      "maxDrawdown": -35.82,
+      "annualTurnoverPct": 4172.9,
+      "top1HitRate": 47.53,
+      "top3StockHitRate": 48.67,
+      "top3PortfolioHitRate": 51.18,
+      "meanExcessReturn5d": -0.015
     },
     {
       "eraId": "ERA_5_GST_NBFC",
@@ -251,14 +280,15 @@
       "dates": "2017-01-01 to 2019-12-31",
       "description": "Goods and Services Tax introduction, 2017 midcap mania, September 2018 IL&FS default triggering systemic shadow-banking credit crunch",
       "observations": 37556,
-      "cagr": -14.29,
-      "sharpe": -1.71,
-      "sortino": -2.4,
-      "maxDrawdown": -43.28,
-      "top1HitRate": 47.23,
-      "top3StockHitRate": 45.72,
-      "top3PortfolioHitRate": 42.57,
-      "meanExcessReturn5d": -0.348
+      "cagr": -16.33,
+      "sharpe": -2.48,
+      "sortino": -3.09,
+      "maxDrawdown": -46.02,
+      "annualTurnoverPct": 4187.8,
+      "top1HitRate": 48.25,
+      "top3StockHitRate": 45.24,
+      "top3PortfolioHitRate": 40.09,
+      "meanExcessReturn5d": -0.421
     },
     {
       "eraId": "ERA_6_COVID_SHOCK",
@@ -266,14 +296,15 @@
       "dates": "2020-01-01 to 2020-12-31",
       "description": "Global lockdown, NIFTY 38.4% crash in 30 days, Yes Bank RBI moratorium, followed by zero-rate global central bank stimulus explosion",
       "observations": 13805,
-      "cagr": -28.55,
-      "sharpe": -1.5,
-      "sortino": -1.77,
-      "maxDrawdown": -47.56,
-      "top1HitRate": 42.0,
-      "top3StockHitRate": 42.13,
-      "top3PortfolioHitRate": 44.4,
-      "meanExcessReturn5d": -0.583
+      "cagr": 72.57,
+      "sharpe": 2.74,
+      "sortino": 4.53,
+      "maxDrawdown": -25.52,
+      "annualTurnoverPct": 4670.4,
+      "top1HitRate": 52.8,
+      "top3StockHitRate": 47.6,
+      "top3PortfolioHitRate": 52.8,
+      "meanExcessReturn5d": 1.046
     },
     {
       "eraId": "ERA_7_RETAIL_TIGHTENING",
@@ -281,14 +312,15 @@
       "dates": "2021-01-01 to 2024-12-31",
       "description": "Record domestic retail investor inflows, 2022 Russia-Ukraine war and global central bank rate tightening, followed by infrastructure capex expansion",
       "observations": 51645,
-      "cagr": -5.77,
-      "sharpe": -1.02,
-      "sortino": -1.45,
-      "maxDrawdown": -35.77,
-      "top1HitRate": 42.17,
-      "top3StockHitRate": 44.52,
-      "top3PortfolioHitRate": 42.71,
-      "meanExcessReturn5d": -0.243
+      "cagr": 11.65,
+      "sharpe": 0.91,
+      "sortino": 1.55,
+      "maxDrawdown": -14.06,
+      "annualTurnoverPct": 4446.0,
+      "top1HitRate": 49.84,
+      "top3StockHitRate": 45.54,
+      "top3PortfolioHitRate": 45.58,
+      "meanExcessReturn5d": 0.086
     },
     {
       "eraId": "ERA_8_FROZEN_HOLDOUT",
@@ -296,28 +328,41 @@
       "dates": "2025-01-01 to 2026-09-03",
       "description": "Untouched final out-of-sample holdout period reserved strictly for unseen evaluation",
       "observations": 21602,
-      "cagr": -16.06,
-      "sharpe": -2.55,
-      "sortino": -3.88,
-      "maxDrawdown": -26.31,
-      "top1HitRate": 44.57,
-      "top3StockHitRate": 42.3,
-      "top3PortfolioHitRate": 42.12,
-      "meanExcessReturn5d": -0.381
+      "cagr": -17.26,
+      "sharpe": -3.18,
+      "sortino": -4.97,
+      "maxDrawdown": -24.67,
+      "annualTurnoverPct": 4610.9,
+      "top1HitRate": 44.02,
+      "top3StockHitRate": 41.3,
+      "top3PortfolioHitRate": 39.95,
+      "meanExcessReturn5d": -0.417
     }
   ],
   "crisisStressPerformance": [
+    {
+      "crisisId": "CRISIS_2008_GFC",
+      "name": "2008 Lehman GFC Crash",
+      "dates": "2008-01-08 to 2008-10-27",
+      "observations": 10547,
+      "niftyReturnPct": -59.86,
+      "strategyMaxDrawdown": -58.37,
+      "top1HitRate": 48.24,
+      "top3StockHitRate": 51.42,
+      "top3PortfolioHitRate": 53.27,
+      "meanExcessReturn5d": 0.023
+    },
     {
       "crisisId": "CRISIS_2011_INFLATION",
       "name": "2011 Risk-Off / Inflation Crisis",
       "dates": "2011-01-03 to 2011-12-30",
       "observations": 11988,
       "niftyReturnPct": -24.9,
-      "strategyMaxDrawdown": -29.82,
-      "top1HitRate": 43.12,
-      "top3StockHitRate": 46.48,
-      "top3PortfolioHitRate": 44.5,
-      "meanExcessReturn5d": -0.367
+      "strategyMaxDrawdown": -9.88,
+      "top1HitRate": 58.72,
+      "top3StockHitRate": 55.81,
+      "top3PortfolioHitRate": 61.47,
+      "meanExcessReturn5d": 0.347
     },
     {
       "crisisId": "CRISIS_2013_TAPER",
@@ -325,11 +370,11 @@
       "dates": "2013-05-20 to 2013-08-28",
       "observations": 3834,
       "niftyReturnPct": -14.16,
-      "strategyMaxDrawdown": -21.19,
-      "top1HitRate": 40.85,
-      "top3StockHitRate": 43.66,
-      "top3PortfolioHitRate": 45.07,
-      "meanExcessReturn5d": -0.727
+      "strategyMaxDrawdown": -10.16,
+      "top1HitRate": 61.97,
+      "top3StockHitRate": 48.36,
+      "top3PortfolioHitRate": 54.93,
+      "meanExcessReturn5d": 0.432
     },
     {
       "crisisId": "CRISIS_2015_COMMODITY",
@@ -337,11 +382,11 @@
       "dates": "2015-08-03 to 2016-02-29",
       "observations": 7668,
       "niftyReturnPct": -18.21,
-      "strategyMaxDrawdown": -23.44,
-      "top1HitRate": 48.23,
-      "top3StockHitRate": 50.12,
-      "top3PortfolioHitRate": 47.52,
-      "meanExcessReturn5d": -0.048
+      "strategyMaxDrawdown": -24.2,
+      "top1HitRate": 48.94,
+      "top3StockHitRate": 45.39,
+      "top3PortfolioHitRate": 48.94,
+      "meanExcessReturn5d": -0.052
     },
     {
       "crisisId": "CRISIS_2020_COVID",
@@ -349,11 +394,11 @@
       "dates": "2020-01-20 to 2020-03-23",
       "observations": 2420,
       "niftyReturnPct": -37.75,
-      "strategyMaxDrawdown": -47.56,
-      "top1HitRate": 27.27,
-      "top3StockHitRate": 44.7,
-      "top3PortfolioHitRate": 36.36,
-      "meanExcessReturn5d": -2.864
+      "strategyMaxDrawdown": -25.52,
+      "top1HitRate": 65.91,
+      "top3StockHitRate": 66.67,
+      "top3PortfolioHitRate": 72.73,
+      "meanExcessReturn5d": 2.054
     },
     {
       "crisisId": "CRISIS_2022_RATE_HIKE",
@@ -361,11 +406,11 @@
       "dates": "2021-10-18 to 2022-06-17",
       "observations": 9185,
       "niftyReturnPct": -17.23,
-      "strategyMaxDrawdown": -29.16,
-      "top1HitRate": 41.32,
-      "top3StockHitRate": 41.32,
-      "top3PortfolioHitRate": 40.72,
-      "meanExcessReturn5d": -0.457
+      "strategyMaxDrawdown": -12.42,
+      "top1HitRate": 52.1,
+      "top3StockHitRate": 49.1,
+      "top3PortfolioHitRate": 54.49,
+      "meanExcessReturn5d": 0.414
     }
   ]
 }

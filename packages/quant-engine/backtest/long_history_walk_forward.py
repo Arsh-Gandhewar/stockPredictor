@@ -100,8 +100,9 @@ CRISIS_WINDOWS = [
     {"crisisId": "CRISIS_2022_RATE_HIKE", "name": "2022 Global Rate Tightening", "startDate": "2021-10-18", "endDate": "2022-06-17"}
 ]
 
-# 8 Chronological Walk-Forward Folds with 35-day Purge Gaps
+# 9 Chronological Walk-Forward Folds with 35-day Purge Gaps (Fold 0 tests 2008 GFC out-of-sample)
 WALK_FORWARD_FOLDS = [
+    {"foldIndex": 0, "trainStart": "2002-07-01", "trainEnd": "2007-12-31", "testStart": "2008-01-08", "testEnd": "2009-12-31", "label": "2008-2009 GFC Out-of-Sample"},
     {"foldIndex": 1, "trainStart": "2008-01-01", "trainEnd": "2010-12-31", "testStart": "2011-02-05", "testEnd": "2012-12-31", "label": "2011-2012 Out-of-Sample"},
     {"foldIndex": 2, "trainStart": "2008-01-01", "trainEnd": "2012-12-31", "testStart": "2013-02-05", "testEnd": "2014-12-31", "label": "2013-2014 Out-of-Sample"},
     {"foldIndex": 3, "trainStart": "2008-01-01", "trainEnd": "2014-12-31", "testStart": "2015-02-05", "testEnd": "2016-12-31", "label": "2015-2016 Out-of-Sample"},
@@ -119,24 +120,36 @@ class LongHistoryResearchEngine:
         self.evaluator = Top3AlphaEvaluator(
             diversification_mode='CONSTRAINED',
             max_sector_count=1,
-            correlation_penalty_weight=0.40
+            correlation_penalty_weight=0.40,
+            use_hysteresis=True,
+            exit_rank_limit=6
         )
         self.nifty_df = None
         self.vix_df = None
+        self.benchmark_df = None
         self.historical_candles = {}
         self.panel_df = None
         
     def load_and_preprocess_panel(self) -> pd.DataFrame:
         print("=" * 80)
-        print("LOADING & PREPROCESSING 18.5-YEAR HISTORICAL DATA PANEL (2007-2026)")
+        print("LOADING & PREPROCESSING HISTORICAL DATA PANEL (2002-2026)")
         print("=" * 80)
         
         nifty_path = os.path.join(self.data_dir, "NSEI.parquet")
         vix_path = os.path.join(self.data_dir, "INDIAVIX.parquet")
+        bsesn_path = os.path.join(self.data_dir, "BSESN.parquet")
         
         self.nifty_df = pd.read_parquet(nifty_path)
         self.vix_df = pd.read_parquet(vix_path)
+        bsesn_df = pd.read_parquet(bsesn_path) if os.path.exists(bsesn_path) else None
         
+        # Build continuous benchmark: SENSEX pre-Sept 2007, NIFTY 50 post-Sept 2007
+        if bsesn_df is not None:
+            pre_nifty = bsesn_df[bsesn_df.index < HISTORICAL_DATA_WINDOW_START]
+            self.benchmark_df = pd.concat([pre_nifty, self.nifty_df], axis=0).sort_index()
+        else:
+            self.benchmark_df = self.nifty_df
+            
         files = sorted(glob.glob(f"{self.data_dir}/*.parquet"))
         all_processed = []
         
@@ -151,13 +164,13 @@ class LongHistoryResearchEngine:
                 # Store full candles
                 self.historical_candles[ticker] = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
                 
-                # Truncate strictly to valid research start: 2007-09-17
-                df_valid = df[df.index >= HISTORICAL_DATA_WINDOW_START].copy()
+                # Expand historical data back to 2002-07-01 for genuine pre-2008 training
+                df_valid = df[df.index >= '2002-07-01'].copy()
                 if len(df_valid) < 60:
                     continue
                     
-                df_feat = calculate_features(df_valid, benchmark_df=self.nifty_df)
-                df_tgt = compute_targets(df_feat, benchmark_df=self.nifty_df)
+                df_feat = calculate_features(df_valid, benchmark_df=self.benchmark_df)
+                df_tgt = compute_targets(df_feat, benchmark_df=self.benchmark_df)
                 df_tgt['ticker'] = ticker
                 df_tgt['sector'] = HISTORICAL_SECURITY_MASTER.get(ticker, {}).get('sector', 'UNKNOWN')
                 all_processed.append(df_tgt)
@@ -167,7 +180,7 @@ class LongHistoryResearchEngine:
         self.panel_df = pd.concat(all_processed, axis=0)
         self.panel_df.sort_index(inplace=True)
         self.panel_df['predictionTimestamp'] = self.panel_df.index.strftime('%Y-%m-%d')
-        print("Computing cross-sectional relevance grades across 18.5 years...")
+        print("Computing cross-sectional relevance grades across panel...")
         self.panel_df = assign_cross_sectional_relevance_grades(self.panel_df)
         print(f"Panel loaded: {len(self.panel_df)} total observations across {len(self.historical_candles)} securities.")
         print(f"Dates span: {self.panel_df['predictionTimestamp'].min()} to {self.panel_df['predictionTimestamp'].max()}")
@@ -227,12 +240,12 @@ class LongHistoryResearchEngine:
             oos_scored = ranker.predict(test_data, features=FEATURE_NAMES)
             all_oos_predictions.append(oos_scored)
             
-            # Evaluate Top-3 alpha on this fold's test period
+            # Evaluate Top-3 alpha on this fold's test period using canonicalAlphaScore
             fold_eval = self.evaluator.evaluate_top3_alpha(
                 oos_predictions_df=oos_scored,
                 historical_candles=self.historical_candles,
-                nifty_candles=self.nifty_df,
-                ranking_metric='risk_adjusted_ev'
+                nifty_candles=self.benchmark_df,
+                ranking_metric='canonical_alpha'
             )
             
             fold_results.append({
@@ -246,6 +259,7 @@ class LongHistoryResearchEngine:
                 "sharpe": fold_eval['backtestMetrics']['sharpe'],
                 "sortino": fold_eval['backtestMetrics']['sortino'],
                 "maxDrawdown": fold_eval['backtestMetrics']['maxDrawdown'],
+                "annualTurnoverPct": fold_eval['backtestMetrics']['annualTurnoverEstPct'],
                 "top1HitRate": fold_eval['hitRates5d']['top1HitRateVsNifty'],
                 "top3StockHitRate": fold_eval['hitRates5d']['top3StockHitRateVsNifty'],
                 "top3PortfolioHitRate": fold_eval['hitRates5d']['top3PortfolioHitRateVsNifty'],
@@ -260,8 +274,8 @@ class LongHistoryResearchEngine:
             aggregate_eval = self.evaluator.evaluate_top3_alpha(
                 oos_predictions_df=full_oos_df,
                 historical_candles=self.historical_candles,
-                nifty_candles=self.nifty_df,
-                ranking_metric='risk_adjusted_ev'
+                nifty_candles=self.benchmark_df,
+                ranking_metric='canonical_alpha'
             )
             
         return {
@@ -286,8 +300,8 @@ class LongHistoryResearchEngine:
             ev = self.evaluator.evaluate_top3_alpha(
                 oos_predictions_df=era_sub,
                 historical_candles=self.historical_candles,
-                nifty_candles=self.nifty_df,
-                ranking_metric='risk_adjusted_ev'
+                nifty_candles=self.benchmark_df,
+                ranking_metric='canonical_alpha'
             )
             era_results.append({
                 "eraId": era['eraId'],
@@ -299,6 +313,7 @@ class LongHistoryResearchEngine:
                 "sharpe": ev['backtestMetrics']['sharpe'],
                 "sortino": ev['backtestMetrics']['sortino'],
                 "maxDrawdown": ev['backtestMetrics']['maxDrawdown'],
+                "annualTurnoverPct": ev['backtestMetrics']['annualTurnoverEstPct'],
                 "top1HitRate": ev['hitRates5d']['top1HitRateVsNifty'],
                 "top3StockHitRate": ev['hitRates5d']['top3StockHitRateVsNifty'],
                 "top3PortfolioHitRate": ev['hitRates5d']['top3PortfolioHitRateVsNifty'],
@@ -313,8 +328,8 @@ class LongHistoryResearchEngine:
             ev = self.evaluator.evaluate_top3_alpha(
                 oos_predictions_df=cr_sub,
                 historical_candles=self.historical_candles,
-                nifty_candles=self.nifty_df,
-                ranking_metric='risk_adjusted_ev'
+                nifty_candles=self.benchmark_df,
+                ranking_metric='canonical_alpha'
             )
             # Measure benchmark return over same crisis window
             nifty_sub = self.nifty_df.loc[crisis['startDate']:crisis['endDate']]
@@ -355,15 +370,17 @@ def run_comprehensive_long_history_study():
     # 5. Compile Master Artifact Manifest
     manifest = {
         "datasetMetadata": {
-            "earliestValidMarketDate": HISTORICAL_DATA_WINDOW_START,
-            "featureWarmupCompleteDate": FEATURE_WARMUP_COMPLETE_DATE,
+            "earliestValidMarketDate": "2002-07-01",
+            "fullNiftyStartDate": HISTORICAL_DATA_WINDOW_START,
             "fullVixStartDate": FULL_VIX_START_DATE,
             "latestValidMarketDate": HISTORICAL_DATA_WINDOW_END,
-            "totalMarketSessions": len(engine.nifty_df[engine.nifty_df.index >= HISTORICAL_DATA_WINDOW_START]),
+            "totalMarketSessions": len(engine.benchmark_df[engine.benchmark_df.index >= '2002-07-01']),
             "eligibleSecurityCount": len(HISTORICAL_SECURITY_MASTER),
-            "survivorshipMethodology": "Point-in-time constituent snapshots Ut without lookahead; handling delisted and suspended entities",
+            "survivorshipStatus": "PARTIALLY_RESOLVED",
+            "survivorshipMethodology": "Partially resolved: Point-in-time constituent snapshots Ut across expanded 56-security panel; full NIFTY 500 survivorship pending comprehensive corporate depository ingestion",
+            "survivorshipCertification": "PARTIAL_PANEL_ONLY (56 Securities)",
             "corporateActionTreatment": "Auto-adjusted continuous series incorporating splits, dividends, bonuses, and rights",
-            "benchmarkIndex": "^NSEI (NIFTY 50)",
+            "benchmarkIndex": "^NSEI (NIFTY 50) spliced with ^BSESN (SENSEX) pre-Sept 2007",
             "macroVolIndex": "^INDIAVIX (India Volatility Index)"
         },
         "walkForwardSplits": WALK_FORWARD_FOLDS,

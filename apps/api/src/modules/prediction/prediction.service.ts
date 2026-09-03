@@ -727,60 +727,55 @@ export class QuantPredictionService implements OnModuleInit {
       defensiveCandidates = all;
     }
 
-    const scoredList = defensiveCandidates
-      .filter(
-        (p) =>
-          p.prediction[horizon]?.calibratedProbability !== null &&
-          p.risk.downsideProbability !== null &&
-          typeof p.stock.price === 'number' &&
-          p.stock.price > 0 &&
-          p.risk.stopLossPrice !== null
-      )
-      .map((p) => {
-        const pred = p.prediction[horizon];
-        const pUp = pred.calibratedProbability!;
-        const pDown = p.risk.downsideProbability!;
-        const expRet = typeof pred.expectedReturn === 'number' ? pred.expectedReturn : 0.015;
-        const expGain = pred.expectedGainConditionalUp || Math.max(0.005, expRet > 0 ? expRet : 0.015);
-        const expLoss = pred.expectedLossConditionalDown || Math.max(0.005, (p.stock.price! - p.risk.stopLossPrice!) / p.stock.price!);
+    const validCandidates = defensiveCandidates.filter(
+      (p) =>
+        p.prediction[horizon]?.calibratedProbability !== null &&
+        typeof p.prediction[horizon]?.expectedReturn === 'number' &&
+        typeof p.stock.price === 'number' &&
+        p.stock.price > 0 &&
+        p.risk.stopLossPrice !== null
+    );
 
-        const expectedValue = pUp * expGain - pDown * expLoss;
-        const downsideDev = Math.max(0.01, p.risk.downsideDeviation || ((p.risk.volatility || 0.02) * 0.7));
-        const sortino = expectedValue / downsideDev;
+    // Sort by calibrated probability to assign empirical cross-sectional rank percentile
+    validCandidates.sort(
+      (a, b) =>
+        (b.prediction[horizon]?.calibratedProbability || 0) -
+        (a.prediction[horizon]?.calibratedProbability || 0)
+    );
+    const totalCount = validCandidates.length;
 
-        const normEv = Math.min(1.0, Math.max(0, (expectedValue + 0.02) / 0.05));
-        const normSortino = Math.min(1.0, Math.max(0, (sortino + 0.5) / 2.5));
-        const normRiskSafety = 1 - (p.risk.compositeRiskScore || 30) / 100;
-        const normLiquidity = p.risk.liquidityFlag ? 0.3 : 1.0;
+    const scoredList = validCandidates.map((p, idx) => {
+      const pred = p.prediction[horizon]!;
+      const rankPct = totalCount > 1 ? (totalCount - idx) / totalCount : 1.0;
+      const expectedExcess = pred.expectedReturn!;
+      const statutoryFriction = 0.0013; // 13 bps institutional round-trip friction
+      const assetVol = Math.max(0.005, p.risk.volatility || 0.02);
+      const infoRatio = (expectedExcess - statutoryFriction) / assetVol;
+      const clampedIR = Math.max(-0.5, Math.min(0.5, infoRatio));
 
-        const cfg = MODEL_CONFIG.RANKING.LOW_RISK;
-        const compositeScore = parseFloat(
-          (
-            cfg.WEIGHT_EXPECTED_VALUE * normEv +
-            cfg.WEIGHT_SORTINO * normSortino +
-            cfg.WEIGHT_RISK_SAFETY * normRiskSafety +
-            cfg.WEIGHT_LIQUIDITY * normLiquidity
-          ).toFixed(4)
-        );
+      // Canonical AlphaScore = rankPct * [1 + clip((expectedExcess - friction) / vol, -0.5, 0.5)]
+      const compositeScore = parseFloat((rankPct * (1.0 + clampedIR)).toFixed(4));
+      const expectedValue = expectedExcess;
+      const sortino = expectedValue / Math.max(0.01, p.risk.downsideDeviation || assetVol * 0.7);
 
-        const breakdown: RankingScoreBreakdown = {
-          expectedValue: parseFloat((expectedValue * 100).toFixed(2)),
-          sortinoRatio: parseFloat(sortino.toFixed(2)),
-          riskScore: p.risk.compositeRiskScore || 25,
-          liquidityScore: normLiquidity,
-          compositeScore,
-          explanation: `Expected Sortino of ${sortino.toFixed(2)} with low composite risk score (${p.risk.compositeRiskScore || 25}/100) and steady EV of +${(expectedValue * 100).toFixed(2)}%`,
-        };
+      const breakdown: RankingScoreBreakdown = {
+        expectedValue: parseFloat((expectedValue * 100).toFixed(2)),
+        sortinoRatio: parseFloat(sortino.toFixed(2)),
+        riskScore: p.risk.compositeRiskScore || 25,
+        liquidityScore: p.risk.liquidityFlag ? 0.3 : 1.0,
+        compositeScore,
+        explanation: `Canonical AlphaScore of ${compositeScore} (Rank Pct: ${(rankPct * 100).toFixed(0)}%, IR: ${infoRatio.toFixed(2)})`,
+      };
 
-        p.ranking = {
-          rank: 0,
-          percentile: 0,
-          universeSize: defensiveCandidates.length,
-          breakdown,
-        };
+      p.ranking = {
+        rank: 0,
+        percentile: parseFloat((rankPct * 100).toFixed(1)),
+        universeSize: validCandidates.length,
+        breakdown,
+      };
 
-        return { prediction: p, compositeScore };
-      });
+      return { prediction: p, compositeScore };
+    });
 
     scoredList.sort((a, b) => b.compositeScore - a.compositeScore);
 

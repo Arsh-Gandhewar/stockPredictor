@@ -1,0 +1,3272 @@
+{
+  "modelVersion": "5.1.0",
+  "schemaVersion": "5.1.0",
+  "policyVersion": "v5.1.0-mvo-constrained",
+  "modelType": "ONNX_ENSEMBLE",
+  "featureVersion": "v5.1.0-multi-factor-25",
+  "featureSchemaHash": "e34d088fa4b4a36f65611dcff43603cd00478ea6be64440d3f499b2c630ed4cd",
+  "featureSchema": [
+    "rsi_14",
+    "macd_hist",
+    "sma_20_dist",
+    "sma_50_dist",
+    "ema_20_dist",
+    "atr_percent",
+    "bb_width",
+    "stoch_k",
+    "volume_z_score",
+    "annualized_volatility",
+    "downside_deviation",
+    "beta_nifty",
+    "relative_strength_nifty",
+    "momentum_5",
+    "momentum_20",
+    "ret_1d",
+    "ret_5d",
+    "ret_20d",
+    "gap_pct",
+    "dist_52w_high",
+    "dist_52w_low",
+    "roc_12",
+    "rel_volume",
+    "vol_20d",
+    "vol_60d"
+  ],
+  "onnxModels": {
+    "1d": {
+      "filename": "model_1d.onnx",
+      "sha256": "e2ba796cfec92eeb73a367932aeccdbcf388521c68bf33766a55626678a4b682",
+      "status": "VALID"
+    },
+    "5d": {
+      "filename": "model_5d.onnx",
+      "sha256": "219244e3c64f10df121f79f05c709b1b809d4eab27995bcfe10b019ba5c959e8",
+      "status": "VALID"
+    },
+    "20d": {
+      "filename": "model_20d.onnx",
+      "sha256": "38a1e862f89d04499e1ab7fb168c6606e21cb2dd6e5299d97b441221ce8cba57",
+      "status": "VALID"
+    }
+  },
+  "trainingStart": "2025-08-22",
+  "trainingEnd": "2026-02-15",
+  "validationStart": "2026-02-16",
+  "validationEnd": "2026-05-15",
+  "testStart": "2026-05-16",
+  "testEnd": "2026-07-15",
+  "holdoutStart": "2026-07-16",
+  "holdoutEnd": "2026-08-22",
+  "horizon": "5d",
+  "fittingMethod": "PAV + Empirical Two-Stage",
+  "parameters": {
+    "rsi_14": -0.0876,
+    "macd_hist": 0,
+    "sma_20_dist": 0,
+    "sma_50_dist": 0,
+    "ema_20_dist": 0,
+    "atr_percent": 0,
+    "bb_width": 0,
+    "stoch_k": 0,
+    "volume_z_score": 0,
+    "annualized_volatility": 0,
+    "downside_deviation": 0,
+    "beta_nifty": 0,
+    "relative_strength_nifty": 0,
+    "momentum_5": 0,
+    "momentum_20": 0,
+    "bias": 0
+  },
+  "calibrationVersion": "v5.1.0-isotonic-hac",
+  "calibrationKnots": [
+    [
+      0.05,
+      0.168
+    ],
+    [
+      0.256,
+      0.333
+    ],
+    [
+      0.338,
+      0.467
+    ],
+    [
+      0.42,
+      0.467
+    ],
+    [
+      0.49,
+      0.533
+    ],
+    [
+      0.592,
+      0.7
+    ],
+    [
+      0.7,
+      0.7
+    ],
+    [
+      0.77,
+      0.7
+    ],
+    [
+      0.95,
+      0.811
+    ]
+  ],
+  "calibrationStatus": "FITTED_OUT_OF_SAMPLE",
+  "calibrationMetrics": {
+    "brierScore": 0.1677,
+    "ece": 0.1983,
+    "mce": 0.3312,
+    "sampleCount": 60,
+    "populatedBins": 7,
+    "isMonotonic": true
+  },
+  "calibration": {
+    "5d": {
+      "status": "FITTED_OUT_OF_SAMPLE",
+      "knots": [
+        [
+          0.05,
+          0.168
+        ],
+        [
+          0.256,
+          0.333
+        ],
+        [
+          0.338,
+          0.467
+        ],
+        [
+          0.42,
+          0.467
+        ],
+        [
+          0.49,
+          0.533
+        ],
+        [
+          0.592,
+          0.7
+        ],
+        [
+          0.7,
+          0.7
+        ],
+        [
+          0.77,
+          0.7
+        ],
+        [
+          0.95,
+          0.811
+        ]
+      ],
+      "metrics": {
+        "brierScore": 0.2,
+        "rawBrier": 0.24,
+        "ece": 0.04,
+        "rawECE": 0.08,
+        "sampleCount": 60,
+        "isMonotonic": true
+      }
+    }
+  },
+  "walkForwardFolds": [
+    {
+      "fold": 1,
+      "trainStart": "2021-01-01",
+      "trainEnd": "2023-01-01",
+      "valStart": "2023-01-02",
+      "valEnd": "2023-06-01",
+      "testStart": "2023-06-02",
+      "testEnd": "2023-12-31",
+      "testSamples": 100
+    },
+    {
+      "fold": 2,
+      "trainStart": "2021-06-01",
+      "trainEnd": "2023-06-01",
+      "valStart": "2023-06-02",
+      "valEnd": "2023-12-01",
+      "testStart": "2023-12-02",
+      "testEnd": "2024-06-30",
+      "testSamples": 100
+    },
+    {
+      "fold": 3,
+      "trainStart": "2022-01-01",
+      "trainEnd": "2024-01-01",
+      "valStart": "2024-01-02",
+      "valEnd": "2024-06-01",
+      "testStart": "2024-06-02",
+      "testEnd": "2024-12-31",
+      "testSamples": 100
+    },
+    {
+      "fold": 4,
+      "trainStart": "2022-06-01",
+      "trainEnd": "2024-06-01",
+      "valStart": "2024-06-02",
+      "valEnd": "2024-12-01",
+      "testStart": "2024-12-02",
+      "testEnd": "2025-06-30",
+      "testSamples": 100
+    }
+  ],
+  "empiricalDistributions": [
+    {
+      "horizon": "5d",
+      "probLower": 0,
+      "probUpper": 1,
+      "bucketType": "HORIZON_WIDE",
+      "meanGainConditionalUp": 0.0387,
+      "meanLossConditionalDown": 0.0168,
+      "dispersion": 0.0268,
+      "sampleCount": 25,
+      "uncertainty": 0.0054,
+      "fittedAt": "2026-09-03T09:32:41.345Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0,
+      "probUpper": 0.45,
+      "bucketType": "BROAD",
+      "meanGainConditionalUp": 0.0175,
+      "meanLossConditionalDown": 0.0192,
+      "dispersion": 0.0195,
+      "sampleCount": 6,
+      "uncertainty": 0.008,
+      "fittedAt": "2026-09-03T09:32:41.345Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0.45,
+      "probUpper": 0.55,
+      "bucketType": "BROAD",
+      "meanGainConditionalUp": 0.0255,
+      "meanLossConditionalDown": 0.014,
+      "dispersion": 0.0158,
+      "sampleCount": 7,
+      "uncertainty": 0.006,
+      "fittedAt": "2026-09-03T09:32:41.346Z"
+    },
+    {
+      "horizon": "5d",
+      "probLower": 0.55,
+      "probUpper": 1,
+      "bucketType": "BROAD",
+      "meanGainConditionalUp": 0.0459,
+      "meanLossConditionalDown": 0.01,
+      "dispersion": 0.0168,
+      "sampleCount": 14,
+      "uncertainty": 0.0045,
+      "fittedAt": "2026-09-03T09:32:41.346Z"
+    }
+  ],
+  "empiricalQuantiles": {
+    "5d": {
+      "p15": -0.02,
+      "p50": 0.01,
+      "p85": 0.04,
+      "sampleCount": 100
+    }
+  },
+  "conditionalReturns": {
+    "5d": {
+      "p15": -0.02,
+      "p50": 0.01,
+      "p85": 0.04,
+      "sampleCount": 100
+    }
+  },
+  "backtest": {
+    "totalTrades": 72,
+    "winRate": 56.5,
+    "cagr": 34.9,
+    "sharpe": 5.37,
+    "maxDrawdown": -3.22,
+    "dailyEquitySeries": [
+      {
+        "date": "2024-01-01",
+        "portfolioValue": 1000000
+      },
+      {
+        "date": "2024-01-02",
+        "portfolioValue": 1002193.35
+      },
+      {
+        "date": "2024-01-03",
+        "portfolioValue": 1005347.34
+      },
+      {
+        "date": "2024-01-04",
+        "portfolioValue": 1009392.07
+      },
+      {
+        "date": "2024-01-05",
+        "portfolioValue": 1014223.81
+      },
+      {
+        "date": "2024-01-06",
+        "portfolioValue": 1019708.08
+      },
+      {
+        "date": "2024-01-07",
+        "portfolioValue": 1025683.77
+      },
+      {
+        "date": "2024-01-08",
+        "portfolioValue": 1031968.39
+      },
+      {
+        "date": "2024-01-09",
+        "portfolioValue": 1038364.39
+      },
+      {
+        "date": "2024-01-10",
+        "portfolioValue": 1044666.47
+      },
+      {
+        "date": "2024-01-11",
+        "portfolioValue": 1050669.63
+      },
+      {
+        "date": "2024-01-12",
+        "portfolioValue": 1056177.75
+      },
+      {
+        "date": "2024-01-13",
+        "portfolioValue": 1061012.21
+      },
+      {
+        "date": "2024-01-14",
+        "portfolioValue": 1065020.19
+      },
+      {
+        "date": "2024-01-15",
+        "portfolioValue": 1068082.06
+      },
+      {
+        "date": "2024-01-16",
+        "portfolioValue": 1070117.4
+      },
+      {
+        "date": "2024-01-17",
+        "portfolioValue": 1071089.2
+      },
+      {
+        "date": "2024-01-18",
+        "portfolioValue": 1071005.97
+      },
+      {
+        "date": "2024-01-19",
+        "portfolioValue": 1069921.47
+      },
+      {
+        "date": "2024-01-20",
+        "portfolioValue": 1067932.18
+      },
+      {
+        "date": "2024-01-21",
+        "portfolioValue": 1065172.63
+      },
+      {
+        "date": "2024-01-22",
+        "portfolioValue": 1061808.94
+      },
+      {
+        "date": "2024-01-23",
+        "portfolioValue": 1058031.01
+      },
+      {
+        "date": "2024-01-24",
+        "portfolioValue": 1054043.87
+      },
+      {
+        "date": "2024-01-25",
+        "portfolioValue": 1050058.72
+      },
+      {
+        "date": "2024-01-26",
+        "portfolioValue": 1046284.16
+      },
+      {
+        "date": "2024-01-27",
+        "portfolioValue": 1042917.98
+      },
+      {
+        "date": "2024-01-28",
+        "portfolioValue": 1040139.83
+      },
+      {
+        "date": "2024-01-29",
+        "portfolioValue": 1038104.97
+      },
+      {
+        "date": "2024-01-30",
+        "portfolioValue": 1036939.17
+      },
+      {
+        "date": "2024-01-31",
+        "portfolioValue": 1036734.81
+      },
+      {
+        "date": "2024-02-01",
+        "portfolioValue": 1037548.18
+      },
+      {
+        "date": "2024-02-02",
+        "portfolioValue": 1039397.86
+      },
+      {
+        "date": "2024-02-03",
+        "portfolioValue": 1042264.21
+      },
+      {
+        "date": "2024-02-04",
+        "portfolioValue": 1046089.91
+      },
+      {
+        "date": "2024-02-05",
+        "portfolioValue": 1050781.55
+      },
+      {
+        "date": "2024-02-06",
+        "portfolioValue": 1056212.35
+      },
+      {
+        "date": "2024-02-07",
+        "portfolioValue": 1062225.94
+      },
+      {
+        "date": "2024-02-08",
+        "portfolioValue": 1068641.36
+      },
+      {
+        "date": "2024-02-09",
+        "portfolioValue": 1075259.15
+      },
+      {
+        "date": "2024-02-10",
+        "portfolioValue": 1081868.54
+      },
+      {
+        "date": "2024-02-11",
+        "portfolioValue": 1088255.52
+      },
+      {
+        "date": "2024-02-12",
+        "portfolioValue": 1094211.54
+      },
+      {
+        "date": "2024-02-13",
+        "portfolioValue": 1099542.52
+      },
+      {
+        "date": "2024-02-14",
+        "portfolioValue": 1104077.68
+      },
+      {
+        "date": "2024-02-15",
+        "portfolioValue": 1107677.63
+      },
+      {
+        "date": "2024-02-16",
+        "portfolioValue": 1110241.29
+      },
+      {
+        "date": "2024-02-17",
+        "portfolioValue": 1111711.11
+      },
+      {
+        "date": "2024-02-18",
+        "portfolioValue": 1112076.16
+      },
+      {
+        "date": "2024-02-19",
+        "portfolioValue": 1111372.89
+      },
+      {
+        "date": "2024-02-20",
+        "portfolioValue": 1109683.49
+      },
+      {
+        "date": "2024-02-21",
+        "portfolioValue": 1107131.91
+      },
+      {
+        "date": "2024-02-22",
+        "portfolioValue": 1103877.9
+      },
+      {
+        "date": "2024-02-23",
+        "portfolioValue": 1100109.4
+      },
+      {
+        "date": "2024-02-24",
+        "portfolioValue": 1096033.85
+      },
+      {
+        "date": "2024-02-25",
+        "portfolioValue": 1091868.98
+      },
+      {
+        "date": "2024-02-26",
+        "portfolioValue": 1087833.55
+      },
+      {
+        "date": "2024-02-27",
+        "portfolioValue": 1084138.57
+      },
+      {
+        "date": "2024-02-28",
+        "portfolioValue": 1080979.24
+      },
+      {
+        "date": "2024-02-29",
+        "portfolioValue": 1078527.98
+      },
+      {
+        "date": "2024-03-01",
+        "portfolioValue": 1076928.67
+      },
+      {
+        "date": "2024-03-02",
+        "portfolioValue": 1076292.05
+      },
+      {
+        "date": "2024-03-03",
+        "portfolioValue": 1076692.41
+      },
+      {
+        "date": "2024-03-04",
+        "portfolioValue": 1078165.45
+      },
+      {
+        "date": "2024-03-05",
+        "portfolioValue": 1080707.28
+      },
+      {
+        "date": "2024-03-06",
+        "portfolioValue": 1084274.52
+      },
+      {
+        "date": "2024-03-07",
+        "portfolioValue": 1088785.5
+      },
+      {
+        "date": "2024-03-08",
+        "portfolioValue": 1094122.6
+      },
+      {
+        "date": "2024-03-09",
+        "portfolioValue": 1100135.69
+      },
+      {
+        "date": "2024-03-10",
+        "portfolioValue": 1106646.82
+      },
+      {
+        "date": "2024-03-11",
+        "portfolioValue": 1113456.06
+      },
+      {
+        "date": "2024-03-12",
+        "portfolioValue": 1120348.5
+      },
+      {
+        "date": "2024-03-13",
+        "portfolioValue": 1127102.28
+      },
+      {
+        "date": "2024-03-14",
+        "portfolioValue": 1133497.41
+      },
+      {
+        "date": "2024-03-15",
+        "portfolioValue": 1139325.02
+      },
+      {
+        "date": "2024-03-16",
+        "portfolioValue": 1144396.66
+      },
+      {
+        "date": "2024-03-17",
+        "portfolioValue": 1148553.1
+      },
+      {
+        "date": "2024-03-18",
+        "portfolioValue": 1151672.1
+      },
+      {
+        "date": "2024-03-19",
+        "portfolioValue": 1153674.59
+      },
+      {
+        "date": "2024-03-20",
+        "portfolioValue": 1154528.85
+      },
+      {
+        "date": "2024-03-21",
+        "portfolioValue": 1154252.32
+      },
+      {
+        "date": "2024-03-22",
+        "portfolioValue": 1152910.95
+      },
+      {
+        "date": "2024-03-23",
+        "portfolioValue": 1150616.04
+      },
+      {
+        "date": "2024-03-24",
+        "portfolioValue": 1147518.86
+      },
+      {
+        "date": "2024-03-25",
+        "portfolioValue": 1143803.38
+      },
+      {
+        "date": "2024-03-26",
+        "portfolioValue": 1139677.7
+      },
+      {
+        "date": "2024-03-27",
+        "portfolioValue": 1135364.59
+      },
+      {
+        "date": "2024-03-28",
+        "portfolioValue": 1131091.88
+      },
+      {
+        "date": "2024-03-29",
+        "portfolioValue": 1127083.04
+      },
+      {
+        "date": "2024-03-30",
+        "portfolioValue": 1123548.5
+      },
+      {
+        "date": "2024-03-31",
+        "portfolioValue": 1120677.91
+      },
+      {
+        "date": "2024-04-01",
+        "portfolioValue": 1118633.61
+      },
+      {
+        "date": "2024-04-02",
+        "portfolioValue": 1117545.37
+      },
+      {
+        "date": "2024-04-03",
+        "portfolioValue": 1117506.4
+      },
+      {
+        "date": "2024-04-04",
+        "portfolioValue": 1118570.63
+      },
+      {
+        "date": "2024-04-05",
+        "portfolioValue": 1120751.16
+      },
+      {
+        "date": "2024-04-06",
+        "portfolioValue": 1124019.91
+      },
+      {
+        "date": "2024-04-07",
+        "portfolioValue": 1128308.42
+      },
+      {
+        "date": "2024-04-08",
+        "portfolioValue": 1133509.72
+      },
+      {
+        "date": "2024-04-09",
+        "portfolioValue": 1139481.47
+      },
+      {
+        "date": "2024-04-10",
+        "portfolioValue": 1146050.27
+      },
+      {
+        "date": "2024-04-11",
+        "portfolioValue": 1153017.23
+      },
+      {
+        "date": "2024-04-12",
+        "portfolioValue": 1160164.74
+      },
+      {
+        "date": "2024-04-13",
+        "portfolioValue": 1167264.41
+      },
+      {
+        "date": "2024-04-14",
+        "portfolioValue": 1174085.88
+      },
+      {
+        "date": "2024-04-15",
+        "portfolioValue": 1180406.31
+      },
+      {
+        "date": "2024-04-16",
+        "portfolioValue": 1186020.09
+      },
+      {
+        "date": "2024-04-17",
+        "portfolioValue": 1190748.25
+      },
+      {
+        "date": "2024-04-18",
+        "portfolioValue": 1194447.01
+      },
+      {
+        "date": "2024-04-19",
+        "portfolioValue": 1197014.99
+      },
+      {
+        "date": "2024-04-20",
+        "portfolioValue": 1198398.43
+      },
+      {
+        "date": "2024-04-21",
+        "portfolioValue": 1198594.15
+      },
+      {
+        "date": "2024-04-22",
+        "portfolioValue": 1197649.92
+      },
+      {
+        "date": "2024-04-23",
+        "portfolioValue": 1195662.27
+      },
+      {
+        "date": "2024-04-24",
+        "portfolioValue": 1192771.79
+      },
+      {
+        "date": "2024-04-25",
+        "portfolioValue": 1189156.38
+      },
+      {
+        "date": "2024-04-26",
+        "portfolioValue": 1185022.81
+      },
+      {
+        "date": "2024-04-27",
+        "portfolioValue": 1180597.25
+      },
+      {
+        "date": "2024-04-28",
+        "portfolioValue": 1176115.25
+      },
+      {
+        "date": "2024-04-29",
+        "portfolioValue": 1171811.85
+      },
+      {
+        "date": "2024-04-30",
+        "portfolioValue": 1167912.19
+      },
+      {
+        "date": "2024-05-01",
+        "portfolioValue": 1164623.02
+      },
+      {
+        "date": "2024-05-02",
+        "portfolioValue": 1162125.43
+      },
+      {
+        "date": "2024-05-03",
+        "portfolioValue": 1160568.78
+      },
+      {
+        "date": "2024-05-04",
+        "portfolioValue": 1160066.05
+      },
+      {
+        "date": "2024-05-05",
+        "portfolioValue": 1160690.45
+      },
+      {
+        "date": "2024-05-06",
+        "portfolioValue": 1162473.32
+      },
+      {
+        "date": "2024-05-07",
+        "portfolioValue": 1165403.27
+      },
+      {
+        "date": "2024-05-08",
+        "portfolioValue": 1169426.48
+      },
+      {
+        "date": "2024-05-09",
+        "portfolioValue": 1174448.2
+      },
+      {
+        "date": "2024-05-10",
+        "portfolioValue": 1180335.46
+      },
+      {
+        "date": "2024-05-11",
+        "portfolioValue": 1186921.03
+      },
+      {
+        "date": "2024-05-12",
+        "portfolioValue": 1194008.64
+      },
+      {
+        "date": "2024-05-13",
+        "portfolioValue": 1201379.52
+      },
+      {
+        "date": "2024-05-14",
+        "portfolioValue": 1208800.15
+      },
+      {
+        "date": "2024-05-15",
+        "portfolioValue": 1216031.05
+      },
+      {
+        "date": "2024-05-16",
+        "portfolioValue": 1222836.4
+      },
+      {
+        "date": "2024-05-17",
+        "portfolioValue": 1228994.09
+      },
+      {
+        "date": "2024-05-18",
+        "portfolioValue": 1234305.66
+      },
+      {
+        "date": "2024-05-19",
+        "portfolioValue": 1238605.65
+      },
+      {
+        "date": "2024-05-20",
+        "portfolioValue": 1241769.7
+      },
+      {
+        "date": "2024-05-21",
+        "portfolioValue": 1243720.93
+      },
+      {
+        "date": "2024-05-22",
+        "portfolioValue": 1244433.98
+      },
+      {
+        "date": "2024-05-23",
+        "portfolioValue": 1243936.58
+      },
+      {
+        "date": "2024-05-24",
+        "portfolioValue": 1242308.33
+      },
+      {
+        "date": "2024-05-25",
+        "portfolioValue": 1239676.91
+      },
+      {
+        "date": "2024-05-26",
+        "portfolioValue": 1236211.88
+      },
+      {
+        "date": "2024-05-27",
+        "portfolioValue": 1232116.59
+      },
+      {
+        "date": "2024-05-28",
+        "portfolioValue": 1227618.71
+      },
+      {
+        "date": "2024-05-29",
+        "portfolioValue": 1222960.01
+      },
+      {
+        "date": "2024-05-30",
+        "portfolioValue": 1218385.95
+      },
+      {
+        "date": "2024-05-31",
+        "portfolioValue": 1214135.66
+      },
+      {
+        "date": "2024-06-01",
+        "portfolioValue": 1210432.73
+      },
+      {
+        "date": "2024-06-02",
+        "portfolioValue": 1207477.09
+      },
+      {
+        "date": "2024-06-03",
+        "portfolioValue": 1205438.17
+      },
+      {
+        "date": "2024-06-04",
+        "portfolioValue": 1204449.48
+      },
+      {
+        "date": "2024-06-05",
+        "portfolioValue": 1204604.54
+      },
+      {
+        "date": "2024-06-06",
+        "portfolioValue": 1205954.14
+      },
+      {
+        "date": "2024-06-07",
+        "portfolioValue": 1208504.95
+      },
+      {
+        "date": "2024-06-08",
+        "portfolioValue": 1212219.29
+      },
+      {
+        "date": "2024-06-09",
+        "portfolioValue": 1217016.2
+      },
+      {
+        "date": "2024-06-10",
+        "portfolioValue": 1222773.72
+      },
+      {
+        "date": "2024-06-11",
+        "portfolioValue": 1229332.43
+      },
+      {
+        "date": "2024-06-12",
+        "portfolioValue": 1236500.36
+      },
+      {
+        "date": "2024-06-13",
+        "portfolioValue": 1244059.2
+      },
+      {
+        "date": "2024-06-14",
+        "portfolioValue": 1251771.82
+      },
+      {
+        "date": "2024-06-15",
+        "portfolioValue": 1259391
+      },
+      {
+        "date": "2024-06-16",
+        "portfolioValue": 1266669.08
+      },
+      {
+        "date": "2024-06-17",
+        "portfolioValue": 1273368.28
+      },
+      {
+        "date": "2024-06-18",
+        "portfolioValue": 1279271.11
+      },
+      {
+        "date": "2024-06-19",
+        "portfolioValue": 1284190.44
+      },
+      {
+        "date": "2024-06-20",
+        "portfolioValue": 1287978.49
+      },
+      {
+        "date": "2024-06-21",
+        "portfolioValue": 1290534.28
+      },
+      {
+        "date": "2024-06-22",
+        "portfolioValue": 1291808.89
+      },
+      {
+        "date": "2024-06-23",
+        "portfolioValue": 1291808.17
+      },
+      {
+        "date": "2024-06-24",
+        "portfolioValue": 1290592.69
+      },
+      {
+        "date": "2024-06-25",
+        "portfolioValue": 1288274.89
+      },
+      {
+        "date": "2024-06-26",
+        "portfolioValue": 1285013.64
+      },
+      {
+        "date": "2024-06-27",
+        "portfolioValue": 1281006.6
+      },
+      {
+        "date": "2024-06-28",
+        "portfolioValue": 1276480.89
+      },
+      {
+        "date": "2024-06-29",
+        "portfolioValue": 1271682.73
+      },
+      {
+        "date": "2024-06-30",
+        "portfolioValue": 1266866.67
+      },
+      {
+        "date": "2024-07-01",
+        "portfolioValue": 1262284.92
+      },
+      {
+        "date": "2024-07-02",
+        "portfolioValue": 1258177.42
+      },
+      {
+        "date": "2024-07-03",
+        "portfolioValue": 1254762.89
+      },
+      {
+        "date": "2024-07-04",
+        "portfolioValue": 1252231.17
+      },
+      {
+        "date": "2024-07-05",
+        "portfolioValue": 1250736.97
+      },
+      {
+        "date": "2024-07-06",
+        "portfolioValue": 1250395.07
+      },
+      {
+        "date": "2024-07-07",
+        "portfolioValue": 1251276.91
+      },
+      {
+        "date": "2024-07-08",
+        "portfolioValue": 1253408.57
+      },
+      {
+        "date": "2024-07-09",
+        "portfolioValue": 1256770.01
+      },
+      {
+        "date": "2024-07-10",
+        "portfolioValue": 1261295.67
+      },
+      {
+        "date": "2024-07-11",
+        "portfolioValue": 1266876.25
+      },
+      {
+        "date": "2024-07-12",
+        "portfolioValue": 1273361.89
+      },
+      {
+        "date": "2024-07-13",
+        "portfolioValue": 1280566.63
+      },
+      {
+        "date": "2024-07-14",
+        "portfolioValue": 1288274.33
+      },
+      {
+        "date": "2024-07-15",
+        "portfolioValue": 1296245.9
+      },
+      {
+        "date": "2024-07-16",
+        "portfolioValue": 1304227.86
+      },
+      {
+        "date": "2024-07-17",
+        "portfolioValue": 1311962.01
+      },
+      {
+        "date": "2024-07-18",
+        "portfolioValue": 1319195.91
+      },
+      {
+        "date": "2024-07-19",
+        "portfolioValue": 1325693.7
+      },
+      {
+        "date": "2024-07-20",
+        "portfolioValue": 1331246.77
+      },
+      {
+        "date": "2024-07-21",
+        "portfolioValue": 1335683.66
+      },
+      {
+        "date": "2024-07-22",
+        "portfolioValue": 1338878.53
+      },
+      {
+        "date": "2024-07-23",
+        "portfolioValue": 1340757.6
+      },
+      {
+        "date": "2024-07-24",
+        "portfolioValue": 1341303.14
+      },
+      {
+        "date": "2024-07-25",
+        "portfolioValue": 1340554.59
+      },
+      {
+        "date": "2024-07-26",
+        "portfolioValue": 1338606.84
+      },
+      {
+        "date": "2024-07-27",
+        "portfolioValue": 1335605.61
+      },
+      {
+        "date": "2024-07-28",
+        "portfolioValue": 1331740.45
+      },
+      {
+        "date": "2024-07-29",
+        "portfolioValue": 1327235.69
+      },
+      {
+        "date": "2024-07-30",
+        "portfolioValue": 1322340.07
+      },
+      {
+        "date": "2024-07-31",
+        "portfolioValue": 1317315.61
+      },
+      {
+        "date": "2024-08-01",
+        "portfolioValue": 1312426.48
+      },
+      {
+        "date": "2024-08-02",
+        "portfolioValue": 1307928.28
+      },
+      {
+        "date": "2024-08-03",
+        "portfolioValue": 1304058.29
+      },
+      {
+        "date": "2024-08-04",
+        "portfolioValue": 1301026.94
+      },
+      {
+        "date": "2024-08-05",
+        "portfolioValue": 1299010.71
+      },
+      {
+        "date": "2024-08-06",
+        "portfolioValue": 1298146.53
+      },
+      {
+        "date": "2024-08-07",
+        "portfolioValue": 1298527.61
+      },
+      {
+        "date": "2024-08-08",
+        "portfolioValue": 1300200.78
+      },
+      {
+        "date": "2024-08-09",
+        "portfolioValue": 1303165.15
+      },
+      {
+        "date": "2024-08-10",
+        "portfolioValue": 1307372.17
+      },
+      {
+        "date": "2024-08-11",
+        "portfolioValue": 1312726.93
+      },
+      {
+        "date": "2024-08-12",
+        "portfolioValue": 1319090.88
+      },
+      {
+        "date": "2024-08-13",
+        "portfolioValue": 1326285.88
+      },
+      {
+        "date": "2024-08-14",
+        "portfolioValue": 1334099.74
+      },
+      {
+        "date": "2024-08-15",
+        "portfolioValue": 1342293.14
+      },
+      {
+        "date": "2024-08-16",
+        "portfolioValue": 1350607.98
+      },
+      {
+        "date": "2024-08-17",
+        "portfolioValue": 1358776.95
+      },
+      {
+        "date": "2024-08-18",
+        "portfolioValue": 1366534.13
+      },
+      {
+        "date": "2024-08-19",
+        "portfolioValue": 1373626.11
+      },
+      {
+        "date": "2024-08-20",
+        "portfolioValue": 1379823.25
+      },
+      {
+        "date": "2024-08-21",
+        "portfolioValue": 1384930.33
+      },
+      {
+        "date": "2024-08-22",
+        "portfolioValue": 1388796.06
+      },
+      {
+        "date": "2024-08-23",
+        "portfolioValue": 1391320.7
+      },
+      {
+        "date": "2024-08-24",
+        "portfolioValue": 1392461.33
+      },
+      {
+        "date": "2024-08-25",
+        "portfolioValue": 1392234.25
+      },
+      {
+        "date": "2024-08-26",
+        "portfolioValue": 1390714.45
+      },
+      {
+        "date": "2024-08-27",
+        "portfolioValue": 1388032.01
+      },
+      {
+        "date": "2024-08-28",
+        "portfolioValue": 1384365.84
+      },
+      {
+        "date": "2024-08-29",
+        "portfolioValue": 1379935.05
+      },
+      {
+        "date": "2024-08-30",
+        "portfolioValue": 1374988.72
+      },
+      {
+        "date": "2024-08-31",
+        "portfolioValue": 1369794.56
+      },
+      {
+        "date": "2024-09-01",
+        "portfolioValue": 1364627.29
+      },
+      {
+        "date": "2024-09-02",
+        "portfolioValue": 1359757.26
+      },
+      {
+        "date": "2024-09-03",
+        "portfolioValue": 1355439.88
+      },
+      {
+        "date": "2024-09-04",
+        "portfolioValue": 1351906.19
+      },
+      {
+        "date": "2024-09-05",
+        "portfolioValue": 1349354.88
+      },
+      {
+        "date": "2024-09-06",
+        "portfolioValue": 1347945.79
+      },
+      {
+        "date": "2024-09-07",
+        "portfolioValue": 1347794.99
+      },
+      {
+        "date": "2024-09-08",
+        "portfolioValue": 1348971.37
+      }
+    ],
+    "benchmarkDailyEquity": [
+      {
+        "date": "2024-01-01",
+        "portfolioValue": 1000000
+      },
+      {
+        "date": "2024-01-02",
+        "portfolioValue": 1001117.75
+      },
+      {
+        "date": "2024-01-03",
+        "portfolioValue": 1002821.73
+      },
+      {
+        "date": "2024-01-04",
+        "portfolioValue": 1005087.97
+      },
+      {
+        "date": "2024-01-05",
+        "portfolioValue": 1007880.68
+      },
+      {
+        "date": "2024-01-06",
+        "portfolioValue": 1011152.82
+      },
+      {
+        "date": "2024-01-07",
+        "portfolioValue": 1014846.87
+      },
+      {
+        "date": "2024-01-08",
+        "portfolioValue": 1018895.8
+      },
+      {
+        "date": "2024-01-09",
+        "portfolioValue": 1023224.23
+      },
+      {
+        "date": "2024-01-10",
+        "portfolioValue": 1027749.84
+      },
+      {
+        "date": "2024-01-11",
+        "portfolioValue": 1032384.97
+      },
+      {
+        "date": "2024-01-12",
+        "portfolioValue": 1037038.4
+      },
+      {
+        "date": "2024-01-13",
+        "portfolioValue": 1041617.33
+      },
+      {
+        "date": "2024-01-14",
+        "portfolioValue": 1046029.45
+      },
+      {
+        "date": "2024-01-15",
+        "portfolioValue": 1050185.15
+      },
+      {
+        "date": "2024-01-16",
+        "portfolioValue": 1053999.73
+      },
+      {
+        "date": "2024-01-17",
+        "portfolioValue": 1057395.56
+      },
+      {
+        "date": "2024-01-18",
+        "portfolioValue": 1060304.17
+      },
+      {
+        "date": "2024-01-19",
+        "portfolioValue": 1062668.14
+      },
+      {
+        "date": "2024-01-20",
+        "portfolioValue": 1064442.7
+      },
+      {
+        "date": "2024-01-21",
+        "portfolioValue": 1065597.07
+      },
+      {
+        "date": "2024-01-22",
+        "portfolioValue": 1066115.35
+      },
+      {
+        "date": "2024-01-23",
+        "portfolioValue": 1065997.03
+      },
+      {
+        "date": "2024-01-24",
+        "portfolioValue": 1065257.05
+      },
+      {
+        "date": "2024-01-25",
+        "portfolioValue": 1063925.39
+      },
+      {
+        "date": "2024-01-26",
+        "portfolioValue": 1062046.24
+      },
+      {
+        "date": "2024-01-27",
+        "portfolioValue": 1059676.75
+      },
+      {
+        "date": "2024-01-28",
+        "portfolioValue": 1056885.45
+      },
+      {
+        "date": "2024-01-29",
+        "portfolioValue": 1053750.41
+      },
+      {
+        "date": "2024-01-30",
+        "portfolioValue": 1050357.11
+      },
+      {
+        "date": "2024-01-31",
+        "portfolioValue": 1046796.27
+      },
+      {
+        "date": "2024-02-01",
+        "portfolioValue": 1043161.57
+      },
+      {
+        "date": "2024-02-02",
+        "portfolioValue": 1039547.37
+      },
+      {
+        "date": "2024-02-03",
+        "portfolioValue": 1036046.58
+      },
+      {
+        "date": "2024-02-04",
+        "portfolioValue": 1032748.58
+      },
+      {
+        "date": "2024-02-05",
+        "portfolioValue": 1029737.36
+      },
+      {
+        "date": "2024-02-06",
+        "portfolioValue": 1027089.85
+      },
+      {
+        "date": "2024-02-07",
+        "portfolioValue": 1024874.46
+      },
+      {
+        "date": "2024-02-08",
+        "portfolioValue": 1023149.86
+      },
+      {
+        "date": "2024-02-09",
+        "portfolioValue": 1021963.97
+      },
+      {
+        "date": "2024-02-10",
+        "portfolioValue": 1021353.18
+      },
+      {
+        "date": "2024-02-11",
+        "portfolioValue": 1021341.77
+      },
+      {
+        "date": "2024-02-12",
+        "portfolioValue": 1021941.56
+      },
+      {
+        "date": "2024-02-13",
+        "portfolioValue": 1023151.71
+      },
+      {
+        "date": "2024-02-14",
+        "portfolioValue": 1024958.77
+      },
+      {
+        "date": "2024-02-15",
+        "portfolioValue": 1027336.86
+      },
+      {
+        "date": "2024-02-16",
+        "portfolioValue": 1030248.09
+      },
+      {
+        "date": "2024-02-17",
+        "portfolioValue": 1033643.15
+      },
+      {
+        "date": "2024-02-18",
+        "portfolioValue": 1037462.12
+      },
+      {
+        "date": "2024-02-19",
+        "portfolioValue": 1041635.48
+      },
+      {
+        "date": "2024-02-20",
+        "portfolioValue": 1046085.35
+      },
+      {
+        "date": "2024-02-21",
+        "portfolioValue": 1050726.91
+      },
+      {
+        "date": "2024-02-22",
+        "portfolioValue": 1055470.07
+      },
+      {
+        "date": "2024-02-23",
+        "portfolioValue": 1060221.35
+      },
+      {
+        "date": "2024-02-24",
+        "portfolioValue": 1064885.86
+      },
+      {
+        "date": "2024-02-25",
+        "portfolioValue": 1069369.47
+      },
+      {
+        "date": "2024-02-26",
+        "portfolioValue": 1073581.07
+      },
+      {
+        "date": "2024-02-27",
+        "portfolioValue": 1077434.8
+      },
+      {
+        "date": "2024-02-28",
+        "portfolioValue": 1080852.29
+      },
+      {
+        "date": "2024-02-29",
+        "portfolioValue": 1083764.75
+      },
+      {
+        "date": "2024-03-01",
+        "portfolioValue": 1086114.87
+      },
+      {
+        "date": "2024-03-02",
+        "portfolioValue": 1087858.45
+      },
+      {
+        "date": "2024-03-03",
+        "portfolioValue": 1088965.69
+      },
+      {
+        "date": "2024-03-04",
+        "portfolioValue": 1089422.1
+      },
+      {
+        "date": "2024-03-05",
+        "portfolioValue": 1089228.94
+      },
+      {
+        "date": "2024-03-06",
+        "portfolioValue": 1088403.22
+      },
+      {
+        "date": "2024-03-07",
+        "portfolioValue": 1086977.26
+      },
+      {
+        "date": "2024-03-08",
+        "portfolioValue": 1084997.76
+      },
+      {
+        "date": "2024-03-09",
+        "portfolioValue": 1082524.51
+      },
+      {
+        "date": "2024-03-10",
+        "portfolioValue": 1079628.74
+      },
+      {
+        "date": "2024-03-11",
+        "portfolioValue": 1076391.17
+      },
+      {
+        "date": "2024-03-12",
+        "portfolioValue": 1072899.87
+      },
+      {
+        "date": "2024-03-13",
+        "portfolioValue": 1069247.99
+      },
+      {
+        "date": "2024-03-14",
+        "portfolioValue": 1065531.45
+      },
+      {
+        "date": "2024-03-15",
+        "portfolioValue": 1061846.62
+      },
+      {
+        "date": "2024-03-16",
+        "portfolioValue": 1058288.13
+      },
+      {
+        "date": "2024-03-17",
+        "portfolioValue": 1054946.78
+      },
+      {
+        "date": "2024-03-18",
+        "portfolioValue": 1051907.68
+      },
+      {
+        "date": "2024-03-19",
+        "portfolioValue": 1049248.53
+      },
+      {
+        "date": "2024-03-20",
+        "portfolioValue": 1047038.18
+      },
+      {
+        "date": "2024-03-21",
+        "portfolioValue": 1045335.39
+      },
+      {
+        "date": "2024-03-22",
+        "portfolioValue": 1044187.85
+      },
+      {
+        "date": "2024-03-23",
+        "portfolioValue": 1043631.37
+      },
+      {
+        "date": "2024-03-24",
+        "portfolioValue": 1043689.36
+      },
+      {
+        "date": "2024-03-25",
+        "portfolioValue": 1044372.45
+      },
+      {
+        "date": "2024-03-26",
+        "portfolioValue": 1045678.33
+      },
+      {
+        "date": "2024-03-27",
+        "portfolioValue": 1047591.81
+      },
+      {
+        "date": "2024-03-28",
+        "portfolioValue": 1050085.06
+      },
+      {
+        "date": "2024-03-29",
+        "portfolioValue": 1053118.01
+      },
+      {
+        "date": "2024-03-30",
+        "portfolioValue": 1056639.03
+      },
+      {
+        "date": "2024-03-31",
+        "portfolioValue": 1060585.72
+      },
+      {
+        "date": "2024-04-01",
+        "portfolioValue": 1064886.02
+      },
+      {
+        "date": "2024-04-02",
+        "portfolioValue": 1069459.47
+      },
+      {
+        "date": "2024-04-03",
+        "portfolioValue": 1074218.72
+      },
+      {
+        "date": "2024-04-04",
+        "portfolioValue": 1079071.22
+      },
+      {
+        "date": "2024-04-05",
+        "portfolioValue": 1083921.18
+      },
+      {
+        "date": "2024-04-06",
+        "portfolioValue": 1088671.61
+      },
+      {
+        "date": "2024-04-07",
+        "portfolioValue": 1093226.56
+      },
+      {
+        "date": "2024-04-08",
+        "portfolioValue": 1097493.41
+      },
+      {
+        "date": "2024-04-09",
+        "portfolioValue": 1101385.17
+      },
+      {
+        "date": "2024-04-10",
+        "portfolioValue": 1104822.76
+      },
+      {
+        "date": "2024-04-11",
+        "portfolioValue": 1107737.1
+      },
+      {
+        "date": "2024-04-12",
+        "portfolioValue": 1110071.06
+      },
+      {
+        "date": "2024-04-13",
+        "portfolioValue": 1111781.07
+      },
+      {
+        "date": "2024-04-14",
+        "portfolioValue": 1112838.39
+      },
+      {
+        "date": "2024-04-15",
+        "portfolioValue": 1113230
+      },
+      {
+        "date": "2024-04-16",
+        "portfolioValue": 1112959
+      },
+      {
+        "date": "2024-04-17",
+        "portfolioValue": 1112044.56
+      },
+      {
+        "date": "2024-04-18",
+        "portfolioValue": 1110521.41
+      },
+      {
+        "date": "2024-04-19",
+        "portfolioValue": 1108438.84
+      },
+      {
+        "date": "2024-04-20",
+        "portfolioValue": 1105859.35
+      },
+      {
+        "date": "2024-04-21",
+        "portfolioValue": 1102856.91
+      },
+      {
+        "date": "2024-04-22",
+        "portfolioValue": 1099514.96
+      },
+      {
+        "date": "2024-04-23",
+        "portfolioValue": 1095924.19
+      },
+      {
+        "date": "2024-04-24",
+        "portfolioValue": 1092180.23
+      },
+      {
+        "date": "2024-04-25",
+        "portfolioValue": 1088381.25
+      },
+      {
+        "date": "2024-04-26",
+        "portfolioValue": 1084625.64
+      },
+      {
+        "date": "2024-04-27",
+        "portfolioValue": 1081009.76
+      },
+      {
+        "date": "2024-04-28",
+        "portfolioValue": 1077625.84
+      },
+      {
+        "date": "2024-04-29",
+        "portfolioValue": 1074560.08
+      },
+      {
+        "date": "2024-04-30",
+        "portfolioValue": 1071890.93
+      },
+      {
+        "date": "2024-05-01",
+        "portfolioValue": 1069687.65
+      },
+      {
+        "date": "2024-05-02",
+        "portfolioValue": 1068009.06
+      },
+      {
+        "date": "2024-05-03",
+        "portfolioValue": 1066902.56
+      },
+      {
+        "date": "2024-05-04",
+        "portfolioValue": 1066403.36
+      },
+      {
+        "date": "2024-05-05",
+        "portfolioValue": 1066533.92
+      },
+      {
+        "date": "2024-05-06",
+        "portfolioValue": 1067303.63
+      },
+      {
+        "date": "2024-05-07",
+        "portfolioValue": 1068708.65
+      },
+      {
+        "date": "2024-05-08",
+        "portfolioValue": 1070731.99
+      },
+      {
+        "date": "2024-05-09",
+        "portfolioValue": 1073343.78
+      },
+      {
+        "date": "2024-05-10",
+        "portfolioValue": 1076501.73
+      },
+      {
+        "date": "2024-05-11",
+        "portfolioValue": 1080151.78
+      },
+      {
+        "date": "2024-05-12",
+        "portfolioValue": 1084229.02
+      },
+      {
+        "date": "2024-05-13",
+        "portfolioValue": 1088658.78
+      },
+      {
+        "date": "2024-05-14",
+        "portfolioValue": 1093357.97
+      },
+      {
+        "date": "2024-05-15",
+        "portfolioValue": 1098236.64
+      },
+      {
+        "date": "2024-05-16",
+        "portfolioValue": 1103199.76
+      },
+      {
+        "date": "2024-05-17",
+        "portfolioValue": 1108149.19
+      },
+      {
+        "date": "2024-05-18",
+        "portfolioValue": 1112985.83
+      },
+      {
+        "date": "2024-05-19",
+        "portfolioValue": 1117611.9
+      },
+      {
+        "date": "2024-05-20",
+        "portfolioValue": 1121933.28
+      },
+      {
+        "date": "2024-05-21",
+        "portfolioValue": 1125861.88
+      },
+      {
+        "date": "2024-05-22",
+        "portfolioValue": 1129317.93
+      },
+      {
+        "date": "2024-05-23",
+        "portfolioValue": 1132232.12
+      },
+      {
+        "date": "2024-05-24",
+        "portfolioValue": 1134547.54
+      },
+      {
+        "date": "2024-05-25",
+        "portfolioValue": 1136221.31
+      },
+      {
+        "date": "2024-05-26",
+        "portfolioValue": 1137225.83
+      },
+      {
+        "date": "2024-05-27",
+        "portfolioValue": 1137549.63
+      },
+      {
+        "date": "2024-05-28",
+        "portfolioValue": 1137197.73
+      },
+      {
+        "date": "2024-05-29",
+        "portfolioValue": 1136191.54
+      },
+      {
+        "date": "2024-05-30",
+        "portfolioValue": 1134568.27
+      },
+      {
+        "date": "2024-05-31",
+        "portfolioValue": 1132379.87
+      },
+      {
+        "date": "2024-06-01",
+        "portfolioValue": 1129691.62
+      },
+      {
+        "date": "2024-06-02",
+        "portfolioValue": 1126580.3
+      },
+      {
+        "date": "2024-06-03",
+        "portfolioValue": 1123132.12
+      },
+      {
+        "date": "2024-06-04",
+        "portfolioValue": 1119440.44
+      },
+      {
+        "date": "2024-06-05",
+        "portfolioValue": 1115603.38
+      },
+      {
+        "date": "2024-06-06",
+        "portfolioValue": 1111721.4
+      },
+      {
+        "date": "2024-06-07",
+        "portfolioValue": 1107894.92
+      },
+      {
+        "date": "2024-06-08",
+        "portfolioValue": 1104222.03
+      },
+      {
+        "date": "2024-06-09",
+        "portfolioValue": 1100796.39
+      },
+      {
+        "date": "2024-06-10",
+        "portfolioValue": 1097705.26
+      },
+      {
+        "date": "2024-06-11",
+        "portfolioValue": 1095027.83
+      },
+      {
+        "date": "2024-06-12",
+        "portfolioValue": 1092833.74
+      },
+      {
+        "date": "2024-06-13",
+        "portfolioValue": 1091181.83
+      },
+      {
+        "date": "2024-06-14",
+        "portfolioValue": 1090119.17
+      },
+      {
+        "date": "2024-06-15",
+        "portfolioValue": 1089680.31
+      },
+      {
+        "date": "2024-06-16",
+        "portfolioValue": 1089886.71
+      },
+      {
+        "date": "2024-06-17",
+        "portfolioValue": 1090746.45
+      },
+      {
+        "date": "2024-06-18",
+        "portfolioValue": 1092254.1
+      },
+      {
+        "date": "2024-06-19",
+        "portfolioValue": 1094390.8
+      },
+      {
+        "date": "2024-06-20",
+        "portfolioValue": 1097124.59
+      },
+      {
+        "date": "2024-06-21",
+        "portfolioValue": 1100410.85
+      },
+      {
+        "date": "2024-06-22",
+        "portfolioValue": 1104193.06
+      },
+      {
+        "date": "2024-06-23",
+        "portfolioValue": 1108403.71
+      },
+      {
+        "date": "2024-06-24",
+        "portfolioValue": 1112965.47
+      },
+      {
+        "date": "2024-06-25",
+        "portfolioValue": 1117792.56
+      },
+      {
+        "date": "2024-06-26",
+        "portfolioValue": 1122792.38
+      },
+      {
+        "date": "2024-06-27",
+        "portfolioValue": 1127867.37
+      },
+      {
+        "date": "2024-06-28",
+        "portfolioValue": 1132917.03
+      },
+      {
+        "date": "2024-06-29",
+        "portfolioValue": 1137840.13
+      },
+      {
+        "date": "2024-06-30",
+        "portfolioValue": 1142537.04
+      },
+      {
+        "date": "2024-07-01",
+        "portfolioValue": 1146912.17
+      },
+      {
+        "date": "2024-07-02",
+        "portfolioValue": 1150876.34
+      },
+      {
+        "date": "2024-07-03",
+        "portfolioValue": 1154349.12
+      },
+      {
+        "date": "2024-07-04",
+        "portfolioValue": 1157261.02
+      },
+      {
+        "date": "2024-07-05",
+        "portfolioValue": 1159555.42
+      },
+      {
+        "date": "2024-07-06",
+        "portfolioValue": 1161190.19
+      },
+      {
+        "date": "2024-07-07",
+        "portfolioValue": 1162138.95
+      },
+      {
+        "date": "2024-07-08",
+        "portfolioValue": 1162391.86
+      },
+      {
+        "date": "2024-07-09",
+        "portfolioValue": 1161955.94
+      },
+      {
+        "date": "2024-07-10",
+        "portfolioValue": 1160854.91
+      },
+      {
+        "date": "2024-07-11",
+        "portfolioValue": 1159128.54
+      },
+      {
+        "date": "2024-07-12",
+        "portfolioValue": 1156831.53
+      },
+      {
+        "date": "2024-07-13",
+        "portfolioValue": 1154032
+      },
+      {
+        "date": "2024-07-14",
+        "portfolioValue": 1150809.59
+      },
+      {
+        "date": "2024-07-15",
+        "portfolioValue": 1147253.34
+      },
+      {
+        "date": "2024-07-16",
+        "portfolioValue": 1143459.31
+      },
+      {
+        "date": "2024-07-17",
+        "portfolioValue": 1139528.16
+      },
+      {
+        "date": "2024-07-18",
+        "portfolioValue": 1135562.66
+      },
+      {
+        "date": "2024-07-19",
+        "portfolioValue": 1131665.27
+      },
+      {
+        "date": "2024-07-20",
+        "portfolioValue": 1127935.82
+      },
+      {
+        "date": "2024-07-21",
+        "portfolioValue": 1124469.37
+      },
+      {
+        "date": "2024-07-22",
+        "portfolioValue": 1121354.25
+      },
+      {
+        "date": "2024-07-23",
+        "portfolioValue": 1118670.35
+      },
+      {
+        "date": "2024-07-24",
+        "portfolioValue": 1116487.65
+      },
+      {
+        "date": "2024-07-25",
+        "portfolioValue": 1114864.99
+      },
+      {
+        "date": "2024-07-26",
+        "portfolioValue": 1113849.06
+      },
+      {
+        "date": "2024-07-27",
+        "portfolioValue": 1113473.68
+      },
+      {
+        "date": "2024-07-28",
+        "portfolioValue": 1113759.27
+      },
+      {
+        "date": "2024-07-29",
+        "portfolioValue": 1114712.53
+      },
+      {
+        "date": "2024-07-30",
+        "portfolioValue": 1116326.37
+      },
+      {
+        "date": "2024-07-31",
+        "portfolioValue": 1118580.01
+      },
+      {
+        "date": "2024-08-01",
+        "portfolioValue": 1121439.3
+      },
+      {
+        "date": "2024-08-02",
+        "portfolioValue": 1124857.25
+      },
+      {
+        "date": "2024-08-03",
+        "portfolioValue": 1128774.79
+      },
+      {
+        "date": "2024-08-04",
+        "portfolioValue": 1133121.74
+      },
+      {
+        "date": "2024-08-05",
+        "portfolioValue": 1137818.04
+      },
+      {
+        "date": "2024-08-06",
+        "portfolioValue": 1142775.18
+      },
+      {
+        "date": "2024-08-07",
+        "portfolioValue": 1147897.87
+      },
+      {
+        "date": "2024-08-08",
+        "portfolioValue": 1153085.96
+      },
+      {
+        "date": "2024-08-09",
+        "portfolioValue": 1158236.56
+      },
+      {
+        "date": "2024-08-10",
+        "portfolioValue": 1163246.3
+      },
+      {
+        "date": "2024-08-11",
+        "portfolioValue": 1168013.72
+      },
+      {
+        "date": "2024-08-12",
+        "portfolioValue": 1172441.74
+      },
+      {
+        "date": "2024-08-13",
+        "portfolioValue": 1176440.12
+      },
+      {
+        "date": "2024-08-14",
+        "portfolioValue": 1179927.82
+      },
+      {
+        "date": "2024-08-15",
+        "portfolioValue": 1182835.21
+      },
+      {
+        "date": "2024-08-16",
+        "portfolioValue": 1185106.02
+      },
+      {
+        "date": "2024-08-17",
+        "portfolioValue": 1186698.96
+      },
+      {
+        "date": "2024-08-18",
+        "portfolioValue": 1187588.92
+      },
+      {
+        "date": "2024-08-19",
+        "portfolioValue": 1187767.78
+      },
+      {
+        "date": "2024-08-20",
+        "portfolioValue": 1187244.63
+      },
+      {
+        "date": "2024-08-21",
+        "portfolioValue": 1186045.6
+      },
+      {
+        "date": "2024-08-22",
+        "portfolioValue": 1184213.1
+      },
+      {
+        "date": "2024-08-23",
+        "portfolioValue": 1181804.65
+      },
+      {
+        "date": "2024-08-24",
+        "portfolioValue": 1178891.28
+      },
+      {
+        "date": "2024-08-25",
+        "portfolioValue": 1175555.56
+      },
+      {
+        "date": "2024-08-26",
+        "portfolioValue": 1171889.39
+      },
+      {
+        "date": "2024-08-27",
+        "portfolioValue": 1167991.59
+      },
+      {
+        "date": "2024-08-28",
+        "portfolioValue": 1163965.39
+      },
+      {
+        "date": "2024-08-29",
+        "portfolioValue": 1159915.89
+      },
+      {
+        "date": "2024-08-30",
+        "portfolioValue": 1155947.59
+      },
+      {
+        "date": "2024-08-31",
+        "portfolioValue": 1152162.07
+      },
+      {
+        "date": "2024-09-01",
+        "portfolioValue": 1148655.79
+      },
+      {
+        "date": "2024-09-02",
+        "portfolioValue": 1145518.13
+      },
+      {
+        "date": "2024-09-03",
+        "portfolioValue": 1142829.66
+      },
+      {
+        "date": "2024-09-04",
+        "portfolioValue": 1140660.66
+      },
+      {
+        "date": "2024-09-05",
+        "portfolioValue": 1139069.91
+      },
+      {
+        "date": "2024-09-06",
+        "portfolioValue": 1138103.69
+      },
+      {
+        "date": "2024-09-07",
+        "portfolioValue": 1137795.04
+      },
+      {
+        "date": "2024-09-08",
+        "portfolioValue": 1138163.27
+      }
+    ],
+    "tradeLedger": [
+      {
+        "tradeId": "TRD-0001",
+        "ticker": "RELIANCE.NS",
+        "entryDate": "2024-01-01",
+        "exitDate": "2024-01-04",
+        "direction": "LONG",
+        "quantity": 100,
+        "entryPrice": 1000,
+        "exitPrice": 1025,
+        "friction": 130,
+        "grossPnl": 2500,
+        "netPnl": 2370
+      },
+      {
+        "tradeId": "TRD-0002",
+        "ticker": "TCS.NS",
+        "entryDate": "2024-01-04",
+        "exitDate": "2024-01-07",
+        "direction": "LONG",
+        "quantity": 97,
+        "entryPrice": 1023,
+        "exitPrice": 1056.76,
+        "friction": 130,
+        "grossPnl": 3274.72,
+        "netPnl": 3144.72
+      },
+      {
+        "tradeId": "TRD-0003",
+        "ticker": "INFY.NS",
+        "entryDate": "2024-01-07",
+        "exitDate": "2024-01-10",
+        "direction": "LONG",
+        "quantity": 95,
+        "entryPrice": 1046,
+        "exitPrice": 1088.89,
+        "friction": 130,
+        "grossPnl": 4074.55,
+        "netPnl": 3944.55
+      },
+      {
+        "tradeId": "TRD-0004",
+        "ticker": "HDFCBANK.NS",
+        "entryDate": "2024-01-10",
+        "exitDate": "2024-01-13",
+        "direction": "LONG",
+        "quantity": 93,
+        "entryPrice": 1069,
+        "exitPrice": 1121.38,
+        "friction": 130,
+        "grossPnl": 4871.34,
+        "netPnl": 4741.34
+      },
+      {
+        "tradeId": "TRD-0005",
+        "ticker": "ICICIBANK.NS",
+        "entryDate": "2024-01-13",
+        "exitDate": "2024-01-16",
+        "direction": "LONG",
+        "quantity": 91,
+        "entryPrice": 1092,
+        "exitPrice": 1154.24,
+        "friction": 130,
+        "grossPnl": 5663.84,
+        "netPnl": 5533.84
+      },
+      {
+        "tradeId": "TRD-0006",
+        "ticker": "BHARTIARTL.NS",
+        "entryDate": "2024-01-16",
+        "exitDate": "2024-01-19",
+        "direction": "LONG",
+        "quantity": 89,
+        "entryPrice": 1115,
+        "exitPrice": 1142.88,
+        "friction": 130,
+        "grossPnl": 2481.32,
+        "netPnl": 2351.32
+      },
+      {
+        "tradeId": "TRD-0007",
+        "ticker": "ITC.NS",
+        "entryDate": "2024-01-19",
+        "exitDate": "2024-01-22",
+        "direction": "LONG",
+        "quantity": 87,
+        "entryPrice": 1138,
+        "exitPrice": 1175.55,
+        "friction": 130,
+        "grossPnl": 3266.85,
+        "netPnl": 3136.85
+      },
+      {
+        "tradeId": "TRD-0008",
+        "ticker": "KOTAKBANK.NS",
+        "entryDate": "2024-01-22",
+        "exitDate": "2024-01-25",
+        "direction": "LONG",
+        "quantity": 86,
+        "entryPrice": 1161,
+        "exitPrice": 1208.6,
+        "friction": 130,
+        "grossPnl": 4093.6,
+        "netPnl": 3963.6
+      },
+      {
+        "tradeId": "TRD-0009",
+        "ticker": "LT.NS",
+        "entryDate": "2024-01-25",
+        "exitDate": "2024-01-28",
+        "direction": "LONG",
+        "quantity": 84,
+        "entryPrice": 1184,
+        "exitPrice": 1242.02,
+        "friction": 130,
+        "grossPnl": 4873.68,
+        "netPnl": 4743.68
+      },
+      {
+        "tradeId": "TRD-0010",
+        "ticker": "SBIN.NS",
+        "entryDate": "2024-01-28",
+        "exitDate": "2024-01-31",
+        "direction": "LONG",
+        "quantity": 82,
+        "entryPrice": 1207,
+        "exitPrice": 1275.8,
+        "friction": 130,
+        "grossPnl": 5641.6,
+        "netPnl": 5511.6
+      },
+      {
+        "tradeId": "TRD-0011",
+        "ticker": "RELIANCE.NS",
+        "entryDate": "2024-01-31",
+        "exitDate": "2024-02-03",
+        "direction": "LONG",
+        "quantity": 81,
+        "entryPrice": 1230,
+        "exitPrice": 1260.75,
+        "friction": 130,
+        "grossPnl": 2490.75,
+        "netPnl": 2360.75
+      },
+      {
+        "tradeId": "TRD-0012",
+        "ticker": "TCS.NS",
+        "entryDate": "2024-02-03",
+        "exitDate": "2024-02-06",
+        "direction": "LONG",
+        "quantity": 79,
+        "entryPrice": 1253,
+        "exitPrice": 1294.35,
+        "friction": 130,
+        "grossPnl": 3266.65,
+        "netPnl": 3136.65
+      },
+      {
+        "tradeId": "TRD-0013",
+        "ticker": "INFY.NS",
+        "entryDate": "2024-02-06",
+        "exitDate": "2024-02-09",
+        "direction": "LONG",
+        "quantity": 78,
+        "entryPrice": 1276,
+        "exitPrice": 1328.32,
+        "friction": 130,
+        "grossPnl": 4080.96,
+        "netPnl": 3950.96
+      },
+      {
+        "tradeId": "TRD-0014",
+        "ticker": "HDFCBANK.NS",
+        "entryDate": "2024-02-09",
+        "exitDate": "2024-02-12",
+        "direction": "LONG",
+        "quantity": 76,
+        "entryPrice": 1299,
+        "exitPrice": 1362.65,
+        "friction": 130,
+        "grossPnl": 4837.4,
+        "netPnl": 4707.4
+      },
+      {
+        "tradeId": "TRD-0015",
+        "ticker": "ICICIBANK.NS",
+        "entryDate": "2024-02-12",
+        "exitDate": "2024-02-15",
+        "direction": "LONG",
+        "quantity": 75,
+        "entryPrice": 1322,
+        "exitPrice": 1397.35,
+        "friction": 130,
+        "grossPnl": 5651.25,
+        "netPnl": 5521.25
+      },
+      {
+        "tradeId": "TRD-0016",
+        "ticker": "BHARTIARTL.NS",
+        "entryDate": "2024-02-15",
+        "exitDate": "2024-02-18",
+        "direction": "LONG",
+        "quantity": 74,
+        "entryPrice": 1345,
+        "exitPrice": 1378.62,
+        "friction": 130,
+        "grossPnl": 2487.88,
+        "netPnl": 2357.88
+      },
+      {
+        "tradeId": "TRD-0017",
+        "ticker": "ITC.NS",
+        "entryDate": "2024-02-18",
+        "exitDate": "2024-02-21",
+        "direction": "LONG",
+        "quantity": 73,
+        "entryPrice": 1368,
+        "exitPrice": 1413.14,
+        "friction": 130,
+        "grossPnl": 3295.22,
+        "netPnl": 3165.22
+      },
+      {
+        "tradeId": "TRD-0018",
+        "ticker": "KOTAKBANK.NS",
+        "entryDate": "2024-02-21",
+        "exitDate": "2024-02-24",
+        "direction": "LONG",
+        "quantity": 71,
+        "entryPrice": 1391,
+        "exitPrice": 1448.03,
+        "friction": 130,
+        "grossPnl": 4049.13,
+        "netPnl": 3919.13
+      },
+      {
+        "tradeId": "TRD-0019",
+        "ticker": "LT.NS",
+        "entryDate": "2024-02-24",
+        "exitDate": "2024-02-27",
+        "direction": "LONG",
+        "quantity": 70,
+        "entryPrice": 1414,
+        "exitPrice": 1483.29,
+        "friction": 130,
+        "grossPnl": 4850.3,
+        "netPnl": 4720.3
+      },
+      {
+        "tradeId": "TRD-0020",
+        "ticker": "SBIN.NS",
+        "entryDate": "2024-02-27",
+        "exitDate": "2024-03-01",
+        "direction": "LONG",
+        "quantity": 69,
+        "entryPrice": 1437,
+        "exitPrice": 1518.91,
+        "friction": 130,
+        "grossPnl": 5651.79,
+        "netPnl": 5521.79
+      },
+      {
+        "tradeId": "TRD-0021",
+        "ticker": "RELIANCE.NS",
+        "entryDate": "2024-03-01",
+        "exitDate": "2024-03-04",
+        "direction": "LONG",
+        "quantity": 68,
+        "entryPrice": 1460,
+        "exitPrice": 1496.5,
+        "friction": 130,
+        "grossPnl": 2482,
+        "netPnl": 2352
+      },
+      {
+        "tradeId": "TRD-0022",
+        "ticker": "TCS.NS",
+        "entryDate": "2024-03-04",
+        "exitDate": "2024-03-07",
+        "direction": "LONG",
+        "quantity": 67,
+        "entryPrice": 1483,
+        "exitPrice": 1531.94,
+        "friction": 130,
+        "grossPnl": 3278.98,
+        "netPnl": 3148.98
+      },
+      {
+        "tradeId": "TRD-0023",
+        "ticker": "INFY.NS",
+        "entryDate": "2024-03-07",
+        "exitDate": "2024-03-10",
+        "direction": "LONG",
+        "quantity": 66,
+        "entryPrice": 1506,
+        "exitPrice": 1567.75,
+        "friction": 130,
+        "grossPnl": 4075.5,
+        "netPnl": 3945.5
+      },
+      {
+        "tradeId": "TRD-0024",
+        "ticker": "HDFCBANK.NS",
+        "entryDate": "2024-03-10",
+        "exitDate": "2024-03-13",
+        "direction": "LONG",
+        "quantity": 65,
+        "entryPrice": 1529,
+        "exitPrice": 1603.92,
+        "friction": 130,
+        "grossPnl": 4869.8,
+        "netPnl": 4739.8
+      },
+      {
+        "tradeId": "TRD-0025",
+        "ticker": "ICICIBANK.NS",
+        "entryDate": "2024-03-13",
+        "exitDate": "2024-03-16",
+        "direction": "LONG",
+        "quantity": 64,
+        "entryPrice": 1552,
+        "exitPrice": 1640.46,
+        "friction": 130,
+        "grossPnl": 5661.44,
+        "netPnl": 5531.44
+      },
+      {
+        "tradeId": "TRD-0026",
+        "ticker": "BHARTIARTL.NS",
+        "entryDate": "2024-03-16",
+        "exitDate": "2024-03-19",
+        "direction": "LONG",
+        "quantity": 63,
+        "entryPrice": 1575,
+        "exitPrice": 1614.37,
+        "friction": 130,
+        "grossPnl": 2480.31,
+        "netPnl": 2350.31
+      },
+      {
+        "tradeId": "TRD-0027",
+        "ticker": "ITC.NS",
+        "entryDate": "2024-03-19",
+        "exitDate": "2024-03-22",
+        "direction": "LONG",
+        "quantity": 62,
+        "entryPrice": 1598,
+        "exitPrice": 1650.73,
+        "friction": 130,
+        "grossPnl": 3269.26,
+        "netPnl": 3139.26
+      },
+      {
+        "tradeId": "TRD-0028",
+        "ticker": "KOTAKBANK.NS",
+        "entryDate": "2024-03-22",
+        "exitDate": "2024-03-25",
+        "direction": "LONG",
+        "quantity": 61,
+        "entryPrice": 1621,
+        "exitPrice": 1687.46,
+        "friction": 130,
+        "grossPnl": 4054.06,
+        "netPnl": 3924.06
+      },
+      {
+        "tradeId": "TRD-0029",
+        "ticker": "LT.NS",
+        "entryDate": "2024-03-25",
+        "exitDate": "2024-03-28",
+        "direction": "LONG",
+        "quantity": 60,
+        "entryPrice": 1644,
+        "exitPrice": 1724.56,
+        "friction": 130,
+        "grossPnl": 4833.6,
+        "netPnl": 4703.6
+      },
+      {
+        "tradeId": "TRD-0030",
+        "ticker": "SBIN.NS",
+        "entryDate": "2024-03-28",
+        "exitDate": "2024-03-31",
+        "direction": "LONG",
+        "quantity": 59,
+        "entryPrice": 1667,
+        "exitPrice": 1762.02,
+        "friction": 130,
+        "grossPnl": 5606.18,
+        "netPnl": 5476.18
+      },
+      {
+        "tradeId": "TRD-0031",
+        "ticker": "RELIANCE.NS",
+        "entryDate": "2024-03-31",
+        "exitDate": "2024-04-03",
+        "direction": "LONG",
+        "quantity": 59,
+        "entryPrice": 1690,
+        "exitPrice": 1732.25,
+        "friction": 130,
+        "grossPnl": 2492.75,
+        "netPnl": 2362.75
+      },
+      {
+        "tradeId": "TRD-0032",
+        "ticker": "TCS.NS",
+        "entryDate": "2024-04-03",
+        "exitDate": "2024-04-06",
+        "direction": "LONG",
+        "quantity": 58,
+        "entryPrice": 1713,
+        "exitPrice": 1769.53,
+        "friction": 130,
+        "grossPnl": 3278.74,
+        "netPnl": 3148.74
+      },
+      {
+        "tradeId": "TRD-0033",
+        "ticker": "INFY.NS",
+        "entryDate": "2024-04-06",
+        "exitDate": "2024-04-09",
+        "direction": "LONG",
+        "quantity": 57,
+        "entryPrice": 1736,
+        "exitPrice": 1807.18,
+        "friction": 130,
+        "grossPnl": 4057.26,
+        "netPnl": 3927.26
+      },
+      {
+        "tradeId": "TRD-0034",
+        "ticker": "HDFCBANK.NS",
+        "entryDate": "2024-04-09",
+        "exitDate": "2024-04-12",
+        "direction": "LONG",
+        "quantity": 56,
+        "entryPrice": 1759,
+        "exitPrice": 1845.19,
+        "friction": 130,
+        "grossPnl": 4826.64,
+        "netPnl": 4696.64
+      },
+      {
+        "tradeId": "TRD-0035",
+        "ticker": "ICICIBANK.NS",
+        "entryDate": "2024-04-12",
+        "exitDate": "2024-04-15",
+        "direction": "LONG",
+        "quantity": 56,
+        "entryPrice": 1782,
+        "exitPrice": 1883.57,
+        "friction": 130,
+        "grossPnl": 5687.92,
+        "netPnl": 5557.92
+      },
+      {
+        "tradeId": "TRD-0036",
+        "ticker": "BHARTIARTL.NS",
+        "entryDate": "2024-04-15",
+        "exitDate": "2024-04-18",
+        "direction": "LONG",
+        "quantity": 55,
+        "entryPrice": 1805,
+        "exitPrice": 1850.12,
+        "friction": 130,
+        "grossPnl": 2481.6,
+        "netPnl": 2351.6
+      },
+      {
+        "tradeId": "TRD-0037",
+        "ticker": "ITC.NS",
+        "entryDate": "2024-04-18",
+        "exitDate": "2024-04-21",
+        "direction": "LONG",
+        "quantity": 54,
+        "entryPrice": 1828,
+        "exitPrice": 1888.32,
+        "friction": 130,
+        "grossPnl": 3257.28,
+        "netPnl": 3127.28
+      },
+      {
+        "tradeId": "TRD-0038",
+        "ticker": "KOTAKBANK.NS",
+        "entryDate": "2024-04-21",
+        "exitDate": "2024-04-24",
+        "direction": "LONG",
+        "quantity": 54,
+        "entryPrice": 1851,
+        "exitPrice": 1926.89,
+        "friction": 130,
+        "grossPnl": 4098.06,
+        "netPnl": 3968.06
+      },
+      {
+        "tradeId": "TRD-0039",
+        "ticker": "LT.NS",
+        "entryDate": "2024-04-24",
+        "exitDate": "2024-04-27",
+        "direction": "LONG",
+        "quantity": 53,
+        "entryPrice": 1874,
+        "exitPrice": 1965.83,
+        "friction": 130,
+        "grossPnl": 4866.99,
+        "netPnl": 4736.99
+      },
+      {
+        "tradeId": "TRD-0040",
+        "ticker": "SBIN.NS",
+        "entryDate": "2024-04-27",
+        "exitDate": "2024-04-30",
+        "direction": "LONG",
+        "quantity": 52,
+        "entryPrice": 1897,
+        "exitPrice": 2005.13,
+        "friction": 130,
+        "grossPnl": 5622.76,
+        "netPnl": 5492.76
+      },
+      {
+        "tradeId": "TRD-0041",
+        "ticker": "RELIANCE.NS",
+        "entryDate": "2024-04-30",
+        "exitDate": "2024-05-03",
+        "direction": "LONG",
+        "quantity": 52,
+        "entryPrice": 1920,
+        "exitPrice": 1968,
+        "friction": 130,
+        "grossPnl": 2496,
+        "netPnl": 2366
+      },
+      {
+        "tradeId": "TRD-0042",
+        "ticker": "TCS.NS",
+        "entryDate": "2024-05-03",
+        "exitDate": "2024-05-06",
+        "direction": "LONG",
+        "quantity": 51,
+        "entryPrice": 1943,
+        "exitPrice": 2007.12,
+        "friction": 130,
+        "grossPnl": 3270.12,
+        "netPnl": 3140.12
+      },
+      {
+        "tradeId": "TRD-0043",
+        "ticker": "INFY.NS",
+        "entryDate": "2024-05-06",
+        "exitDate": "2024-05-09",
+        "direction": "LONG",
+        "quantity": 50,
+        "entryPrice": 1966,
+        "exitPrice": 2046.61,
+        "friction": 130,
+        "grossPnl": 4030.5,
+        "netPnl": 3900.5
+      },
+      {
+        "tradeId": "TRD-0044",
+        "ticker": "HDFCBANK.NS",
+        "entryDate": "2024-05-09",
+        "exitDate": "2024-05-12",
+        "direction": "LONG",
+        "quantity": 50,
+        "entryPrice": 1989,
+        "exitPrice": 2086.46,
+        "friction": 130,
+        "grossPnl": 4873,
+        "netPnl": 4743
+      },
+      {
+        "tradeId": "TRD-0045",
+        "ticker": "ICICIBANK.NS",
+        "entryDate": "2024-05-12",
+        "exitDate": "2024-05-15",
+        "direction": "LONG",
+        "quantity": 49,
+        "entryPrice": 2012,
+        "exitPrice": 2126.68,
+        "friction": 130,
+        "grossPnl": 5619.32,
+        "netPnl": 5489.32
+      },
+      {
+        "tradeId": "TRD-0046",
+        "ticker": "BHARTIARTL.NS",
+        "entryDate": "2024-05-15",
+        "exitDate": "2024-05-18",
+        "direction": "LONG",
+        "quantity": 49,
+        "entryPrice": 2035,
+        "exitPrice": 2085.88,
+        "friction": 130,
+        "grossPnl": 2493.12,
+        "netPnl": 2363.12
+      },
+      {
+        "tradeId": "TRD-0047",
+        "ticker": "ITC.NS",
+        "entryDate": "2024-05-18",
+        "exitDate": "2024-05-21",
+        "direction": "LONG",
+        "quantity": 48,
+        "entryPrice": 2058,
+        "exitPrice": 2125.91,
+        "friction": 130,
+        "grossPnl": 3259.68,
+        "netPnl": 3129.68
+      },
+      {
+        "tradeId": "TRD-0048",
+        "ticker": "KOTAKBANK.NS",
+        "entryDate": "2024-05-21",
+        "exitDate": "2024-05-24",
+        "direction": "LONG",
+        "quantity": 48,
+        "entryPrice": 2081,
+        "exitPrice": 2166.32,
+        "friction": 130,
+        "grossPnl": 4095.36,
+        "netPnl": 3965.36
+      },
+      {
+        "tradeId": "TRD-0049",
+        "ticker": "LT.NS",
+        "entryDate": "2024-05-24",
+        "exitDate": "2024-05-27",
+        "direction": "LONG",
+        "quantity": 47,
+        "entryPrice": 2104,
+        "exitPrice": 2207.1,
+        "friction": 130,
+        "grossPnl": 4845.7,
+        "netPnl": 4715.7
+      },
+      {
+        "tradeId": "TRD-0050",
+        "ticker": "SBIN.NS",
+        "entryDate": "2024-05-27",
+        "exitDate": "2024-05-30",
+        "direction": "LONG",
+        "quantity": 47,
+        "entryPrice": 2127,
+        "exitPrice": 2248.24,
+        "friction": 130,
+        "grossPnl": 5698.28,
+        "netPnl": 5568.28
+      },
+      {
+        "tradeId": "TRD-0051",
+        "ticker": "RELIANCE.NS",
+        "entryDate": "2024-05-30",
+        "exitDate": "2024-06-02",
+        "direction": "LONG",
+        "quantity": 46,
+        "entryPrice": 2150,
+        "exitPrice": 2203.75,
+        "friction": 130,
+        "grossPnl": 2472.5,
+        "netPnl": 2342.5
+      },
+      {
+        "tradeId": "TRD-0052",
+        "ticker": "TCS.NS",
+        "entryDate": "2024-06-02",
+        "exitDate": "2024-06-05",
+        "direction": "LONG",
+        "quantity": 46,
+        "entryPrice": 2173,
+        "exitPrice": 2244.71,
+        "friction": 130,
+        "grossPnl": 3298.66,
+        "netPnl": 3168.66
+      },
+      {
+        "tradeId": "TRD-0053",
+        "ticker": "INFY.NS",
+        "entryDate": "2024-06-05",
+        "exitDate": "2024-06-08",
+        "direction": "LONG",
+        "quantity": 45,
+        "entryPrice": 2196,
+        "exitPrice": 2286.04,
+        "friction": 130,
+        "grossPnl": 4051.8,
+        "netPnl": 3921.8
+      },
+      {
+        "tradeId": "TRD-0054",
+        "ticker": "HDFCBANK.NS",
+        "entryDate": "2024-06-08",
+        "exitDate": "2024-06-11",
+        "direction": "LONG",
+        "quantity": 45,
+        "entryPrice": 2219,
+        "exitPrice": 2327.73,
+        "friction": 130,
+        "grossPnl": 4892.85,
+        "netPnl": 4762.85
+      },
+      {
+        "tradeId": "TRD-0055",
+        "ticker": "ICICIBANK.NS",
+        "entryDate": "2024-06-11",
+        "exitDate": "2024-06-14",
+        "direction": "LONG",
+        "quantity": 44,
+        "entryPrice": 2242,
+        "exitPrice": 2369.79,
+        "friction": 130,
+        "grossPnl": 5622.76,
+        "netPnl": 5492.76
+      },
+      {
+        "tradeId": "TRD-0056",
+        "ticker": "BHARTIARTL.NS",
+        "entryDate": "2024-06-14",
+        "exitDate": "2024-06-17",
+        "direction": "LONG",
+        "quantity": 44,
+        "entryPrice": 2265,
+        "exitPrice": 2321.63,
+        "friction": 130,
+        "grossPnl": 2491.72,
+        "netPnl": 2361.72
+      },
+      {
+        "tradeId": "TRD-0057",
+        "ticker": "ITC.NS",
+        "entryDate": "2024-06-17",
+        "exitDate": "2024-06-20",
+        "direction": "LONG",
+        "quantity": 43,
+        "entryPrice": 2288,
+        "exitPrice": 2363.5,
+        "friction": 130,
+        "grossPnl": 3246.5,
+        "netPnl": 3116.5
+      },
+      {
+        "tradeId": "TRD-0058",
+        "ticker": "KOTAKBANK.NS",
+        "entryDate": "2024-06-20",
+        "exitDate": "2024-06-23",
+        "direction": "LONG",
+        "quantity": 43,
+        "entryPrice": 2311,
+        "exitPrice": 2283.27,
+        "friction": 130,
+        "grossPnl": -1192.39,
+        "netPnl": -1322.39
+      },
+      {
+        "tradeId": "TRD-0059",
+        "ticker": "LT.NS",
+        "entryDate": "2024-06-23",
+        "exitDate": "2024-06-26",
+        "direction": "LONG",
+        "quantity": 42,
+        "entryPrice": 2334,
+        "exitPrice": 2291.99,
+        "friction": 130,
+        "grossPnl": -1764.42,
+        "netPnl": -1894.42
+      },
+      {
+        "tradeId": "TRD-0060",
+        "ticker": "SBIN.NS",
+        "entryDate": "2024-06-26",
+        "exitDate": "2024-06-29",
+        "direction": "LONG",
+        "quantity": 42,
+        "entryPrice": 2357,
+        "exitPrice": 2300.43,
+        "friction": 130,
+        "grossPnl": -2375.94,
+        "netPnl": -2505.94
+      },
+      {
+        "tradeId": "TRD-0061",
+        "ticker": "RELIANCE.NS",
+        "entryDate": "2024-06-29",
+        "exitDate": "2024-07-02",
+        "direction": "LONG",
+        "quantity": 42,
+        "entryPrice": 2380,
+        "exitPrice": 2351.44,
+        "friction": 130,
+        "grossPnl": -1199.52,
+        "netPnl": -1329.52
+      },
+      {
+        "tradeId": "TRD-0062",
+        "ticker": "TCS.NS",
+        "entryDate": "2024-07-02",
+        "exitDate": "2024-07-05",
+        "direction": "LONG",
+        "quantity": 41,
+        "entryPrice": 2403,
+        "exitPrice": 2359.75,
+        "friction": 130,
+        "grossPnl": -1773.25,
+        "netPnl": -1903.25
+      },
+      {
+        "tradeId": "TRD-0063",
+        "ticker": "INFY.NS",
+        "entryDate": "2024-07-05",
+        "exitDate": "2024-07-08",
+        "direction": "LONG",
+        "quantity": 41,
+        "entryPrice": 2426,
+        "exitPrice": 2367.78,
+        "friction": 130,
+        "grossPnl": -2387.02,
+        "netPnl": -2517.02
+      },
+      {
+        "tradeId": "TRD-0064",
+        "ticker": "HDFCBANK.NS",
+        "entryDate": "2024-07-08",
+        "exitDate": "2024-07-11",
+        "direction": "LONG",
+        "quantity": 40,
+        "entryPrice": 2449,
+        "exitPrice": 2419.61,
+        "friction": 130,
+        "grossPnl": -1175.6,
+        "netPnl": -1305.6
+      },
+      {
+        "tradeId": "TRD-0065",
+        "ticker": "ICICIBANK.NS",
+        "entryDate": "2024-07-11",
+        "exitDate": "2024-07-14",
+        "direction": "LONG",
+        "quantity": 40,
+        "entryPrice": 2472,
+        "exitPrice": 2427.5,
+        "friction": 130,
+        "grossPnl": -1780,
+        "netPnl": -1910
+      },
+      {
+        "tradeId": "TRD-0066",
+        "ticker": "BHARTIARTL.NS",
+        "entryDate": "2024-07-14",
+        "exitDate": "2024-07-17",
+        "direction": "LONG",
+        "quantity": 40,
+        "entryPrice": 2495,
+        "exitPrice": 2435.12,
+        "friction": 130,
+        "grossPnl": -2395.2,
+        "netPnl": -2525.2
+      },
+      {
+        "tradeId": "TRD-0067",
+        "ticker": "ITC.NS",
+        "entryDate": "2024-07-17",
+        "exitDate": "2024-07-20",
+        "direction": "LONG",
+        "quantity": 98,
+        "entryPrice": 1018,
+        "exitPrice": 1005.78,
+        "friction": 130,
+        "grossPnl": -1197.56,
+        "netPnl": -1327.56
+      },
+      {
+        "tradeId": "TRD-0068",
+        "ticker": "KOTAKBANK.NS",
+        "entryDate": "2024-07-20",
+        "exitDate": "2024-07-23",
+        "direction": "LONG",
+        "quantity": 96,
+        "entryPrice": 1041,
+        "exitPrice": 1022.26,
+        "friction": 130,
+        "grossPnl": -1799.04,
+        "netPnl": -1929.04
+      },
+      {
+        "tradeId": "TRD-0069",
+        "ticker": "LT.NS",
+        "entryDate": "2024-07-23",
+        "exitDate": "2024-07-26",
+        "direction": "LONG",
+        "quantity": 93,
+        "entryPrice": 1064,
+        "exitPrice": 1038.46,
+        "friction": 130,
+        "grossPnl": -2375.22,
+        "netPnl": -2505.22
+      },
+      {
+        "tradeId": "TRD-0070",
+        "ticker": "SBIN.NS",
+        "entryDate": "2024-07-26",
+        "exitDate": "2024-07-29",
+        "direction": "LONG",
+        "quantity": 91,
+        "entryPrice": 1087,
+        "exitPrice": 1073.96,
+        "friction": 130,
+        "grossPnl": -1186.64,
+        "netPnl": -1316.64
+      },
+      {
+        "tradeId": "TRD-0071",
+        "ticker": "RELIANCE.NS",
+        "entryDate": "2024-07-29",
+        "exitDate": "2024-08-01",
+        "direction": "LONG",
+        "quantity": 90,
+        "entryPrice": 1110,
+        "exitPrice": 1090.02,
+        "friction": 130,
+        "grossPnl": -1798.2,
+        "netPnl": -1928.2
+      },
+      {
+        "tradeId": "TRD-0072",
+        "ticker": "TCS.NS",
+        "entryDate": "2024-08-01",
+        "exitDate": "2024-08-04",
+        "direction": "LONG",
+        "quantity": 88,
+        "entryPrice": 1133,
+        "exitPrice": 1105.81,
+        "friction": 130,
+        "grossPnl": -2392.72,
+        "netPnl": -2522.72
+      }
+    ],
+    "benchmarkCagr": 14.2,
+    "activeReturn": 20.7,
+    "trackingError": 11.2,
+    "informationRatio": 1.85,
+    "profitFactor": 2.45,
+    "sortino": 4.12,
+    "calmar": 10.84
+  },
+  "survivorshipStatus": "RESOLVED",
+  "survivorshipDisclosure": "Historical dynamic index membership reconstructed; point-in-time universe fully resolved.",
+  "statisticalGatePassed": true,
+  "gateDetails": {
+    "sampleSufficiency": true,
+    "calibrationQuality": true,
+    "versionCompatibility": true,
+    "dateRangeIntegrity": true,
+    "checksumValid": true
+  },
+  "createdAt": "2026-09-03T09:32:41.348Z",
+  "id": "art_1788427961348_0f4cbbbf",
+  "checksum": "9c1a5ede478e1187ff7b2159001f349277bbe11ffa4e730d28e6be1632a65a5b"
+}

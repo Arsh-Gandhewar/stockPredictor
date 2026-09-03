@@ -17,6 +17,7 @@ from typing import Dict, List, Any, Optional, Tuple
 
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from targets.target_definition import compute_targets, assign_cross_sectional_relevance_grades
+from sklearn.isotonic import IsotonicRegression
 from models.train_model import generate_walk_forward_folds
 
 
@@ -25,12 +26,14 @@ class CrossSectionalAlphaRanker:
     Dual-Engine Cross-Sectional Alpha Model:
     1. LambdaMART Ranker for relative permutation accuracy (NDCG@3).
     2. Huber Regressor for calibrated expected excess return magnitude.
+    3. Isotonic Regression for true out-of-sample probability calibration.
     """
     def __init__(self, horizon_str: str = '5d'):
         self.horizon_str = horizon_str
         self.h_days = 5 if horizon_str == '5d' else (20 if horizon_str == '20d' else 1)
         self.ranker: Optional[lgb.LGBMRanker] = None
         self.magnitude_model: Optional[lgb.LGBMRegressor] = None
+        self.calibrator: Optional[IsotonicRegression] = None
         self.is_fitted = False
 
     def fit(
@@ -57,11 +60,24 @@ class CrossSectionalAlphaRanker:
                 clean_train['date_group'] = clean_train.index.strftime('%Y-%m-%d')
                 
         # Group sizes for LightGBM ranking
-        group_counts = clean_train.groupby('date_group', sort=False).size().values
-        
-        X_train = clean_train[features]
-        y_grade = clean_train[grade_col].astype(int)
-        y_excess = clean_train[excess_col]
+        # Temporal split for isotonic probability calibration: 85% train, 15% validation
+        unique_dates = sorted(clean_train['date_group'].unique())
+        n_dates = len(unique_dates)
+        if n_dates >= 20:
+            split_idx = int(n_dates * 0.85)
+            train_dates = set(unique_dates[:split_idx])
+            val_dates = set(unique_dates[split_idx:])
+            
+            tr_sub = clean_train[clean_train['date_group'].isin(train_dates)]
+            val_sub = clean_train[clean_train['date_group'].isin(val_dates)]
+        else:
+            tr_sub = clean_train
+            val_sub = clean_train
+            
+        group_counts = tr_sub.groupby('date_group', sort=False).size().values
+        X_tr = tr_sub[features]
+        y_grade_tr = tr_sub[grade_col].astype(int)
+        y_excess_tr = tr_sub[excess_col]
         
         # 1. Fit LambdaMART Ranker
         ranker_params = {
@@ -80,7 +96,7 @@ class CrossSectionalAlphaRanker:
             'verbose': -1
         }
         self.ranker = lgb.LGBMRanker(**ranker_params)
-        self.ranker.fit(X_train, y_grade, group=group_counts)
+        self.ranker.fit(X_tr, y_grade_tr, group=group_counts)
         
         # 2. Fit Huber Magnitude Regressor
         huber_params = {
@@ -98,7 +114,15 @@ class CrossSectionalAlphaRanker:
             'verbose': -1
         }
         self.magnitude_model = lgb.LGBMRegressor(**huber_params)
-        self.magnitude_model.fit(X_train, y_excess)
+        self.magnitude_model.fit(X_tr, y_excess_tr)
+        
+        # 3. Fit True Empirical Isotonic Calibrator on Validation Partition
+        X_val = val_sub[features]
+        val_pred_excess = self.magnitude_model.predict(X_val)
+        val_binary = (val_sub[excess_col] > 0.0).astype(int)
+        
+        self.calibrator = IsotonicRegression(out_of_bounds='clip', y_min=0.10, y_max=0.90)
+        self.calibrator.fit(val_pred_excess, val_binary)
         
         self.is_fitted = True
         return self
@@ -127,17 +151,38 @@ class CrossSectionalAlphaRanker:
         df['expectedExcessReturn'] = pred_std_excess * h_vol
         df['expectedReturn'] = df['expectedExcessReturn']  # Excess is primary alpha return
         
-        # Synthetic calibrated prob: logistic mapping of standardized excess
-        df['calibratedProbability'] = 1.0 / (1.0 + np.exp(-1.5 * pred_std_excess))
+        # True empirical calibrated probability from Isotonic Calibrator
+        if self.calibrator is not None:
+            df['calibratedProbability'] = self.calibrator.predict(pred_std_excess)
+        else:
+            df['calibratedProbability'] = np.clip(0.5 + 0.15 * pred_std_excess, 0.10, 0.90)
         df['pred_prob'] = df['calibratedProbability']
         
-        # Opportunity score incorporates rank score + excess margin over friction
-        margin = (df['expectedExcessReturn'] - 0.0026).clip(lower=0.0)
-        risk = h_vol.clip(lower=0.005)
-        df['netEV'] = df['expectedExcessReturn'] - 0.0013
-        df['expectedRisk'] = risk
+        # Daily cross-sectional percentile rank for LambdaMART score
+        if 'date_group' not in df.columns:
+            if 'predictionTimestamp' in df.columns:
+                df['date_group'] = pd.to_datetime(df['predictionTimestamp']).dt.strftime('%Y-%m-%d')
+            elif isinstance(df.index, pd.DatetimeIndex):
+                df['date_group'] = df.index.strftime('%Y-%m-%d')
+            else:
+                df['date_group'] = df.index.astype(str)
+                
+        df['cross_sectional_rank_pct'] = df.groupby('date_group')['rank_score'].rank(pct=True)
+        
+        # Canonical AlphaScore:
+        # Scale-consistent combination of cross-sectional rank and risk-adjusted excess margin
+        # AlphaScore = PercentileRank * [1.0 + clip((expectedExcessReturn - friction) / risk, -0.5, 0.5)]
+        statutory_friction = 0.0013  # 13 bps roundtrip institutional friction
+        info_ratio = (df['expectedExcessReturn'] - statutory_friction) / h_vol
+        clamped_ir = info_ratio.clip(lower=-0.5, upper=0.5)
+        
+        df['canonicalAlphaScore'] = df['cross_sectional_rank_pct'] * (1.0 + clamped_ir)
+        df['opportunityScore'] = df['canonicalAlphaScore']
+        df['compositeScore'] = df['canonicalAlphaScore']
+        
+        df['netEV'] = df['expectedExcessReturn'] - statutory_friction
+        df['expectedRisk'] = h_vol
         df['grossEV'] = df['expectedExcessReturn']
-        df['opportunityScore'] = raw_rank_score + 10.0 * (margin / risk)
         
         return df
 

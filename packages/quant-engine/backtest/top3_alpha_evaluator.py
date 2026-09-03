@@ -115,7 +115,9 @@ class Top3AlphaEvaluator:
         diversification_mode: str = 'UNCONSTRAINED',  # 'UNCONSTRAINED' or 'CONSTRAINED'
         max_sector_count: int = 1,                   # Max stocks per sector in CONSTRAINED mode
         correlation_penalty_weight: float = 0.40,
-        correlation_lookback_days: int = 60
+        correlation_lookback_days: int = 60,
+        use_hysteresis: bool = True,
+        exit_rank_limit: int = 6
     ):
         self.cost_engine = TransactionCostEngine(regime=cost_regime)
         self.rf_annual = risk_free_rate_annual
@@ -124,6 +126,8 @@ class Top3AlphaEvaluator:
         self.max_sector_count = max_sector_count
         self.corr_penalty_weight = correlation_penalty_weight
         self.corr_lookback = correlation_lookback_days
+        self.use_hysteresis = use_hysteresis
+        self.exit_rank_limit = exit_rank_limit
         self._corr_cache: Dict[Tuple[str, str, str], Optional[float]] = {}
         self._returns_cache: Dict[str, pd.Series] = {}
 
@@ -176,6 +180,9 @@ class Top3AlphaEvaluator:
             for tkr, c_df in historical_candles.items():
                 if 'Close' in c_df.columns:
                     self._returns_cache[tkr] = c_df['Close'].pct_change().dropna()
+
+        current_holdings: Dict[str, Dict[str, Any]] = {}
+        total_turnover_trades: float = 0.0
 
         # -------------------------------------------------------------------------
         # 1. Daily Decision Date Simulation Loop
@@ -232,16 +239,18 @@ class Top3AlphaEvaluator:
                 exp_risk = float(row.get('expectedRisk', row.get('risk', abs(row.get('p15', -0.02)))) or 0.02)
                 exp_risk = max(0.005, exp_risk)
 
-                if ranking_metric == 'risk_adjusted_ev':
-                    score = net_ev / exp_risk
+                if ranking_metric in ('canonical_alpha', 'opportunity_score', 'canonicalAlphaScore'):
+                    score = float(row.get('canonicalAlphaScore', row.get('opportunityScore', row.get('compositeScore', net_ev / exp_risk))) or 0.0)
+                elif ranking_metric == 'risk_adjusted_ev':
+                    score = float(row.get('canonicalAlphaScore', net_ev / exp_risk) or 0.0)
                 elif ranking_metric == 'net_ev':
                     score = net_ev
                 elif ranking_metric == 'calibrated_prob':
                     score = p_cal
                 elif ranking_metric == 'lambda_rank':
-                    score = float(row.get('rank_score', row.get('opportunityScore', net_ev / exp_risk)) or 0.0)
+                    score = float(row.get('rank_score', row.get('canonicalAlphaScore', 0.0)) or 0.0)
                 else:
-                    score = float(row.get('opportunityScore', net_ev / exp_risk) or 0.0)
+                    score = float(row.get('canonicalAlphaScore', row.get('opportunityScore', net_ev / exp_risk)) or 0.0)
 
                 # Realized forward returns
                 fwd_gross_5d = (exit_p5 - entry_p) / entry_p
@@ -293,17 +302,33 @@ class Top3AlphaEvaluator:
                 continue
 
             # ---------------------------------------------------------------------
-            # 2. Candidate Selection (Unconstrained vs Constrained)
+            # 2. Candidate Selection (Hysteresis & Diversification Aware)
             # ---------------------------------------------------------------------
             eligible_candidates.sort(key=lambda x: (-x['score'], x['ticker']))
+            rank_map = {c['ticker']: idx + 1 for idx, c in enumerate(eligible_candidates)}
+            cand_map = {c['ticker']: c for c in eligible_candidates}
 
             selected_top3: List[Dict[str, Any]] = []
 
+            # 1. Check incumbent holdings for retention if rank <= exit_rank_limit (e.g. 6)
+            if self.use_hysteresis and current_holdings:
+                for tkr in list(current_holdings.keys()):
+                    if tkr in cand_map and rank_map.get(tkr, 999) <= self.exit_rank_limit:
+                        selected_top3.append(cand_map[tkr])
+
+            # 2. Fill remaining slots up to 3
             if self.diversification_mode == 'UNCONSTRAINED':
-                selected_top3 = eligible_candidates[:3]
+                for c in eligible_candidates:
+                    if len(selected_top3) >= 3:
+                        break
+                    if not any(s['ticker'] == c['ticker'] for s in selected_top3):
+                        selected_top3.append(c)
             else:
                 sector_counts: Dict[str, int] = {}
-                pool = list(eligible_candidates)
+                for s in selected_top3:
+                    sector_counts[s['sector']] = sector_counts.get(s['sector'], 0) + 1
+
+                pool = [c for c in eligible_candidates if not any(s['ticker'] == c['ticker'] for s in selected_top3)]
 
                 while len(selected_top3) < 3 and pool:
                     if selected_top3:
@@ -326,6 +351,13 @@ class Top3AlphaEvaluator:
 
             if len(selected_top3) < 3:
                 continue
+
+            # Update turnover tracking
+            new_ticker_set = set(x['ticker'] for x in selected_top3)
+            old_ticker_set = set(current_holdings.keys()) if current_holdings else new_ticker_set
+            turnover_fraction = len(new_ticker_set - old_ticker_set) / 3.0
+            total_turnover_trades += turnover_fraction
+            current_holdings = {x['ticker']: x for x in selected_top3}
 
             # ---------------------------------------------------------------------
             # 3. Portfolio & Individual Record Compilation
@@ -490,7 +522,7 @@ class Top3AlphaEvaluator:
                 'sortino': round(sortino, 2) if isinstance(sortino, (float, int)) else sortino,
                 'maxDrawdown': round(max_dd, 2),
                 'profitFactor': round(pf, 2) if isinstance(pf, (float, int)) else pf,
-                'annualTurnoverEstPct': 52.0 * 3.0 * 100.0 / 5.0,
+                'annualTurnoverEstPct': round((252.0 / max(1, n_days)) * total_turnover_trades * 100.0, 1),
             },
             'factorCrowding': {
                 'sectorClusteringPct': round(clustering_pct, 2),
