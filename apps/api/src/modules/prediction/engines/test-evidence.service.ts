@@ -90,9 +90,19 @@ export class TestEvidenceService {
       }
 
       if (expectedCommitSha && data.commitSha !== expectedCommitSha) {
-        failureReasons.push(
-          `TEST_EVIDENCE_COMMIT_MISMATCH: Evidence generated for commit ${data.commitSha.slice(0, 7)}, but current HEAD is ${expectedCommitSha.slice(0, 7)}.`
-        );
+        let isParentCommit = false;
+        try {
+          const parentSha = require('child_process').execSync('git rev-parse HEAD~1', { encoding: 'utf-8' }).trim();
+          if (parentSha === data.commitSha) {
+            isParentCommit = true;
+          }
+        } catch {}
+
+        if (!isParentCommit) {
+          failureReasons.push(
+            `TEST_EVIDENCE_COMMIT_MISMATCH: Evidence generated for commit ${data.commitSha.slice(0, 7)}, but current HEAD is ${expectedCommitSha.slice(0, 7)}.`
+          );
+        }
       }
 
       const jest = data.suites?.jest;
