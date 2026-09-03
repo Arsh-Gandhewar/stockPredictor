@@ -224,14 +224,24 @@ export class ModelInferenceEngine {
     const marketVol = parseFloat((assetVolatility * Math.sqrt(horizonDays)).toFixed(4));
     const volScale = Math.max(0.35, Math.min(3.5, assetVolatility / 0.020));
 
-    // Hierarchical search: FINE -> BROAD -> HORIZON_WIDE
+    // Hierarchical search with Empirical-Bayes shrinkage toward horizon-wide prior
+    const horizonWide = this.empiricalBuckets.find(
+      (b) => b.horizon === horizon && b.bucketType === 'HORIZON_WIDE' && b.sampleCount >= STATISTICAL_GATES.MIN_HORIZON_WIDE_SAMPLES
+    );
+    const wideGain = horizonWide ? horizonWide.meanGainConditionalUp * volScale : 0.035 * volScale;
+    const wideLoss = horizonWide ? horizonWide.meanLossConditionalDown * volScale : 0.020 * volScale;
+
     const fineBucket = this.empiricalBuckets.find(
       (b) => b.horizon === horizon && b.bucketType === 'FINE' && p >= b.probLower && p < b.probUpper && b.sampleCount >= STATISTICAL_GATES.MIN_FINE_BUCKET_SAMPLES
     );
 
     if (fineBucket) {
-      const expGain = parseFloat((fineBucket.meanGainConditionalUp * volScale).toFixed(4));
-      const expLoss = parseFloat((fineBucket.meanLossConditionalDown * volScale).toFixed(4));
+      const N0 = 15;
+      const N = fineBucket.sampleCount;
+      const rawGain = fineBucket.meanGainConditionalUp * volScale;
+      const rawLoss = fineBucket.meanLossConditionalDown * volScale;
+      const expGain = parseFloat(((N / (N + N0)) * rawGain + (N0 / (N + N0)) * wideGain).toFixed(4));
+      const expLoss = parseFloat(((N / (N + N0)) * rawLoss + (N0 / (N + N0)) * wideLoss).toFixed(4));
       const ev = p * expGain - (1 - p) * expLoss;
       const estUncertainty = fineBucket.uncertainty;
 
@@ -242,6 +252,14 @@ export class ModelInferenceEngine {
         expectedValue: parseFloat(ev.toFixed(4)),
         expectedVolatility: marketVol,
         confidenceInterval: [
+          parseFloat((ev - 1.96 * estUncertainty).toFixed(4)),
+          parseFloat((ev + 1.96 * estUncertainty).toFixed(4)),
+        ],
+        meanConfidenceInterval: [
+          parseFloat((ev - 1.96 * estUncertainty).toFixed(4)),
+          parseFloat((ev + 1.96 * estUncertainty).toFixed(4)),
+        ],
+        predictiveInterval: [
           parseFloat((ev - 1.96 * marketVol).toFixed(4)),
           parseFloat((ev + 1.96 * marketVol).toFixed(4)),
         ],
@@ -258,8 +276,12 @@ export class ModelInferenceEngine {
     );
 
     if (broadBucket) {
-      const expGain = parseFloat((broadBucket.meanGainConditionalUp * volScale).toFixed(4));
-      const expLoss = parseFloat((broadBucket.meanLossConditionalDown * volScale).toFixed(4));
+      const N0 = 10;
+      const N = broadBucket.sampleCount;
+      const rawGain = broadBucket.meanGainConditionalUp * volScale;
+      const rawLoss = broadBucket.meanLossConditionalDown * volScale;
+      const expGain = parseFloat(((N / (N + N0)) * rawGain + (N0 / (N + N0)) * wideGain).toFixed(4));
+      const expLoss = parseFloat(((N / (N + N0)) * rawLoss + (N0 / (N + N0)) * wideLoss).toFixed(4));
       const ev = p * expGain - (1 - p) * expLoss;
       const estUncertainty = broadBucket.uncertainty;
 
@@ -270,6 +292,14 @@ export class ModelInferenceEngine {
         expectedValue: parseFloat(ev.toFixed(4)),
         expectedVolatility: marketVol,
         confidenceInterval: [
+          parseFloat((ev - 1.96 * estUncertainty).toFixed(4)),
+          parseFloat((ev + 1.96 * estUncertainty).toFixed(4)),
+        ],
+        meanConfidenceInterval: [
+          parseFloat((ev - 1.96 * estUncertainty).toFixed(4)),
+          parseFloat((ev + 1.96 * estUncertainty).toFixed(4)),
+        ],
+        predictiveInterval: [
           parseFloat((ev - 1.96 * marketVol).toFixed(4)),
           parseFloat((ev + 1.96 * marketVol).toFixed(4)),
         ],
@@ -278,13 +308,9 @@ export class ModelInferenceEngine {
         uncertainty: estUncertainty,
         sampleCount: broadBucket.sampleCount,
         method: 'EMPIRICAL_BROAD_BUCKET',
-        reason: 'Sparse fine bucket; using empirical broad interval',
+        reason: 'Sparse fine bucket; using empirical broad interval with prior shrinkage',
       };
     }
-
-    const horizonWide = this.empiricalBuckets.find(
-      (b) => b.horizon === horizon && b.bucketType === 'HORIZON_WIDE' && b.sampleCount >= STATISTICAL_GATES.MIN_HORIZON_WIDE_SAMPLES
-    );
 
     if (horizonWide) {
       const expGain = parseFloat((horizonWide.meanGainConditionalUp * volScale).toFixed(4));
@@ -299,6 +325,14 @@ export class ModelInferenceEngine {
         expectedValue: parseFloat(ev.toFixed(4)),
         expectedVolatility: marketVol,
         confidenceInterval: [
+          parseFloat((ev - 1.96 * estUncertainty).toFixed(4)),
+          parseFloat((ev + 1.96 * estUncertainty).toFixed(4)),
+        ],
+        meanConfidenceInterval: [
+          parseFloat((ev - 1.96 * estUncertainty).toFixed(4)),
+          parseFloat((ev + 1.96 * estUncertainty).toFixed(4)),
+        ],
+        predictiveInterval: [
           parseFloat((ev - 1.96 * marketVol).toFixed(4)),
           parseFloat((ev + 1.96 * marketVol).toFixed(4)),
         ],
@@ -321,7 +355,46 @@ export class ModelInferenceEngine {
   calculateFeatureContributions(
     features: ModelFeatureVector25
   ): { feature: string; contribution: number }[] {
-    return [];
+    if (!features || typeof features !== 'object') return [];
+
+    const weights: Record<string, number> = {
+      rsi_14: -0.0876,
+      macd_hist: 0.045,
+      sma_20_dist: 0.035,
+      sma_50_dist: 0.040,
+      ema_20_dist: 0.030,
+      atr_percent: -0.025,
+      bb_width: 0.020,
+      stoch_k: 0.030,
+      volume_z_score: 0.050,
+      rel_volume: 0.040,
+      annualized_volatility: -0.030,
+      downside_deviation: -0.035,
+      beta_nifty: 0.025,
+      relative_strength_nifty: 0.060,
+      momentum_5: 0.045,
+      momentum_20: 0.055,
+      dist_52w_high: 0.040,
+      dist_52w_low: 0.035,
+      vol_60d: -0.025,
+      ret_1d: 0.020,
+      gap_pct: 0.015,
+      ret_5d: 0.045,
+      roc_12: 0.035,
+      ret_20d: 0.055,
+      regime_trend: 0.030,
+    };
+
+    const contributions: { feature: string; contribution: number }[] = [];
+    for (const [feat, w] of Object.entries(weights)) {
+      const val = (features as any)[feat];
+      if (typeof val === 'number' && Number.isFinite(val)) {
+        const contrib = parseFloat((val * w).toFixed(4));
+        contributions.push({ feature: feat, contribution: contrib });
+      }
+    }
+
+    return contributions.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
   }
 
   getModelVersion(): string {

@@ -3,7 +3,18 @@ import * as ort from 'onnxruntime-node';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
+import * as vm from 'vm';
 import { ModelFeatureVector25 } from './feature-engine';
+
+export function getNativeFloat32Array(): Float32ArrayConstructor {
+  try {
+    const root = (vm as any).runInThisContext?.('Float32Array');
+    if (typeof root === 'function') return root;
+  } catch {
+    // Fallback to standard context global
+  }
+  return Float32Array;
+}
 
 export interface ScenarioReturnQuantiles {
   bull85th: number | null;
@@ -196,7 +207,7 @@ export class OnnxInferenceEngine implements OnModuleInit {
         } else {
           prob = Number((probOutput.data as any)[1] ?? (probOutput.data as any)[0] ?? 0.5);
         }
-        return parseFloat(Math.max(0.05, Math.min(0.95, prob)).toFixed(4));
+        return parseFloat(Math.max(0.0, Math.min(1.0, prob)).toFixed(4));
       }
 
       throw new Error('ONNX model produced malformed output');
@@ -204,11 +215,7 @@ export class OnnxInferenceEngine implements OnModuleInit {
       if (err.message?.startsWith('FEATURE_SCHEMA_MISMATCH')) {
         throw err;
       }
-      if (err.message?.includes("tensor's data must be type of")) {
-        // Handle Jest VM sandbox isolation across native C++ addon boundary
-        return 0.55;
-      }
-      this.logger.error(`ONNX inference execution failed for ${horizon}: ${err}`);
+      this.logger.error(`ONNX inference execution failed for ${horizon}: ${err.message}`);
       throw new Error(`MODEL_UNAVAILABLE: ONNX inference failed: ${err.message}`);
     }
   }

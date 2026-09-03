@@ -15,6 +15,7 @@ import { BacktestEngine } from './engines/backtest-engine';
 import { ModelArtifactService } from './engines/model-artifact.service';
 import { ProductionScorecardService } from './engines/production-scorecard';
 import { OnnxInferenceEngine } from './engines/onnx-inference.engine';
+import { RuntimeVerificationService } from './engines/runtime-verification.service';
 
 @Module({
   imports: [forwardRef(() => StockModule), NewsModule, DatabaseModule],
@@ -32,7 +33,8 @@ import { OnnxInferenceEngine } from './engines/onnx-inference.engine';
     BacktestEngine,
     ModelArtifactService,
     ProductionScorecardService,
+    RuntimeVerificationService,
   ],
-  exports: [QuantPredictionService],
+  exports: [QuantPredictionService, RuntimeVerificationService],
 })
 export class PredictionModule {}

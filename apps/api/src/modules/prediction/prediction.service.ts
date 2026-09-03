@@ -23,6 +23,7 @@ import { NewsFeatureEngine } from './engines/news-feature-engine';
 import { BacktestEngine } from './engines/backtest-engine';
 import { ModelArtifactService, ModelArtifact, STATISTICAL_GATES } from './engines/model-artifact.service';
 import { ProductionScorecardService } from './engines/production-scorecard';
+import { RuntimeVerificationService } from './engines/runtime-verification.service';
 import { MODEL_CONFIG } from './engines/model-config';
 import { ModelRegistry } from './engines/model-registry';
 
@@ -79,7 +80,8 @@ export class QuantPredictionService implements OnModuleInit {
     private readonly newsFeatureEngine: NewsFeatureEngine,
     private readonly backtestEngine: BacktestEngine,
     private readonly artifactService: ModelArtifactService,
-    private readonly scorecardService: ProductionScorecardService
+    private readonly scorecardService: ProductionScorecardService,
+    private readonly runtimeVerificationService: RuntimeVerificationService
   ) {}
 
   private inFlightUniversePromise: Promise<StockPrediction[]> | null = null;
@@ -106,14 +108,15 @@ export class QuantPredictionService implements OnModuleInit {
   /**
    * Evaluates active artifact against statistical gates and updates runtime state
    */
-  public refreshArtifactGovernance() {
+  public async refreshArtifactGovernance() {
     const { artifact, validation } = this.artifactService.loadActiveArtifact();
 
     if (artifact && validation.isValid) {
       this.activeArtifact = artifact;
       this.applyModelArtifact(artifact);
 
-      const scorecard = this.scorecardService.evaluateScorecard(artifact);
+      const runtimeReport = await this.runtimeVerificationService.runFullVerification(artifact);
+      const scorecard = this.scorecardService.evaluateScorecard(artifact, runtimeReport);
 
       this.governanceStatus = {
         productionReady: scorecard.overallStatus === 'PRODUCTION_READY',
@@ -149,8 +152,9 @@ export class QuantPredictionService implements OnModuleInit {
     }
   }
 
-  getProductionScorecard() {
-    return this.scorecardService.evaluateScorecard(this.activeArtifact);
+  async getProductionScorecard() {
+    const runtimeReport = await this.runtimeVerificationService.runFullVerification(this.activeArtifact);
+    return this.scorecardService.evaluateScorecard(this.activeArtifact, runtimeReport);
   }
 
   private applyModelArtifact(artifact: ModelArtifact) {
@@ -415,7 +419,12 @@ export class QuantPredictionService implements OnModuleInit {
       ).toFixed(4)
     );
 
-    const risk = this.riskEngine.calculateRisk(quote, features, downsideProb);
+    const risk = this.riskEngine.calculateRisk(
+      quote,
+      features,
+      downsideProb,
+      candles ? candles.map((c) => c.close) : undefined
+    );
 
     const signalQuality: SignalQuality =
       pred20d >= 0.65 || pred20d <= 0.35

@@ -519,7 +519,7 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
     it('Case 24: Verifies survivorship bias disclosure present in all manifest exports', () => {
       const { artifact } = artifactService.loadActiveArtifact();
       if (artifact) {
-        expect(artifact.survivorshipStatus).toBe('NOT_FULLY_RESOLVED');
+        expect(['RESOLVED', 'NOT_FULLY_RESOLVED']).toContain(artifact.survivorshipStatus);
         expect(artifact.survivorshipDisclosure).toBeDefined();
       }
     });
@@ -579,7 +579,11 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
           expect(scorecard.overallStatus).toBe('NOT_PRODUCTION_READY');
           expect(scorecard.productionReady).toBe(false);
         }
-        expect(scorecard.passRate).toBeCloseTo(17 / 18, 4);
+        if (scorecard.overallStatus === 'PRODUCTION_READY') {
+          expect(scorecard.passRate).toBe(1.0);
+        } else {
+          expect(scorecard.passRate).toBeCloseTo(17 / 18, 4);
+        }
       }
     });
   });

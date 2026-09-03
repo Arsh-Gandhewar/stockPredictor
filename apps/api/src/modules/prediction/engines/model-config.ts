@@ -208,7 +208,10 @@ export const MODEL_CONFIG = {
 
   // ── Portfolio Construction & Sizing Bounds ──
   PORTFOLIO: {
-    MAX_SINGLE_STOCK_WEIGHT: 0.20, // Max 20% allocation in any single stock
-    MAX_CONCURRENT_POSITIONS: 5,
+    MAX_SINGLE_STOCK_WEIGHT: 0.10, // Max 10% allocation in any single stock (institutional standard)
+    SECTOR_CONCENTRATION_CAP: 0.25, // Max 25% allocation in any single sector
+    MAX_GROSS_EXPOSURE: 1.0,        // Max 100% gross exposure
+    MAX_CONCURRENT_POSITIONS: 10,
+    COST_PER_TRADE_PERCENT: 0.0013, // 0.13% round-trip friction
   },
 } as const;

@@ -186,7 +186,8 @@ export class FeatureEngine {
     const dateSet = new Set<string>();
 
     // 3. Strict Temporal Structure & Field-Level Validation
-    const nowMs = Date.now() + 86400000; // Allow current day timestamps
+    const decisionTime = quote?.timestamp ? new Date(quote.timestamp).getTime() : Date.now();
+    const cutoffTimeMs = isNaN(decisionTime) ? Date.now() : decisionTime;
 
     for (let i = 0; i < n; i++) {
       const c = activeCandles[i];
@@ -222,8 +223,23 @@ export class FeatureEngine {
           availabilityMask,
           isComplete: false,
           missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-          failureReasons: { candles: `INVALID_TEMPORAL_STRUCTURE: Unparseable timestamp at index ${i}.` },
-          dataQuality: 'INVALID_TEMPORAL_STRUCTURE',
+          failureReasons: { candles: `INVALID_TIMESTAMP: Unparseable timestamp at candle index ${i}.` },
+          dataQuality: 'INVALID_PRICE_DATA',
+          candleCount: n,
+          benchmarkCandleCount: benchmarkCandles?.length || 0,
+        };
+      }
+
+      // Reject future-dated candles beyond decision cutoff
+      if (timeVal > cutoffTimeMs + 60000) {
+        return {
+          features: null,
+          rawFeatures,
+          availabilityMask,
+          isComplete: false,
+          missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
+          failureReasons: { candles: `FUTURE_CANDLE_LEAKAGE: Candle at index ${i} has timestamp ${new Date(timeVal).toISOString()} after decision cutoff ${new Date(cutoffTimeMs).toISOString()}.` },
+          dataQuality: 'INVALID_PRICE_DATA',
           candleCount: n,
           benchmarkCandleCount: benchmarkCandles?.length || 0,
         };
@@ -238,20 +254,6 @@ export class FeatureEngine {
           isComplete: false,
           missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
           failureReasons: { candles: `INVALID_TEMPORAL_STRUCTURE: Monotonic time order violated at index ${i} (${rawTime} <= ${prevRawTime}).` },
-          dataQuality: 'INVALID_TEMPORAL_STRUCTURE',
-          candleCount: n,
-          benchmarkCandleCount: benchmarkCandles?.length || 0,
-        };
-      }
-
-      if (timeVal > nowMs) {
-        return {
-          features: null,
-          rawFeatures,
-          availabilityMask,
-          isComplete: false,
-          missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-          failureReasons: { candles: `INVALID_TEMPORAL_STRUCTURE: Future-dated candle at index ${i} (${rawTime}).` },
           dataQuality: 'INVALID_TEMPORAL_STRUCTURE',
           candleCount: n,
           benchmarkCandleCount: benchmarkCandles?.length || 0,
@@ -549,8 +551,12 @@ export class FeatureEngine {
           const rawBeta = varBench > 0 ? cov / varBench : 1.0;
           rawFeatures['beta_nifty'] = Math.max(0.2, Math.min(3.0, rawBeta));
           availabilityMask['beta_nifty'] = true;
+        } else {
+          failureReasons['beta_nifty'] = `Date-matched benchmark return pairs count (${matchedStockReturns.length}) < 60`;
+        }
 
-          // 20-day relative strength using exact date match
+        // 20-day relative strength using exact date match (independent of 60d beta)
+        if (n >= 21) {
           const lastDate = new Date(timestamps[n - 1]).toISOString().slice(0, 10);
           const date20Ago = new Date(timestamps[n - 21]).toISOString().slice(0, 10);
           const bLast = benchMap.get(lastDate);
@@ -565,8 +571,7 @@ export class FeatureEngine {
             failureReasons['relative_strength_nifty'] = `Benchmark candles missing matching dates for 20d return (${date20Ago} or ${lastDate})`;
           }
         } else {
-          failureReasons['beta_nifty'] = `Date-matched benchmark return pairs count (${matchedStockReturns.length}) < 60`;
-          failureReasons['relative_strength_nifty'] = `Date-matched benchmark return pairs count (${matchedStockReturns.length}) < 20`;
+          failureReasons['relative_strength_nifty'] = `Need >= 21 candles for 20d relative strength, got ${n}`;
         }
       } else {
         failureReasons['beta_nifty'] = `Benchmark candles missing or < 61 (got ${benchmarkCandles?.length || 0})`;
