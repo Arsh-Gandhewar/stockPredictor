@@ -74,7 +74,8 @@ class TestFeatureParityGolden:
         stock_df, bench_df = generate_synthetic_market_data(300)
         feat_df = calculate_features(stock_df, bench_df)
         
-        assert len(FEATURE_NAMES) == 25
+        # Phase 2: FEATURE_NAMES now has 31 features (25 original + 6 regime meta-features)
+        assert len(FEATURE_NAMES) == 31
         for feat in FEATURE_NAMES:
             assert feat in feat_df.columns
             
@@ -88,7 +89,7 @@ class TestFeatureParityGolden:
         assert np.isnan(feat_df['dist_52w_low'].iloc[99])
         assert bool(feat_df['featureWarmupComplete'].iloc[99]) is False
         
-        # Row 299 (300 candles >= 252): all 25 features must be complete non-NaN
+        # Row 299 (300 candles >= 252): all 31 features must be complete non-NaN
         assert bool(feat_df['featureWarmupComplete'].iloc[-1]) is True
         for feat in FEATURE_NAMES:
             val = float(feat_df[feat].iloc[-1])

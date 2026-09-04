@@ -20,7 +20,7 @@ import numpy as np
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from universe import INDICES, TICKER_SECTOR_MAP
-from features.feature_engine import calculate_features, FEATURE_NAMES
+from features.feature_engine import calculate_features, FEATURE_NAMES, enrich_panel_with_regime_features
 from targets.target_definition import compute_targets, assign_cross_sectional_relevance_grades
 from models.universe_engine import (
     HistoricalUniverseEngine,
@@ -186,6 +186,8 @@ class LongHistoryResearchEngine:
         self.panel_df['predictionTimestamp'] = self.panel_df.index.strftime('%Y-%m-%d')
         print("Computing cross-sectional relevance grades across panel...")
         self.panel_df = assign_cross_sectional_relevance_grades(self.panel_df)
+        print("Enriching panel with cross-sectional regime meta-features (breadth, VIX, A/D ratio)...")
+        self.panel_df = enrich_panel_with_regime_features(self.panel_df, vix_df=self.vix_df)
         print(f"Panel loaded: {len(self.panel_df)} total observations across {len(self.historical_candles)} securities.")
         print(f"Dates span: {self.panel_df['predictionTimestamp'].min()} to {self.panel_df['predictionTimestamp'].max()}")
         return self.panel_df

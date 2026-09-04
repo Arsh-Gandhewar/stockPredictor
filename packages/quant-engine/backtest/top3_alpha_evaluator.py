@@ -385,8 +385,24 @@ class Top3AlphaEvaluator:
                 continue
 
             # ---------------------------------------------------------------------
-            # 2. Candidate Selection (Hysteresis & Diversification Aware)
+            # 2. Candidate Selection (Hysteresis, Diversification, Turnover Control)
             # ---------------------------------------------------------------------
+            # P0-2 Turnover Control: apply position continuity bonus to incumbents.
+            # Stocks held for fewer than MIN_HOLDING_DAYS receive a score boost so
+            # that the ranker must overcome a meaningful hurdle before rotating them
+            # out. This cuts daily churn without hard-locking positions.
+            MIN_HOLDING_DAYS = 5
+            CONTINUITY_BONUS = 0.15  # Applied as additive boost to the raw score
+
+            # Determine effective scores with continuity bonus applied
+            for cand in eligible_candidates:
+                tkr = cand['ticker']
+                if tkr in current_holdings:
+                    holding_info = current_holdings[tkr]
+                    days_held = holding_info.get('days_held', 0)
+                    if days_held < MIN_HOLDING_DAYS:
+                        cand['score'] = cand['score'] + CONTINUITY_BONUS
+
             eligible_candidates.sort(key=lambda x: (-x['score'], x['ticker']))
             rank_map = {c['ticker']: idx + 1 for idx, c in enumerate(eligible_candidates)}
             cand_map = {c['ticker']: c for c in eligible_candidates}
@@ -435,12 +451,20 @@ class Top3AlphaEvaluator:
             if len(selected_top3) < 3:
                 continue
 
-            # Update turnover tracking
+            # Update turnover tracking and days_held counter
             new_ticker_set = set(x['ticker'] for x in selected_top3)
             old_ticker_set = set(current_holdings.keys()) if current_holdings else new_ticker_set
             turnover_fraction = len(new_ticker_set - old_ticker_set) / 3.0
             total_turnover_trades += turnover_fraction
-            current_holdings = {x['ticker']: x for x in selected_top3}
+            # Increment days_held for retained positions; initialize to 1 for new positions
+            new_holdings = {}
+            for x in selected_top3:
+                tkr = x['ticker']
+                prev_days = current_holdings[tkr].get('days_held', 0) if tkr in current_holdings else 0
+                x_copy = dict(x)
+                x_copy['days_held'] = prev_days + 1
+                new_holdings[tkr] = x_copy
+            current_holdings = new_holdings
 
             # ---------------------------------------------------------------------
             # 3. Portfolio & Individual Record Compilation

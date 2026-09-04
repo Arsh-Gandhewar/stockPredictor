@@ -94,12 +94,23 @@ class CrossSectionalAlphaRanker:
         y_excess_tr = tr_sub[excess_col]
         
         # 1. Fit LambdaMART Ranker
+        # Phase 2 P0-3: 20D ranker uses more estimators + lower lr to capture slow-moving signals.
+        # 5D uses slightly more leaves to capture short-term momentum/regime interactions.
+        if self.horizon_str == '5d':
+            n_est = 100
+            lr = 0.03
+            n_leaves = 20
+        else:  # 20d
+            n_est = 150
+            lr = 0.015
+            n_leaves = 15
+
         ranker_params = {
             'objective': 'lambdarank',
             'boosting_type': 'gbdt',
-            'n_estimators': 80 if self.horizon_str == '5d' else 70,
-            'learning_rate': 0.03,
-            'num_leaves': 15,
+            'n_estimators': n_est,
+            'learning_rate': lr,
+            'num_leaves': n_leaves,
             'max_depth': 4,
             'eval_at': [1, 3, 5],
             'label_gain': [0, 1, 3, 7, 15],
