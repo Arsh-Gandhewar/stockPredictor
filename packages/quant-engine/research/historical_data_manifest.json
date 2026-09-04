@@ -24,7 +24,7 @@
     },
     {
       "foldIndex": 1,
-      "trainStart": "2008-01-01",
+      "trainStart": "2002-07-01",
       "trainEnd": "2010-12-31",
       "testStart": "2011-02-05",
       "testEnd": "2012-12-31",
@@ -32,7 +32,7 @@
     },
     {
       "foldIndex": 2,
-      "trainStart": "2008-01-01",
+      "trainStart": "2002-07-01",
       "trainEnd": "2012-12-31",
       "testStart": "2013-02-05",
       "testEnd": "2014-12-31",
@@ -40,7 +40,7 @@
     },
     {
       "foldIndex": 3,
-      "trainStart": "2008-01-01",
+      "trainStart": "2002-07-01",
       "trainEnd": "2014-12-31",
       "testStart": "2015-02-05",
       "testEnd": "2016-12-31",
@@ -48,7 +48,7 @@
     },
     {
       "foldIndex": 4,
-      "trainStart": "2008-01-01",
+      "trainStart": "2002-07-01",
       "trainEnd": "2016-12-31",
       "testStart": "2017-02-05",
       "testEnd": "2018-12-31",
@@ -56,7 +56,7 @@
     },
     {
       "foldIndex": 5,
-      "trainStart": "2008-01-01",
+      "trainStart": "2002-07-01",
       "trainEnd": "2018-12-31",
       "testStart": "2019-02-05",
       "testEnd": "2020-12-31",
@@ -64,7 +64,7 @@
     },
     {
       "foldIndex": 6,
-      "trainStart": "2008-01-01",
+      "trainStart": "2002-07-01",
       "trainEnd": "2020-12-31",
       "testStart": "2021-02-05",
       "testEnd": "2022-12-31",
@@ -72,7 +72,7 @@
     },
     {
       "foldIndex": 7,
-      "trainStart": "2008-01-01",
+      "trainStart": "2002-07-01",
       "trainEnd": "2022-12-31",
       "testStart": "2023-02-05",
       "testEnd": "2024-12-31",
@@ -80,7 +80,7 @@
     },
     {
       "foldIndex": 8,
-      "trainStart": "2008-01-01",
+      "trainStart": "2002-07-01",
       "trainEnd": "2024-12-31",
       "testStart": "2025-02-05",
       "testEnd": "2026-09-03",
@@ -185,30 +185,462 @@
   ],
   "modelComparison": {
     "modelA_ShortHistory2021": {
-      "cagr": 0.17,
-      "sharpe": -0.45,
-      "sortino": -0.7,
-      "maxDrawdown": -31.45,
-      "top3PortfolioHitRate": 44.67,
-      "meanExcessReturn5d": -0.116
+      "cagr": 8.82,
+      "sharpe": 0.58,
+      "sortino": 0.89,
+      "maxDrawdown": -12.65,
+      "top3PortfolioHitRate": 44.33,
+      "meanExcessReturn5d": -0.02
     },
     "modelB_LongHistoryExpanding": {
-      "cagr": 5.84,
-      "sharpe": 0.21,
-      "sortino": 0.27,
-      "maxDrawdown": -59.75,
-      "top3PortfolioHitRate": 47.79,
-      "meanExcessReturn5d": 0.08
+      "cagr": 1.4,
+      "sharpe": -0.18,
+      "sortino": -0.22,
+      "maxDrawdown": -61.61,
+      "top3PortfolioHitRate": 48.82,
+      "meanExcessReturn5d": -0.011
     },
     "modelC_Rolling5Y": {
-      "cagr": -1.16,
-      "sharpe": -0.4,
-      "sortino": -0.5,
-      "maxDrawdown": -59.8,
-      "top3PortfolioHitRate": 46.91,
-      "meanExcessReturn5d": -0.057
+      "cagr": 0.01,
+      "sharpe": -0.29,
+      "sortino": -0.37,
+      "maxDrawdown": -61.61,
+      "top3PortfolioHitRate": 48.74,
+      "meanExcessReturn5d": -0.035
     }
   },
+  "frozenHoldoutValidation": {
+    "modelB_Holdout": {
+      "diversificationMode": "CONSTRAINED",
+      "rankingMetric": "canonical_alpha",
+      "evaluationDaysCount": 383,
+      "totalStockEvaluations": 1149,
+      "hitRates5d": {
+        "top1HitRateVsNifty": 42.3,
+        "top3StockHitRateVsNifty": 41.69,
+        "top3PortfolioHitRateVsNifty": 38.38,
+        "top1AbsoluteWinRate": 42.82,
+        "top3StockAbsoluteWinRate": 43.08,
+        "top3PortfolioAbsoluteWinRate": 43.86,
+        "meanPortfolioNetReturnPct": -0.334,
+        "meanNiftyReturnPct": 0.034,
+        "meanExcessReturnPct": -0.368
+      },
+      "hitRates20d": {
+        "top1HitRateVsNifty": 41.3,
+        "top3StockHitRateVsNifty": 39.67,
+        "top3PortfolioHitRateVsNifty": 35.05,
+        "meanPortfolioNetReturnPct": -0.547,
+        "meanNiftyReturnPct": 0.372,
+        "meanExcessReturnPct": -0.919
+      },
+      "statisticalInference": {
+        "hac5d": {
+          "mean": -0.368198,
+          "hacStdError": 0.180035,
+          "tStat": -2.045,
+          "pValue": 0.04152,
+          "ci95Lower": -0.722182,
+          "ci95Upper": -0.014215,
+          "effectiveN": 127.2,
+          "rawN": 383,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap5d": {
+          "bootMean": -0.381191,
+          "ciLower": -0.710938,
+          "ciUpper": -0.039333,
+          "isBootstrapPositive": false
+        },
+        "hac20d": {
+          "mean": -0.918646,
+          "hacStdError": 0.448998,
+          "tStat": -2.046,
+          "pValue": 0.04147,
+          "ci95Lower": -1.801577,
+          "ci95Upper": -0.035715,
+          "effectiveN": 53.8,
+          "rawN": 368,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap20d": {
+          "bootMean": -0.961468,
+          "ciLower": -1.854553,
+          "ciUpper": -0.03008,
+          "isBootstrapPositive": false
+        }
+      },
+      "backtestMetrics": {
+        "cagr": -16.27,
+        "sharpe": -3.09,
+        "sortino": -5.01,
+        "maxDrawdown": -29.96,
+        "profitFactor": 0.67,
+        "annualTurnoverEstPct": 5197.9
+      },
+      "factorCrowding": {
+        "sectorClusteringPct": 0.0,
+        "meanPairwiseCorrelation": 0.09,
+        "meanPortfolioBeta": NaN
+      },
+      "fractileSpreadAnalysis": {
+        "fractileSlices": [
+          {
+            "fractile": "Top 1%",
+            "sampleCount": 0,
+            "meanNet5d": 0.0,
+            "excessVsUniverse5d": 0.156,
+            "hitRateVsNifty5d": 0.0,
+            "meanNet20d": 0.0,
+            "excessVsUniverse20d": -0.695,
+            "hitRateVsNifty20d": 0.0
+          },
+          {
+            "fractile": "Top 2%",
+            "sampleCount": 382,
+            "meanNet5d": 0.178,
+            "excessVsUniverse5d": 0.334,
+            "hitRateVsNifty5d": 46.6,
+            "meanNet20d": 0.546,
+            "excessVsUniverse20d": -0.149,
+            "hitRateVsNifty20d": 46.59
+          },
+          {
+            "fractile": "Top 5%",
+            "sampleCount": 766,
+            "meanNet5d": -0.119,
+            "excessVsUniverse5d": 0.037,
+            "hitRateVsNifty5d": 43.86,
+            "meanNet20d": 0.29,
+            "excessVsUniverse20d": -0.405,
+            "hitRateVsNifty20d": 44.84
+          },
+          {
+            "fractile": "Top 10% (D1)",
+            "sampleCount": 1914,
+            "meanNet5d": -0.101,
+            "excessVsUniverse5d": 0.055,
+            "hitRateVsNifty5d": 43.94,
+            "meanNet20d": 0.238,
+            "excessVsUniverse20d": -0.458,
+            "hitRateVsNifty20d": 45.68
+          },
+          {
+            "fractile": "Top 20% (D2)",
+            "sampleCount": 4210,
+            "meanNet5d": -0.138,
+            "excessVsUniverse5d": 0.018,
+            "hitRateVsNifty5d": 43.14,
+            "meanNet20d": 0.455,
+            "excessVsUniverse20d": -0.24,
+            "hitRateVsNifty20d": 47.47
+          },
+          {
+            "fractile": "Top 50%",
+            "sampleCount": 10336,
+            "meanNet5d": -0.225,
+            "excessVsUniverse5d": -0.069,
+            "hitRateVsNifty5d": 43.07,
+            "meanNet20d": 0.36,
+            "excessVsUniverse20d": -0.335,
+            "hitRateVsNifty20d": 48.16
+          },
+          {
+            "fractile": "Full Universe Baseline",
+            "sampleCount": 21054,
+            "meanNet5d": -0.156,
+            "excessVsUniverse5d": 0.0,
+            "hitRateVsNifty5d": 44.72,
+            "meanNet20d": 0.695,
+            "excessVsUniverse20d": 0.0,
+            "hitRateVsNifty20d": 49.89
+          }
+        ],
+        "isMonotonic5d": true,
+        "isMonotonic20d": false,
+        "top10vsUniverseSpread5d": 0.055,
+        "top10vsUniverseSpread20d": -0.457
+      }
+    },
+    "modelC_Holdout": {
+      "diversificationMode": "CONSTRAINED",
+      "rankingMetric": "canonical_alpha",
+      "evaluationDaysCount": 383,
+      "totalStockEvaluations": 1149,
+      "hitRates5d": {
+        "top1HitRateVsNifty": 41.25,
+        "top3StockHitRateVsNifty": 42.65,
+        "top3PortfolioHitRateVsNifty": 42.82,
+        "top1AbsoluteWinRate": 46.21,
+        "top3StockAbsoluteWinRate": 44.91,
+        "top3PortfolioAbsoluteWinRate": 46.21,
+        "meanPortfolioNetReturnPct": -0.139,
+        "meanNiftyReturnPct": 0.034,
+        "meanExcessReturnPct": -0.173
+      },
+      "hitRates20d": {
+        "top1HitRateVsNifty": 43.48,
+        "top3StockHitRateVsNifty": 43.3,
+        "top3PortfolioHitRateVsNifty": 46.47,
+        "meanPortfolioNetReturnPct": -0.174,
+        "meanNiftyReturnPct": 0.372,
+        "meanExcessReturnPct": -0.546
+      },
+      "statisticalInference": {
+        "hac5d": {
+          "mean": -0.173294,
+          "hacStdError": 0.152194,
+          "tStat": -1.139,
+          "pValue": 0.25557,
+          "ci95Lower": -0.472536,
+          "ci95Upper": 0.125948,
+          "effectiveN": 171.0,
+          "rawN": 383,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap5d": {
+          "bootMean": -0.178257,
+          "ciLower": -0.484651,
+          "ciUpper": 0.112088,
+          "isBootstrapPositive": false
+        },
+        "hac20d": {
+          "mean": -0.546122,
+          "hacStdError": 0.439119,
+          "tStat": -1.244,
+          "pValue": 0.21441,
+          "ci95Lower": -1.409628,
+          "ci95Upper": 0.317383,
+          "effectiveN": 62.9,
+          "rawN": 368,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap20d": {
+          "bootMean": -0.589344,
+          "ciLower": -1.422686,
+          "ciUpper": 0.233179,
+          "isBootstrapPositive": false
+        }
+      },
+      "backtestMetrics": {
+        "cagr": -7.83,
+        "sharpe": -1.58,
+        "sortino": -2.63,
+        "maxDrawdown": -22.39,
+        "profitFactor": 0.84,
+        "annualTurnoverEstPct": 4759.3
+      },
+      "factorCrowding": {
+        "sectorClusteringPct": 0.0,
+        "meanPairwiseCorrelation": 0.096,
+        "meanPortfolioBeta": NaN
+      },
+      "fractileSpreadAnalysis": {
+        "fractileSlices": [
+          {
+            "fractile": "Top 1%",
+            "sampleCount": 0,
+            "meanNet5d": 0.0,
+            "excessVsUniverse5d": 0.156,
+            "hitRateVsNifty5d": 0.0,
+            "meanNet20d": 0.0,
+            "excessVsUniverse20d": -0.695,
+            "hitRateVsNifty20d": 0.0
+          },
+          {
+            "fractile": "Top 2%",
+            "sampleCount": 382,
+            "meanNet5d": -0.201,
+            "excessVsUniverse5d": -0.045,
+            "hitRateVsNifty5d": 41.62,
+            "meanNet20d": -0.266,
+            "excessVsUniverse20d": -0.962,
+            "hitRateVsNifty20d": 46.32
+          },
+          {
+            "fractile": "Top 5%",
+            "sampleCount": 766,
+            "meanNet5d": -0.037,
+            "excessVsUniverse5d": 0.119,
+            "hitRateVsNifty5d": 43.73,
+            "meanNet20d": 0.022,
+            "excessVsUniverse20d": -0.674,
+            "hitRateVsNifty20d": 47.01
+          },
+          {
+            "fractile": "Top 10% (D1)",
+            "sampleCount": 1914,
+            "meanNet5d": -0.042,
+            "excessVsUniverse5d": 0.114,
+            "hitRateVsNifty5d": 43.52,
+            "meanNet20d": 0.407,
+            "excessVsUniverse20d": -0.288,
+            "hitRateVsNifty20d": 46.87
+          },
+          {
+            "fractile": "Top 20% (D2)",
+            "sampleCount": 4210,
+            "meanNet5d": -0.099,
+            "excessVsUniverse5d": 0.057,
+            "hitRateVsNifty5d": 43.35,
+            "meanNet20d": 0.441,
+            "excessVsUniverse20d": -0.254,
+            "hitRateVsNifty20d": 48.45
+          },
+          {
+            "fractile": "Top 50%",
+            "sampleCount": 10336,
+            "meanNet5d": -0.212,
+            "excessVsUniverse5d": -0.056,
+            "hitRateVsNifty5d": 43.26,
+            "meanNet20d": 0.399,
+            "excessVsUniverse20d": -0.297,
+            "hitRateVsNifty20d": 48.27
+          },
+          {
+            "fractile": "Full Universe Baseline",
+            "sampleCount": 21054,
+            "meanNet5d": -0.156,
+            "excessVsUniverse5d": 0.0,
+            "hitRateVsNifty5d": 44.72,
+            "meanNet20d": 0.695,
+            "excessVsUniverse20d": 0.0,
+            "hitRateVsNifty20d": 49.89
+          }
+        ],
+        "isMonotonic5d": true,
+        "isMonotonic20d": false,
+        "top10vsUniverseSpread5d": 0.114,
+        "top10vsUniverseSpread20d": -0.288
+      }
+    }
+  },
+  "benchmarkSpliceValidation": {
+    "splicedBenchmark": {
+      "benchmark": "SENSEX pre-Sep07 + NIFTY post-Sep07",
+      "cagr": 0.14,
+      "sharpe": -0.13,
+      "top3HitRateVsBench": 55.09,
+      "meanExcessReturn5d": 0.23,
+      "isAlphaPositive": true
+    },
+    "pureNiftyBenchmark": {
+      "benchmark": "^NSEI (NIFTY 50 only)",
+      "cagr": 0.14,
+      "sharpe": -0.13,
+      "top3HitRateVsBench": 55.09,
+      "meanExcessReturn5d": 0.23,
+      "isAlphaPositive": true
+    }
+  },
+  "scoringAblationStudy": [
+    {
+      "metricId": "canonical_alpha",
+      "name": "Canonical AlphaScore (RankPct * [1 + clip(RiskAdjExcess)])",
+      "cagr": 1.4,
+      "sharpe": -0.18,
+      "sortino": -0.22,
+      "maxDrawdown": -61.61,
+      "top3PortfolioHitRate5d": 48.82,
+      "meanExcessReturn5d": -0.011,
+      "top3PortfolioHitRate20d": 54.43,
+      "meanExcessReturn20d": 0.589
+    },
+    {
+      "metricId": "risk_adjusted_ev",
+      "name": "Risk-Adjusted EV (NetEV / ExpectedRisk)",
+      "cagr": -2.94,
+      "sharpe": -0.35,
+      "sortino": -0.49,
+      "maxDrawdown": -65.72,
+      "top3PortfolioHitRate5d": 45.99,
+      "meanExcessReturn5d": -0.031,
+      "top3PortfolioHitRate20d": 49.01,
+      "meanExcessReturn20d": 0.803
+    },
+    {
+      "metricId": "net_ev",
+      "name": "Expected Net Excess Return Rank",
+      "cagr": -8.87,
+      "sharpe": -0.65,
+      "sortino": -0.93,
+      "maxDrawdown": -81.28,
+      "top3PortfolioHitRate5d": 44.9,
+      "meanExcessReturn5d": -0.126,
+      "top3PortfolioHitRate20d": 48.69,
+      "meanExcessReturn20d": 0.764
+    },
+    {
+      "metricId": "calibrated_prob",
+      "name": "Calibrated Probability Rank",
+      "cagr": 0.57,
+      "sharpe": -0.23,
+      "sortino": -0.3,
+      "maxDrawdown": -54.45,
+      "top3PortfolioHitRate5d": 47.41,
+      "meanExcessReturn5d": -0.019,
+      "top3PortfolioHitRate20d": 52.91,
+      "meanExcessReturn20d": 0.726
+    },
+    {
+      "metricId": "lambda_rank",
+      "name": "Raw LambdaMART Percentile Rank",
+      "cagr": 2.27,
+      "sharpe": -0.09,
+      "sortino": -0.11,
+      "maxDrawdown": -64.35,
+      "top3PortfolioHitRate5d": 48.96,
+      "meanExcessReturn5d": 0.01,
+      "top3PortfolioHitRate20d": 55.61,
+      "meanExcessReturn20d": 0.666
+    }
+  ],
+  "costStressTesting": [
+    {
+      "multiplier": 1.0,
+      "roundTripBps": 13.0,
+      "cagr": 1.4,
+      "sharpe": -0.18,
+      "sortino": -0.22,
+      "maxDrawdown": -61.61,
+      "meanPortfolioNetReturn5d": 0.088,
+      "meanExcessReturn5d": -0.011,
+      "isAlphaPositive": false
+    },
+    {
+      "multiplier": 1.5,
+      "roundTripBps": 19.5,
+      "cagr": -5.85,
+      "sharpe": -0.84,
+      "sortino": -1.05,
+      "maxDrawdown": -67.37,
+      "meanPortfolioNetReturn5d": -0.059,
+      "meanExcessReturn5d": -0.158,
+      "isAlphaPositive": false
+    },
+    {
+      "multiplier": 2.0,
+      "roundTripBps": 26.0,
+      "cagr": -12.59,
+      "sharpe": -1.49,
+      "sortino": -1.88,
+      "maxDrawdown": -87.31,
+      "meanPortfolioNetReturn5d": -0.206,
+      "meanExcessReturn5d": -0.305,
+      "isAlphaPositive": false
+    },
+    {
+      "multiplier": 3.0,
+      "roundTripBps": 39.0,
+      "cagr": -24.69,
+      "sharpe": -2.81,
+      "sortino": -3.56,
+      "maxDrawdown": -98.54,
+      "meanPortfolioNetReturn5d": -0.5,
+      "meanExcessReturn5d": -0.599,
+      "isAlphaPositive": false
+    }
+  ],
   "eraPerformance": [
     {
       "eraId": "ERA_1_GFC",
@@ -216,15 +648,15 @@
       "dates": "2008-01-01 to 2009-12-31",
       "description": "Extreme macro deflation, Lehman collapse (-60% NIFTY drawdown) and 2009 general election V-reversal (+17% in 1 day)",
       "observations": 25652,
-      "cagr": 10.63,
-      "sharpe": 0.39,
-      "sortino": 0.44,
-      "maxDrawdown": -59.75,
-      "annualTurnoverPct": 5361.3,
-      "top1HitRate": 49.9,
-      "top3StockHitRate": 51.21,
-      "top3PortfolioHitRate": 52.18,
-      "meanExcessReturn5d": 0.448
+      "cagr": 0.14,
+      "sharpe": -0.13,
+      "sortino": -0.15,
+      "maxDrawdown": -61.61,
+      "annualTurnoverPct": 5047.0,
+      "top1HitRate": 48.44,
+      "top3StockHitRate": 50.73,
+      "top3PortfolioHitRate": 55.09,
+      "meanExcessReturn5d": 0.23
     },
     {
       "eraId": "ERA_2_EURO_INFLATION",
@@ -232,15 +664,15 @@
       "dates": "2010-01-01 to 2011-12-31",
       "description": "Double-digit CPI inflation in India, aggressive RBI repo rate hiking cycle, Greece/PIIGS sovereign default risk",
       "observations": 11988,
-      "cagr": 2.77,
-      "sharpe": -0.18,
-      "sortino": -0.31,
-      "maxDrawdown": -9.88,
-      "annualTurnoverPct": 5972.5,
-      "top1HitRate": 58.72,
-      "top3StockHitRate": 55.81,
-      "top3PortfolioHitRate": 61.47,
-      "meanExcessReturn5d": 0.347
+      "cagr": 6.2,
+      "sharpe": 0.31,
+      "sortino": 0.47,
+      "maxDrawdown": -12.6,
+      "annualTurnoverPct": 6165.1,
+      "top1HitRate": 49.08,
+      "top3StockHitRate": 54.28,
+      "top3PortfolioHitRate": 57.34,
+      "meanExcessReturn5d": 0.43
     },
     {
       "eraId": "ERA_3_TAPER_ELECTION",
@@ -248,15 +680,15 @@
       "dates": "2012-01-01 to 2014-12-31",
       "description": "US Fed taper announcement, INR plunge to 68/USD, current account deficit crisis, followed by 2014 BJP majority election rally",
       "observations": 38448,
-      "cagr": 28.46,
-      "sharpe": 2.49,
-      "sortino": 4.46,
-      "maxDrawdown": -10.16,
-      "annualTurnoverPct": 5135.3,
-      "top1HitRate": 47.94,
-      "top3StockHitRate": 50.02,
-      "top3PortfolioHitRate": 51.21,
-      "meanExcessReturn5d": 0.201
+      "cagr": 13.81,
+      "sharpe": 1.06,
+      "sortino": 1.83,
+      "maxDrawdown": -15.9,
+      "annualTurnoverPct": 5754.9,
+      "top1HitRate": 50.07,
+      "top3StockHitRate": 47.75,
+      "top3PortfolioHitRate": 48.79,
+      "meanExcessReturn5d": -0.039
     },
     {
       "eraId": "ERA_4_COMMODITY_DEMON",
@@ -264,15 +696,15 @@
       "dates": "2015-01-01 to 2016-12-31",
       "description": "Crude oil collapse, China Yuan devaluation shock, Nov 2016 Indian currency demonetization liquidity disruption",
       "observations": 25272,
-      "cagr": -8.72,
-      "sharpe": -1.41,
-      "sortino": -2.13,
-      "maxDrawdown": -35.82,
-      "annualTurnoverPct": 4172.9,
-      "top1HitRate": 47.53,
-      "top3StockHitRate": 48.67,
-      "top3PortfolioHitRate": 51.18,
-      "meanExcessReturn5d": -0.015
+      "cagr": -9.19,
+      "sharpe": -1.55,
+      "sortino": -2.33,
+      "maxDrawdown": -30.23,
+      "annualTurnoverPct": 4624.5,
+      "top1HitRate": 46.67,
+      "top3StockHitRate": 50.18,
+      "top3PortfolioHitRate": 49.68,
+      "meanExcessReturn5d": -0.03
     },
     {
       "eraId": "ERA_5_GST_NBFC",
@@ -280,15 +712,15 @@
       "dates": "2017-01-01 to 2019-12-31",
       "description": "Goods and Services Tax introduction, 2017 midcap mania, September 2018 IL&FS default triggering systemic shadow-banking credit crunch",
       "observations": 37556,
-      "cagr": -16.33,
-      "sharpe": -2.48,
-      "sortino": -3.09,
-      "maxDrawdown": -46.02,
-      "annualTurnoverPct": 4187.8,
-      "top1HitRate": 48.25,
-      "top3StockHitRate": 45.24,
-      "top3PortfolioHitRate": 40.09,
-      "meanExcessReturn5d": -0.421
+      "cagr": -5.72,
+      "sharpe": -1.01,
+      "sortino": -1.3,
+      "maxDrawdown": -28.29,
+      "annualTurnoverPct": 4298.0,
+      "top1HitRate": 53.64,
+      "top3StockHitRate": 46.94,
+      "top3PortfolioHitRate": 45.48,
+      "meanExcessReturn5d": -0.178
     },
     {
       "eraId": "ERA_6_COVID_SHOCK",
@@ -296,15 +728,15 @@
       "dates": "2020-01-01 to 2020-12-31",
       "description": "Global lockdown, NIFTY 38.4% crash in 30 days, Yes Bank RBI moratorium, followed by zero-rate global central bank stimulus explosion",
       "observations": 13805,
-      "cagr": 72.57,
-      "sharpe": 2.74,
-      "sortino": 4.53,
-      "maxDrawdown": -25.52,
-      "annualTurnoverPct": 4670.4,
-      "top1HitRate": 52.8,
-      "top3StockHitRate": 47.6,
-      "top3PortfolioHitRate": 52.8,
-      "meanExcessReturn5d": 1.046
+      "cagr": -16.96,
+      "sharpe": -1.45,
+      "sortino": -1.92,
+      "maxDrawdown": -28.35,
+      "annualTurnoverPct": 4704.0,
+      "top1HitRate": 45.6,
+      "top3StockHitRate": 43.07,
+      "top3PortfolioHitRate": 42.0,
+      "meanExcessReturn5d": -0.478
     },
     {
       "eraId": "ERA_7_RETAIL_TIGHTENING",
@@ -312,31 +744,15 @@
       "dates": "2021-01-01 to 2024-12-31",
       "description": "Record domestic retail investor inflows, 2022 Russia-Ukraine war and global central bank rate tightening, followed by infrastructure capex expansion",
       "observations": 51645,
-      "cagr": 11.65,
-      "sharpe": 0.91,
-      "sortino": 1.55,
-      "maxDrawdown": -14.06,
-      "annualTurnoverPct": 4446.0,
-      "top1HitRate": 49.84,
-      "top3StockHitRate": 45.54,
-      "top3PortfolioHitRate": 45.58,
-      "meanExcessReturn5d": 0.086
-    },
-    {
-      "eraId": "ERA_8_FROZEN_HOLDOUT",
-      "name": "2025-2026 Frozen Out-of-Sample Holdout",
-      "dates": "2025-01-01 to 2026-09-03",
-      "description": "Untouched final out-of-sample holdout period reserved strictly for unseen evaluation",
-      "observations": 21602,
-      "cagr": -17.26,
-      "sharpe": -3.18,
-      "sortino": -4.97,
-      "maxDrawdown": -24.67,
-      "annualTurnoverPct": 4610.9,
-      "top1HitRate": 44.02,
-      "top3StockHitRate": 41.3,
-      "top3PortfolioHitRate": 39.95,
-      "meanExcessReturn5d": -0.417
+      "cagr": 8.79,
+      "sharpe": 0.59,
+      "sortino": 0.94,
+      "maxDrawdown": -16.59,
+      "annualTurnoverPct": 4982.7,
+      "top1HitRate": 43.77,
+      "top3StockHitRate": 45.33,
+      "top3PortfolioHitRate": 47.28,
+      "meanExcessReturn5d": 0.03
     }
   ],
   "crisisStressPerformance": [
@@ -346,11 +762,11 @@
       "dates": "2008-01-08 to 2008-10-27",
       "observations": 10547,
       "niftyReturnPct": -59.86,
-      "strategyMaxDrawdown": -58.37,
-      "top1HitRate": 48.24,
-      "top3StockHitRate": 51.42,
-      "top3PortfolioHitRate": 53.27,
-      "meanExcessReturn5d": 0.023
+      "strategyMaxDrawdown": -57.66,
+      "top1HitRate": 53.27,
+      "top3StockHitRate": 51.93,
+      "top3PortfolioHitRate": 56.78,
+      "meanExcessReturn5d": -0.101
     },
     {
       "crisisId": "CRISIS_2011_INFLATION",
@@ -358,11 +774,11 @@
       "dates": "2011-01-03 to 2011-12-30",
       "observations": 11988,
       "niftyReturnPct": -24.9,
-      "strategyMaxDrawdown": -9.88,
-      "top1HitRate": 58.72,
-      "top3StockHitRate": 55.81,
-      "top3PortfolioHitRate": 61.47,
-      "meanExcessReturn5d": 0.347
+      "strategyMaxDrawdown": -12.6,
+      "top1HitRate": 49.08,
+      "top3StockHitRate": 54.28,
+      "top3PortfolioHitRate": 57.34,
+      "meanExcessReturn5d": 0.43
     },
     {
       "crisisId": "CRISIS_2013_TAPER",
@@ -370,11 +786,11 @@
       "dates": "2013-05-20 to 2013-08-28",
       "observations": 3834,
       "niftyReturnPct": -14.16,
-      "strategyMaxDrawdown": -10.16,
-      "top1HitRate": 61.97,
-      "top3StockHitRate": 48.36,
-      "top3PortfolioHitRate": 54.93,
-      "meanExcessReturn5d": 0.432
+      "strategyMaxDrawdown": -10.43,
+      "top1HitRate": 59.15,
+      "top3StockHitRate": 49.77,
+      "top3PortfolioHitRate": 53.52,
+      "meanExcessReturn5d": 0.281
     },
     {
       "crisisId": "CRISIS_2015_COMMODITY",
@@ -382,11 +798,11 @@
       "dates": "2015-08-03 to 2016-02-29",
       "observations": 7668,
       "niftyReturnPct": -18.21,
-      "strategyMaxDrawdown": -24.2,
-      "top1HitRate": 48.94,
-      "top3StockHitRate": 45.39,
+      "strategyMaxDrawdown": -24.01,
+      "top1HitRate": 40.43,
+      "top3StockHitRate": 49.17,
       "top3PortfolioHitRate": 48.94,
-      "meanExcessReturn5d": -0.052
+      "meanExcessReturn5d": -0.108
     },
     {
       "crisisId": "CRISIS_2020_COVID",
@@ -394,11 +810,11 @@
       "dates": "2020-01-20 to 2020-03-23",
       "observations": 2420,
       "niftyReturnPct": -37.75,
-      "strategyMaxDrawdown": -25.52,
-      "top1HitRate": 65.91,
-      "top3StockHitRate": 66.67,
-      "top3PortfolioHitRate": 72.73,
-      "meanExcessReturn5d": 2.054
+      "strategyMaxDrawdown": -27.69,
+      "top1HitRate": 54.55,
+      "top3StockHitRate": 61.36,
+      "top3PortfolioHitRate": 61.36,
+      "meanExcessReturn5d": 0.777
     },
     {
       "crisisId": "CRISIS_2022_RATE_HIKE",
@@ -406,11 +822,11 @@
       "dates": "2021-10-18 to 2022-06-17",
       "observations": 9185,
       "niftyReturnPct": -17.23,
-      "strategyMaxDrawdown": -12.42,
-      "top1HitRate": 52.1,
-      "top3StockHitRate": 49.1,
-      "top3PortfolioHitRate": 54.49,
-      "meanExcessReturn5d": 0.414
+      "strategyMaxDrawdown": -14.38,
+      "top1HitRate": 41.92,
+      "top3StockHitRate": 46.91,
+      "top3PortfolioHitRate": 48.5,
+      "meanExcessReturn5d": 0.265
     }
   ]
 }

@@ -28,9 +28,22 @@ class CrossSectionalAlphaRanker:
     2. Huber Regressor for calibrated expected excess return magnitude.
     3. Isotonic Regression for true out-of-sample probability calibration.
     """
-    def __init__(self, horizon_str: str = '5d'):
+    def __init__(
+        self,
+        horizon_str: str = '5d',
+        cal_y_min: Optional[float] = None,
+        cal_y_max: Optional[float] = None,
+        friction_rate: float = 0.0013,
+        clip_lower: float = -0.5,
+        clip_upper: float = 0.5
+    ):
         self.horizon_str = horizon_str
         self.h_days = 5 if horizon_str == '5d' else (20 if horizon_str == '20d' else 1)
+        self.cal_y_min = cal_y_min
+        self.cal_y_max = cal_y_max
+        self.friction_rate = friction_rate
+        self.clip_lower = clip_lower
+        self.clip_upper = clip_upper
         self.ranker: Optional[lgb.LGBMRanker] = None
         self.magnitude_model: Optional[lgb.LGBMRegressor] = None
         self.calibrator: Optional[IsotonicRegression] = None
@@ -60,20 +73,21 @@ class CrossSectionalAlphaRanker:
                 clean_train['date_group'] = clean_train.index.strftime('%Y-%m-%d')
                 
         # Group sizes for LightGBM ranking
-        # Temporal split for isotonic probability calibration: 85% train, 15% validation
-        unique_dates = sorted(clean_train['date_group'].unique())
-        n_dates = len(unique_dates)
-        if n_dates >= 20:
-            split_idx = int(n_dates * 0.85)
-            train_dates = set(unique_dates[:split_idx])
-            val_dates = set(unique_dates[split_idx:])
-            
-            tr_sub = clean_train[clean_train['date_group'].isin(train_dates)]
-            val_sub = clean_train[clean_train['date_group'].isin(val_dates)]
+        tr_sub = clean_train
+        
+        if tune_df is not None and len(tune_df) > 0:
+            val_sub = tune_df.dropna(subset=req_cols).copy()
         else:
-            tr_sub = clean_train
-            val_sub = clean_train
-            
+            # Temporal split for isotonic probability calibration: 85% train, 15% validation
+            unique_dates = sorted(clean_train['date_group'].unique())
+            n_dates = len(unique_dates)
+            if n_dates >= 20:
+                split_idx = int(n_dates * 0.85)
+                val_dates = set(unique_dates[split_idx:])
+                val_sub = clean_train[clean_train['date_group'].isin(val_dates)]
+            else:
+                val_sub = clean_train
+                
         group_counts = tr_sub.groupby('date_group', sort=False).size().values
         X_tr = tr_sub[features]
         y_grade_tr = tr_sub[grade_col].astype(int)
@@ -119,10 +133,24 @@ class CrossSectionalAlphaRanker:
         # 3. Fit True Empirical Isotonic Calibrator on Validation Partition
         X_val = val_sub[features]
         val_pred_excess = self.magnitude_model.predict(X_val)
-        val_binary = (val_sub[excess_col] > 0.0).astype(int)
+
+        # Target event: Calibrate against exact production executable event (net excess return > 0)
+        net_excess_col = f'target_net_excess_binary_{self.horizon_str}'
+        if net_excess_col in val_sub.columns:
+            val_binary = val_sub[net_excess_col].astype(int)
+        elif f'future_net_excess_ret_{self.horizon_str}' in val_sub.columns:
+            val_binary = (val_sub[f'future_net_excess_ret_{self.horizon_str}'] > 0.0).astype(int)
+        else:
+            val_binary = (val_sub[excess_col] > 0.0).astype(int)
         
-        self.calibrator = IsotonicRegression(out_of_bounds='clip', y_min=0.10, y_max=0.90)
+        self.calibrator = IsotonicRegression(out_of_bounds='clip', y_min=self.cal_y_min, y_max=self.cal_y_max)
         self.calibrator.fit(val_pred_excess, val_binary)
+
+        # Diagnostic Calibration Metrics on Out-of-Sample Validation Set
+        val_cal_prob = self.calibrator.predict(val_pred_excess)
+        val_cal_prob = np.clip(val_cal_prob, 1e-5, 1.0 - 1e-5)
+        self.brier_score = float(np.mean((val_cal_prob - val_binary.values) ** 2))
+        self.log_loss_score = float(-np.mean(val_binary.values * np.log(val_cal_prob) + (1.0 - val_binary.values) * np.log(1.0 - val_cal_prob)))
         
         self.is_fitted = True
         return self
@@ -144,7 +172,9 @@ class CrossSectionalAlphaRanker:
         df['pred_std_excess'] = pred_std_excess
         
         # De-standardize expected excess return: std_excess * (daily_vol * sqrt(h))
-        daily_vol = df['atr_percent'] if 'atr_percent' in df.columns else df['vol_20d'] / np.sqrt(252)
+        # Use return-based volatility consistently with target construction
+        # vol_20d is annualized (sqrt(252)), so de-annualize to get daily vol
+        daily_vol = df['vol_20d'] / np.sqrt(252) if 'vol_20d' in df.columns else df['atr_percent']
         h_vol = daily_vol * np.sqrt(self.h_days)
         h_vol = h_vol.clip(lower=0.005)
         
@@ -170,17 +200,22 @@ class CrossSectionalAlphaRanker:
         df['cross_sectional_rank_pct'] = df.groupby('date_group')['rank_score'].rank(pct=True)
         
         # Canonical AlphaScore:
-        # Scale-consistent combination of cross-sectional rank and risk-adjusted excess margin
+        # Scale-consistent combination of cross-sectional rank and risk-adjusted excess-return score
         # AlphaScore = PercentileRank * [1.0 + clip((expectedExcessReturn - friction) / risk, -0.5, 0.5)]
-        statutory_friction = 0.0013  # 13 bps roundtrip institutional friction
-        info_ratio = (df['expectedExcessReturn'] - statutory_friction) / h_vol
-        clamped_ir = info_ratio.clip(lower=-0.5, upper=0.5)
+        risk_adj_excess_score = (df['expectedExcessReturn'] - self.friction_rate) / h_vol
+        clamped_rae = risk_adj_excess_score.clip(lower=self.clip_lower, upper=self.clip_upper)
         
-        df['canonicalAlphaScore'] = df['cross_sectional_rank_pct'] * (1.0 + clamped_ir)
+        df['canonicalAlphaScore'] = df['cross_sectional_rank_pct'] * (1.0 + clamped_rae)
         df['opportunityScore'] = df['canonicalAlphaScore']
         df['compositeScore'] = df['canonicalAlphaScore']
+
+        # Ablation Objective Scores (WS-3)
+        df['score_rank_only'] = df['cross_sectional_rank_pct']
+        df['score_prob_rank'] = df.groupby('date_group')['calibratedProbability'].rank(pct=True)
+        df['score_unclipped'] = df['cross_sectional_rank_pct'] * (1.0 + np.tanh(risk_adj_excess_score * 0.5))
+        df['score_net_ev'] = df['expectedExcessReturn'] - self.friction_rate
         
-        df['netEV'] = df['expectedExcessReturn'] - statutory_friction
+        df['netEV'] = df['expectedExcessReturn'] - self.friction_rate
         df['expectedRisk'] = h_vol
         df['grossEV'] = df['expectedExcessReturn']
         

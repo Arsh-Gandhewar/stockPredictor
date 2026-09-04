@@ -23,6 +23,7 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from costs import TransactionCostEngine
 from universe import TICKER_SECTOR_MAP, NSE_UNIVERSE
 from models.universe_engine import HistoricalUniverseEngine
+from stats.inference import compute_newey_west_hac, compute_block_bootstrap_ci, compute_effective_sample_size
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,7 @@ class Top3StockEvaluationRecord:
     expectedReturn: float
     expectedRisk: float
     adv20: Optional[float]
-    beta: float
+    beta: Optional[float]
     entryPriceOpen: float
     exitPrice5d: float
     exitPrice20d: float
@@ -117,9 +118,11 @@ class Top3AlphaEvaluator:
         correlation_penalty_weight: float = 0.40,
         correlation_lookback_days: int = 60,
         use_hysteresis: bool = True,
-        exit_rank_limit: int = 6
+        exit_rank_limit: int = 6,
+        cost_multiplier: float = 1.0
     ):
         self.cost_engine = TransactionCostEngine(regime=cost_regime)
+        self.cost_multiplier = cost_multiplier
         self.rf_annual = risk_free_rate_annual
         self.rf_daily = (1.0 + risk_free_rate_annual) ** (1.0 / 252.0) - 1.0
         self.diversification_mode = diversification_mode
@@ -130,14 +133,21 @@ class Top3AlphaEvaluator:
         self.exit_rank_limit = exit_rank_limit
         self._corr_cache: Dict[Tuple[str, str, str], Optional[float]] = {}
         self._returns_cache: Dict[str, pd.Series] = {}
+        self._candles_by_ticker_date: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None
+        self._nifty_by_date: Optional[Dict[str, Dict[str, float]]] = None
+        self._sorted_nifty_dates: Optional[List[str]] = None
+        self._nifty_date_idx_map: Optional[Dict[str, int]] = None
+        self._returns_matrix: Optional[np.ndarray] = None
+        self._returns_date_to_idx: Optional[Dict[str, int]] = None
+        self._ticker_to_col_idx: Optional[Dict[str, int]] = None
 
     def evaluate_top3_alpha(
         self,
         oos_predictions_df: pd.DataFrame,
         historical_candles: Dict[str, pd.DataFrame],
         nifty_candles: pd.DataFrame,
-        universe_engine: Optional[HistoricalUniverseEngine] = None,
-        ranking_metric: str = 'risk_adjusted_ev'  # 'risk_adjusted_ev', 'net_ev', 'calibrated_prob', or 'lambda_rank'
+        ranking_metric: str = 'canonical_alpha',
+        cost_multiplier: Optional[float] = None
     ) -> Dict[str, Any]:
         """
         Executes complete out-of-sample Top-3 alpha evaluation.
@@ -158,28 +168,47 @@ class Top3AlphaEvaluator:
         all_universe_returns_5d: List[Dict[str, Any]] = []
         all_universe_returns_20d: List[Dict[str, Any]] = []
 
-        # Calendar mapping for forward execution
-        nifty_candles = nifty_candles.copy()
-        if not isinstance(nifty_candles.index, pd.DatetimeIndex):
-            nifty_candles.index = pd.to_datetime(nifty_candles.index)
-        nifty_candles['date_str'] = nifty_candles.index.strftime('%Y-%m-%d')
-        nifty_by_date = {r['date_str']: r for _, r in nifty_candles.iterrows()}
-        sorted_nifty_dates = sorted(list(nifty_by_date.keys()))
+        # Fast calendar mapping (cached on self)
+        if self._nifty_by_date is None or len(self._nifty_by_date) != len(nifty_candles):
+            n_dates = nifty_candles.index.strftime('%Y-%m-%d') if isinstance(nifty_candles.index, pd.DatetimeIndex) else pd.to_datetime(nifty_candles.index).dt.strftime('%Y-%m-%d')
+            n_opens = nifty_candles['Open'].values
+            n_closes = nifty_candles['Close'].values
+            self._nifty_by_date = {
+                d: {'Open': float(o), 'Close': float(c)} for d, o, c in zip(n_dates, n_opens, n_closes)
+            }
+            self._sorted_nifty_dates = sorted(list(self._nifty_by_date.keys()))
+            self._nifty_date_idx_map = {d: i for i, d in enumerate(self._sorted_nifty_dates)}
 
-        # Precompute candle date indices
-        candles_by_ticker_date = {}
-        for tkr, c_df in historical_candles.items():
-            cdf = c_df.copy()
-            if not isinstance(cdf.index, pd.DatetimeIndex):
-                cdf.index = pd.to_datetime(cdf.index)
-            cdf['date_str'] = cdf.index.strftime('%Y-%m-%d')
-            candles_by_ticker_date[tkr] = {r['date_str']: r for _, r in cdf.iterrows()}
+        nifty_by_date = self._nifty_by_date
+        sorted_nifty_dates = self._sorted_nifty_dates
+        nifty_idx_map = self._nifty_date_idx_map
 
-        # Precompute returns cache once
-        if not self._returns_cache:
-            for tkr, c_df in historical_candles.items():
-                if 'Close' in c_df.columns:
-                    self._returns_cache[tkr] = c_df['Close'].pct_change().dropna()
+        # Precompute candle date indices using fast array zip (cached on self)
+        if self._candles_by_ticker_date is None:
+            self._candles_by_ticker_date = {}
+            for tkr, cdf in historical_candles.items():
+                c_dates = cdf.index.strftime('%Y-%m-%d') if isinstance(cdf.index, pd.DatetimeIndex) else pd.to_datetime(cdf.index).dt.strftime('%Y-%m-%d')
+                c_opens = cdf['Open'].values
+                c_closes = cdf['Close'].values
+                self._candles_by_ticker_date[tkr] = {
+                    d: {'Open': float(o), 'Close': float(c)} for d, o, c in zip(c_dates, c_opens, c_closes)
+                }
+        candles_by_ticker_date = self._candles_by_ticker_date
+
+        # Precompute vectorized aligned returns matrix for ultra-fast correlation lookups
+        if self._returns_matrix is None:
+            returns_dict = {}
+            for tkr, cdf in historical_candles.items():
+                if 'Close' in cdf.columns:
+                    s = cdf['Close'].pct_change()
+                    if not isinstance(s.index, pd.DatetimeIndex):
+                        s.index = pd.to_datetime(s.index)
+                    returns_dict[tkr] = s
+            aligned_df = pd.DataFrame(returns_dict)
+            date_strings = aligned_df.index.strftime('%Y-%m-%d')
+            self._returns_matrix = aligned_df.values
+            self._returns_date_to_idx = {d: i for i, d in enumerate(date_strings)}
+            self._ticker_to_col_idx = {tkr: i for i, tkr in enumerate(aligned_df.columns)}
 
         current_holdings: Dict[str, Dict[str, Any]] = {}
         total_turnover_trades: float = 0.0
@@ -192,30 +221,34 @@ class Top3AlphaEvaluator:
             if day_preds.empty:
                 continue
 
-            # Check forward index availability (Need t+1 Open and t+5/t+20 Close)
-            try:
-                t_idx = sorted_nifty_dates.index(t_date)
-            except ValueError:
+            # O(1) forward index availability
+            t_idx = nifty_idx_map.get(t_date)
+            if t_idx is None:
                 continue
 
-            if t_idx + 20 >= len(sorted_nifty_dates):
+            # Require at least T+5 for 5D evaluation; T+20 is optional for 20D metrics
+            if t_idx + 5 >= len(sorted_nifty_dates):
                 continue
 
             t_plus_1_date = sorted_nifty_dates[t_idx + 1]
             t_plus_5_date = sorted_nifty_dates[t_idx + 5]
-            t_plus_20_date = sorted_nifty_dates[t_idx + 20]
+            has_20d = (t_idx + 20 < len(sorted_nifty_dates))
+            t_plus_20_date = sorted_nifty_dates[t_idx + 20] if has_20d else None
 
             nifty_entry = float(nifty_by_date[t_plus_1_date]['Open'])
             nifty_exit_5d = float(nifty_by_date[t_plus_5_date]['Close'])
-            nifty_exit_20d = float(nifty_by_date[t_plus_20_date]['Close'])
+            nifty_exit_20d = float(nifty_by_date[t_plus_20_date]['Close']) if t_plus_20_date else float('nan')
 
             if nifty_entry <= 0:
                 continue
 
             nifty_ret_5d = (nifty_exit_5d - nifty_entry) / nifty_entry
-            nifty_ret_20d = (nifty_exit_20d - nifty_entry) / nifty_entry
+            nifty_ret_20d = (nifty_exit_20d - nifty_entry) / nifty_entry if t_plus_20_date else float('nan')
 
             # Filter point-in-time universe eligibility
+            # CRITICAL: Only require T+1 and T+5 for 5D eligibility. T+20 data is optional.
+            # This prevents survivorship-biased filtering where stocks delisting between T+6 and T+20
+            # would be retrospectively purged from the 5D selection pool.
             eligible_candidates = []
             for _, row in day_preds.iterrows():
                 tkr = str(row.get('ticker', 'UNKNOWN'))
@@ -223,54 +256,103 @@ class Top3AlphaEvaluator:
                     continue
 
                 t_dict = candles_by_ticker_date.get(tkr, {})
-                if t_plus_1_date not in t_dict or t_plus_5_date not in t_dict or t_plus_20_date not in t_dict:
+                # 5D eligibility: must have T+1 entry and T+5 exit
+                if t_plus_1_date not in t_dict or t_plus_5_date not in t_dict:
                     continue
 
                 entry_p = float(t_dict[t_plus_1_date]['Open'])
                 exit_p5 = float(t_dict[t_plus_5_date]['Close'])
-                exit_p20 = float(t_dict[t_plus_20_date]['Close'])
 
-                if entry_p <= 0 or exit_p5 <= 0 or exit_p20 <= 0:
+                if entry_p <= 0 or exit_p5 <= 0:
                     continue
 
-                p_cal = float(row.get('calibratedProbability', row.get('pred_prob', 0.5)) or 0.5)
-                gross_ev = float(row.get('grossEV', row.get('EV', 0.0)) or 0.0)
-                net_ev = float(row.get('netEV', row.get('ev_after_cost', gross_ev - 0.0013)) or 0.0)
-                exp_risk = float(row.get('expectedRisk', row.get('risk', abs(row.get('p15', -0.02)))) or 0.02)
-                exp_risk = max(0.005, exp_risk)
+                # 20D exit: optional — compute when available, NaN otherwise
+                if t_plus_20_date and t_plus_20_date in t_dict:
+                    exit_p20 = float(t_dict[t_plus_20_date]['Close'])
+                    if exit_p20 <= 0:
+                        exit_p20 = float('nan')
+                else:
+                    exit_p20 = float('nan')
 
+                # Required fields from ranker output — skip candidate if missing
+                # No fabricated fallback values allowed in research path
+                p_cal_raw = row.get('calibratedProbability', row.get('pred_prob', None))
+                if p_cal_raw is None or (isinstance(p_cal_raw, float) and np.isnan(p_cal_raw)):
+                    continue
+                p_cal = float(p_cal_raw)
+
+                exp_risk_raw = row.get('expectedRisk', row.get('risk', None))
+                if exp_risk_raw is None or (isinstance(exp_risk_raw, float) and np.isnan(exp_risk_raw)):
+                    continue
+                exp_risk = max(0.005, float(exp_risk_raw))
+
+                # Score: use explicit formulas per metric, no shadowing
                 if ranking_metric in ('canonical_alpha', 'opportunity_score', 'canonicalAlphaScore'):
-                    score = float(row.get('canonicalAlphaScore', row.get('opportunityScore', row.get('compositeScore', net_ev / exp_risk))) or 0.0)
+                    score_raw = row.get('canonicalAlphaScore')
+                    if score_raw is None or (isinstance(score_raw, float) and np.isnan(score_raw)):
+                        continue
+                    score = float(score_raw)
                 elif ranking_metric == 'risk_adjusted_ev':
-                    score = float(row.get('canonicalAlphaScore', net_ev / exp_risk) or 0.0)
+                    # Explicitly compute risk-adjusted EV — do NOT fall through to canonicalAlphaScore
+                    net_ev_val = row.get('netEV', row.get('ev_after_cost', None))
+                    if net_ev_val is not None:
+                        score = float(net_ev_val) / exp_risk
+                    else:
+                        gross_ev_val = row.get('grossEV', row.get('EV', None))
+                        if gross_ev_val is not None:
+                            score = (float(gross_ev_val) - self.cost_engine.calculate_round_trip_cost_rate()) / exp_risk
+                        else:
+                            continue
                 elif ranking_metric == 'net_ev':
-                    score = net_ev
+                    net_ev_val = row.get('netEV', row.get('ev_after_cost', None))
+                    if net_ev_val is None:
+                        continue
+                    score = float(net_ev_val)
                 elif ranking_metric == 'calibrated_prob':
                     score = p_cal
                 elif ranking_metric == 'lambda_rank':
-                    score = float(row.get('rank_score', row.get('canonicalAlphaScore', 0.0)) or 0.0)
+                    rank_score_raw = row.get('rank_score')
+                    if rank_score_raw is None:
+                        continue
+                    score = float(rank_score_raw)
                 else:
-                    score = float(row.get('canonicalAlphaScore', row.get('opportunityScore', net_ev / exp_risk)) or 0.0)
+                    score_raw = row.get('canonicalAlphaScore')
+                    if score_raw is None or (isinstance(score_raw, float) and np.isnan(score_raw)):
+                        continue
+                    score = float(score_raw)
 
                 # Realized forward returns
                 fwd_gross_5d = (exit_p5 - entry_p) / entry_p
-                fwd_gross_20d = (exit_p20 - entry_p) / entry_p
+                fwd_gross_20d = (exit_p20 - entry_p) / entry_p if not np.isnan(exit_p20) else float('nan')
 
-                cost_rate_5d = self.cost_engine.calculate_round_trip_cost_rate()
+                eff_mult = cost_multiplier if cost_multiplier is not None else self.cost_multiplier
+                cost_rate_5d = self.cost_engine.calculate_round_trip_cost_rate() * eff_mult
                 cost_rate_20d = cost_rate_5d
 
                 fwd_net_5d = fwd_gross_5d - cost_rate_5d
-                fwd_net_20d = fwd_gross_20d - cost_rate_20d
+                fwd_net_20d = fwd_gross_20d - cost_rate_20d if not np.isnan(fwd_gross_20d) else float('nan')
+
+                # Expected return from ranker (required, not fabricated)
+                exp_ret_raw = row.get('expectedReturn', row.get('p50', None))
+                exp_ret = float(exp_ret_raw) if exp_ret_raw is not None else 0.0
+
+                # ADV: None when unavailable — no fabricated 100k shares
+                adv_raw = row.get('ADV', None)
+                adv20 = float(adv_raw) * entry_p if adv_raw is not None and float(adv_raw) > 0 else None
+
+                # Beta: None when unavailable
+                beta_raw = row.get('beta', None)
+                beta = float(beta_raw) if beta_raw is not None else None
 
                 cand_rec = {
                     'ticker': tkr,
                     'sector': row.get('sector', TICKER_SECTOR_MAP.get(tkr, 'UNKNOWN')),
                     'score': score,
                     'calibratedProbability': p_cal,
-                    'expectedReturn': float(row.get('expectedReturn', row.get('p50', 0.0)) or 0.0),
+                    'expectedReturn': exp_ret,
                     'expectedRisk': exp_risk,
-                    'adv20': float(row.get('ADV', 100000.0) or 100000.0) * entry_p,
-                    'beta': float(row.get('beta', 1.0) or 1.0),
+                    'adv20': adv20,
+                    'beta': beta,
                     'entryPriceOpen': entry_p,
                     'exitPrice5d': exit_p5,
                     'exitPrice20d': exit_p20,
@@ -283,7 +365,7 @@ class Top3AlphaEvaluator:
                     'niftyGrossReturn5d': nifty_ret_5d,
                     'niftyGrossReturn20d': nifty_ret_20d,
                     'excessReturn5d': fwd_net_5d - nifty_ret_5d,
-                    'excessReturn20d': fwd_net_20d - nifty_ret_20d,
+                    'excessReturn20d': (fwd_net_20d - nifty_ret_20d) if not np.isnan(fwd_net_20d) and not np.isnan(nifty_ret_20d) else float('nan'),
                     'date': t_date
                 }
                 eligible_candidates.append(cand_rec)
@@ -293,10 +375,11 @@ class Top3AlphaEvaluator:
                     'date': t_date, 'ticker': tkr, 'score': score,
                     'grossRet': fwd_gross_5d, 'netRet': fwd_net_5d, 'niftyRet': nifty_ret_5d
                 })
-                all_universe_returns_20d.append({
-                    'date': t_date, 'ticker': tkr, 'score': score,
-                    'grossRet': fwd_gross_20d, 'netRet': fwd_net_20d, 'niftyRet': nifty_ret_20d
-                })
+                if not np.isnan(fwd_net_20d):
+                    all_universe_returns_20d.append({
+                        'date': t_date, 'ticker': tkr, 'score': score,
+                        'grossRet': fwd_gross_20d, 'netRet': fwd_net_20d, 'niftyRet': nifty_ret_20d
+                    })
 
             if len(eligible_candidates) < 3:
                 continue
@@ -373,18 +456,20 @@ class Top3AlphaEvaluator:
             mean_corr = float(np.mean(corrs)) if corrs else 0.0
 
             is_clustered = len(set(selected_sectors)) < 3
-            port_beta = float(np.mean([x['beta'] for x in selected_top3]))
+            port_beta = float(np.nanmean([x['beta'] for x in selected_top3 if x['beta'] is not None])) if any(x['beta'] is not None for x in selected_top3) else float('nan')
 
             port_gross_5d = float(np.mean([x['realizedGrossReturn5d'] for x in selected_top3]))
-            port_gross_20d = float(np.mean([x['realizedGrossReturn20d'] for x in selected_top3]))
+            rets_20d = [x['realizedGrossReturn20d'] for x in selected_top3 if not np.isnan(x['realizedGrossReturn20d'])]
+            port_gross_20d = float(np.mean(rets_20d)) if rets_20d else float('nan')
             port_net_5d = float(np.mean([x['realizedNetReturn5d'] for x in selected_top3]))
-            port_net_20d = float(np.mean([x['realizedNetReturn20d'] for x in selected_top3]))
+            net_rets_20d = [x['realizedNetReturn20d'] for x in selected_top3 if not np.isnan(x['realizedNetReturn20d'])]
+            port_net_20d = float(np.mean(net_rets_20d)) if net_rets_20d else float('nan')
 
             port_excess_5d = port_net_5d - nifty_ret_5d
-            port_excess_20d = port_net_20d - nifty_ret_20d
+            port_excess_20d = (port_net_20d - nifty_ret_20d) if not np.isnan(port_net_20d) and not np.isnan(nifty_ret_20d) else float('nan')
 
             stocks_beat_5d = sum(1 for x in selected_top3 if x['realizedNetReturn5d'] > nifty_ret_5d)
-            stocks_beat_20d = sum(1 for x in selected_top3 if x['realizedNetReturn20d'] > nifty_ret_20d)
+            stocks_beat_20d = sum(1 for x in selected_top3 if not np.isnan(x['realizedNetReturn20d']) and not np.isnan(nifty_ret_20d) and x['realizedNetReturn20d'] > nifty_ret_20d)
 
             for rk, cand in enumerate(selected_top3, 1):
                 rec = Top3StockEvaluationRecord(
@@ -412,9 +497,9 @@ class Top3AlphaEvaluator:
                     excessReturn5d=cand['excessReturn5d'],
                     excessReturn20d=cand['excessReturn20d'],
                     beatNifty5d=cand['realizedNetReturn5d'] > nifty_ret_5d,
-                    beatNifty20d=cand['realizedNetReturn20d'] > nifty_ret_20d,
+                    beatNifty20d=(cand['realizedNetReturn20d'] > nifty_ret_20d) if not np.isnan(cand['realizedNetReturn20d']) and not np.isnan(nifty_ret_20d) else False,
                     absoluteWin5d=cand['realizedNetReturn5d'] > 0,
-                    absoluteWin20d=cand['realizedNetReturn20d'] > 0,
+                    absoluteWin20d=cand['realizedNetReturn20d'] > 0 if not np.isnan(cand['realizedNetReturn20d']) else False,
                 )
                 stock_eval_records.append(rec)
 
@@ -435,9 +520,9 @@ class Top3AlphaEvaluator:
                 portfolioExcessReturn5d=port_excess_5d,
                 portfolioExcessReturn20d=port_excess_20d,
                 portfolioBeatNifty5d=port_excess_5d > 0,
-                portfolioBeatNifty20d=port_excess_20d > 0,
+                portfolioBeatNifty20d=port_excess_20d > 0 if not np.isnan(port_excess_20d) else False,
                 top1BeatNifty5d=top1['realizedNetReturn5d'] > nifty_ret_5d,
-                top1BeatNifty20d=top1['realizedNetReturn20d'] > nifty_ret_20d,
+                top1BeatNifty20d=(top1['realizedNetReturn20d'] > nifty_ret_20d) if not np.isnan(top1['realizedNetReturn20d']) and not np.isnan(nifty_ret_20d) else False,
                 stocksBeatingNiftyCount5d=stocks_beat_5d,
                 stocksBeatingNiftyCount20d=stocks_beat_20d,
             )
@@ -460,17 +545,33 @@ class Top3AlphaEvaluator:
         top3_stock_abs_win_rate_5d = sum(1 for s in stock_eval_records if s.absoluteWin5d) / n_stock_evals * 100.0
         top3_port_abs_win_rate_5d = sum(1 for p in portfolio_daily_records if p.portfolioNetReturn5d > 0) / n_days * 100.0
 
-        top1_hit_rate_nifty_20d = sum(1 for p in portfolio_daily_records if p.top1BeatNifty20d) / n_days * 100.0
-        top3_stock_hit_rate_nifty_20d = sum(p.stocksBeatingNiftyCount20d for p in portfolio_daily_records) / (3 * n_days) * 100.0
-        top3_port_hit_rate_nifty_20d = sum(1 for p in portfolio_daily_records if p.portfolioBeatNifty20d) / n_days * 100.0
+        top1_hit_rate_nifty_20d = sum(1 for p in portfolio_daily_records if not np.isnan(p.portfolioExcessReturn20d) and p.top1BeatNifty20d) / max(1, sum(1 for p in portfolio_daily_records if not np.isnan(p.portfolioExcessReturn20d))) * 100.0
+        top3_stock_hit_rate_nifty_20d = sum(p.stocksBeatingNiftyCount20d for p in portfolio_daily_records) / max(1, 3 * sum(1 for p in portfolio_daily_records if not np.isnan(p.portfolioExcessReturn20d))) * 100.0
+        top3_port_hit_rate_nifty_20d = sum(1 for p in portfolio_daily_records if not np.isnan(p.portfolioExcessReturn20d) and p.portfolioBeatNifty20d) / max(1, sum(1 for p in portfolio_daily_records if not np.isnan(p.portfolioExcessReturn20d))) * 100.0
 
         mean_top3_net_5d = float(np.mean([p.portfolioNetReturn5d for p in portfolio_daily_records]) * 100.0)
         mean_nifty_5d = float(np.mean([p.niftyReturn5d for p in portfolio_daily_records]) * 100.0)
         mean_excess_5d = float(np.mean([p.portfolioExcessReturn5d for p in portfolio_daily_records]) * 100.0)
 
-        mean_top3_net_20d = float(np.mean([p.portfolioNetReturn20d for p in portfolio_daily_records]) * 100.0)
-        mean_nifty_20d = float(np.mean([p.niftyReturn20d for p in portfolio_daily_records]) * 100.0)
-        mean_excess_20d = float(np.mean([p.portfolioExcessReturn20d for p in portfolio_daily_records]) * 100.0)
+        valid_20d = [p for p in portfolio_daily_records if not np.isnan(p.portfolioNetReturn20d)]
+        mean_top3_net_20d = float(np.mean([p.portfolioNetReturn20d for p in valid_20d]) * 100.0) if valid_20d else 0.0
+        mean_nifty_20d = float(np.mean([p.niftyReturn20d for p in valid_20d]) * 100.0) if valid_20d else 0.0
+        mean_excess_20d = float(np.mean([p.portfolioExcessReturn20d for p in valid_20d]) * 100.0) if valid_20d else 0.0
+
+        # -------------------------------------------------------------------------
+        # 4.1 Statistical Inference (Newey-West HAC & Block Bootstrap on Excess Returns)
+        # -------------------------------------------------------------------------
+        excess_5d = np.array([p.portfolioExcessReturn5d for p in portfolio_daily_records])
+        hac_5d = compute_newey_west_hac(excess_5d * 100.0, max_lag=5)
+        boot_5d = compute_block_bootstrap_ci(excess_5d * 100.0, block_size=5, n_bootstraps=500)
+
+        if valid_20d:
+            excess_20d = np.array([p.portfolioExcessReturn20d for p in valid_20d])
+            hac_20d = compute_newey_west_hac(excess_20d * 100.0, max_lag=20)
+            boot_20d = compute_block_bootstrap_ci(excess_20d * 100.0, block_size=20, n_bootstraps=500) if len(excess_20d) >= 40 else {}
+        else:
+            hac_20d = {}
+            boot_20d = {}
 
         # -------------------------------------------------------------------------
         # 5. Daily Equity Curve & Financial Risk Ratios
@@ -516,6 +617,12 @@ class Top3AlphaEvaluator:
                 'meanNiftyReturnPct': round(mean_nifty_20d, 3),
                 'meanExcessReturnPct': round(mean_excess_20d, 3),
             },
+            'statisticalInference': {
+                'hac5d': hac_5d,
+                'bootstrap5d': boot_5d,
+                'hac20d': hac_20d,
+                'bootstrap20d': boot_20d,
+            },
             'backtestMetrics': {
                 'cagr': round(cagr, 2),
                 'sharpe': round(sharpe, 2) if isinstance(sharpe, (float, int)) else sharpe,
@@ -545,6 +652,36 @@ class Top3AlphaEvaluator:
         if pair_key in self._corr_cache:
             return self._corr_cache[pair_key]
 
+        # Fast path via precomputed returns matrix
+        if self._returns_matrix is not None and self._returns_date_to_idx is not None and self._ticker_to_col_idx is not None:
+            col_a = self._ticker_to_col_idx.get(tkr_a)
+            col_b = self._ticker_to_col_idx.get(tkr_b)
+            end_idx = self._returns_date_to_idx.get(as_of_date)
+
+            if col_a is not None and col_b is not None and end_idx is not None:
+                start_idx = max(0, end_idx - self.corr_lookback + 1)
+                arr_a = self._returns_matrix[start_idx : end_idx + 1, col_a]
+                arr_b = self._returns_matrix[start_idx : end_idx + 1, col_b]
+
+                valid = ~np.isnan(arr_a) & ~np.isnan(arr_b)
+                if np.count_nonzero(valid) < 20:
+                    self._corr_cache[pair_key] = None
+                    return None
+
+                va = arr_a[valid]
+                vb = arr_b[valid]
+                std_a = np.std(va)
+                std_b = np.std(vb)
+                if std_a == 0 or std_b == 0:
+                    self._corr_cache[pair_key] = 0.0
+                    return 0.0
+
+                corr = np.corrcoef(va, vb)[0, 1]
+                res = float(corr) if not np.isnan(corr) else None
+                self._corr_cache[pair_key] = res
+                return res
+
+        # Fallback path
         ret_a = self._returns_cache.get(tkr_a)
         ret_b = self._returns_cache.get(tkr_b)
 

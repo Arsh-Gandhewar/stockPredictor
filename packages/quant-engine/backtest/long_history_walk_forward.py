@@ -8,9 +8,12 @@ import os
 os.environ["LOKY_MAX_CPU_COUNT"] = "4"
 os.environ["PYTHONUNBUFFERED"] = "1"
 import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(line_buffering=True)
 import glob
 import json
 import hashlib
+from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 import pandas as pd
 import numpy as np
@@ -101,16 +104,17 @@ CRISIS_WINDOWS = [
 ]
 
 # 9 Chronological Walk-Forward Folds with 35-day Purge Gaps (Fold 0 tests 2008 GFC out-of-sample)
+# Expanding model uses all available data from 2002-07-01 forward; Model C (Rolling 5Y) overrides trainStart
 WALK_FORWARD_FOLDS = [
     {"foldIndex": 0, "trainStart": "2002-07-01", "trainEnd": "2007-12-31", "testStart": "2008-01-08", "testEnd": "2009-12-31", "label": "2008-2009 GFC Out-of-Sample"},
-    {"foldIndex": 1, "trainStart": "2008-01-01", "trainEnd": "2010-12-31", "testStart": "2011-02-05", "testEnd": "2012-12-31", "label": "2011-2012 Out-of-Sample"},
-    {"foldIndex": 2, "trainStart": "2008-01-01", "trainEnd": "2012-12-31", "testStart": "2013-02-05", "testEnd": "2014-12-31", "label": "2013-2014 Out-of-Sample"},
-    {"foldIndex": 3, "trainStart": "2008-01-01", "trainEnd": "2014-12-31", "testStart": "2015-02-05", "testEnd": "2016-12-31", "label": "2015-2016 Out-of-Sample"},
-    {"foldIndex": 4, "trainStart": "2008-01-01", "trainEnd": "2016-12-31", "testStart": "2017-02-05", "testEnd": "2018-12-31", "label": "2017-2018 Out-of-Sample"},
-    {"foldIndex": 5, "trainStart": "2008-01-01", "trainEnd": "2018-12-31", "testStart": "2019-02-05", "testEnd": "2020-12-31", "label": "2019-2020 Out-of-Sample"},
-    {"foldIndex": 6, "trainStart": "2008-01-01", "trainEnd": "2020-12-31", "testStart": "2021-02-05", "testEnd": "2022-12-31", "label": "2021-2022 Out-of-Sample"},
-    {"foldIndex": 7, "trainStart": "2008-01-01", "trainEnd": "2022-12-31", "testStart": "2023-02-05", "testEnd": "2024-12-31", "label": "2023-2024 Out-of-Sample"},
-    {"foldIndex": 8, "trainStart": "2008-01-01", "trainEnd": "2024-12-31", "testStart": "2025-02-05", "testEnd": "2026-09-03", "label": "2025-2026 Final Holdout"}
+    {"foldIndex": 1, "trainStart": "2002-07-01", "trainEnd": "2010-12-31", "testStart": "2011-02-05", "testEnd": "2012-12-31", "label": "2011-2012 Out-of-Sample"},
+    {"foldIndex": 2, "trainStart": "2002-07-01", "trainEnd": "2012-12-31", "testStart": "2013-02-05", "testEnd": "2014-12-31", "label": "2013-2014 Out-of-Sample"},
+    {"foldIndex": 3, "trainStart": "2002-07-01", "trainEnd": "2014-12-31", "testStart": "2015-02-05", "testEnd": "2016-12-31", "label": "2015-2016 Out-of-Sample"},
+    {"foldIndex": 4, "trainStart": "2002-07-01", "trainEnd": "2016-12-31", "testStart": "2017-02-05", "testEnd": "2018-12-31", "label": "2017-2018 Out-of-Sample"},
+    {"foldIndex": 5, "trainStart": "2002-07-01", "trainEnd": "2018-12-31", "testStart": "2019-02-05", "testEnd": "2020-12-31", "label": "2019-2020 Out-of-Sample"},
+    {"foldIndex": 6, "trainStart": "2002-07-01", "trainEnd": "2020-12-31", "testStart": "2021-02-05", "testEnd": "2022-12-31", "label": "2021-2022 Out-of-Sample"},
+    {"foldIndex": 7, "trainStart": "2002-07-01", "trainEnd": "2022-12-31", "testStart": "2023-02-05", "testEnd": "2024-12-31", "label": "2023-2024 Out-of-Sample"},
+    {"foldIndex": 8, "trainStart": "2002-07-01", "trainEnd": "2024-12-31", "testStart": "2025-02-05", "testEnd": "2026-09-03", "label": "2025-2026 Final Holdout"}
 ]
 
 class LongHistoryResearchEngine:
@@ -230,19 +234,31 @@ class LongHistoryResearchEngine:
             if len(train_data) < 500 or len(test_data) < 200:
                 continue
                 
-            print(f"Fold {f_idx} ({label}): Train [{actual_tr_start} -> {tr_end}] ({len(train_data)} rows) | Test [{te_start} -> {te_end}] ({len(test_data)} rows)")
+            now_str = datetime.now().strftime('%H:%M:%S')
+            print(f"[{now_str}] Fold {f_idx} ({label}): Train [{actual_tr_start} -> {tr_end}] ({len(train_data)} rows) | Test [{te_start} -> {te_end}] ({len(test_data)} rows)", flush=True)
             
-            # Train Alpha Ranker on fold training data
-            ranker = CrossSectionalAlphaRanker(horizon_str='5d')
-            ranker.fit(train_data, features=FEATURE_NAMES)
+            # Train independent 5D and 20D Alpha Rankers on fold training data
+            ranker_5d = CrossSectionalAlphaRanker(horizon_str='5d')
+            ranker_5d.fit(train_data, features=FEATURE_NAMES)
+            oos_scored_5d = ranker_5d.predict(test_data, features=FEATURE_NAMES)
+            oos_scored_5d['foldIndex'] = f_idx
+
+            ranker_20d = CrossSectionalAlphaRanker(horizon_str='20d')
+            ranker_20d.fit(train_data, features=FEATURE_NAMES)
+            oos_scored_20d = ranker_20d.predict(test_data, features=FEATURE_NAMES)
+            oos_scored_20d['foldIndex'] = f_idx
+
+            all_oos_predictions.append(oos_scored_5d)
             
-            # Predict strictly out-of-sample
-            oos_scored = ranker.predict(test_data, features=FEATURE_NAMES)
-            all_oos_predictions.append(oos_scored)
-            
-            # Evaluate Top-3 alpha on this fold's test period using canonicalAlphaScore
-            fold_eval = self.evaluator.evaluate_top3_alpha(
-                oos_predictions_df=oos_scored,
+            # Evaluate Top-3 alpha on this fold's test period
+            fold_eval_5d = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=oos_scored_5d,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.benchmark_df,
+                ranking_metric='canonical_alpha'
+            )
+            fold_eval_20d = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=oos_scored_20d,
                 historical_candles=self.historical_candles,
                 nifty_candles=self.benchmark_df,
                 ranking_metric='canonical_alpha'
@@ -251,28 +267,48 @@ class LongHistoryResearchEngine:
             fold_results.append({
                 "foldIndex": f_idx,
                 "label": label,
+                "isFrozenHoldout": (f_idx == 8),
                 "trainWindow": f"{actual_tr_start} to {tr_end}",
                 "testWindow": f"{te_start} to {te_end}",
                 "trainRows": len(train_data),
                 "testRows": len(test_data),
-                "cagr": fold_eval['backtestMetrics']['cagr'],
-                "sharpe": fold_eval['backtestMetrics']['sharpe'],
-                "sortino": fold_eval['backtestMetrics']['sortino'],
-                "maxDrawdown": fold_eval['backtestMetrics']['maxDrawdown'],
-                "annualTurnoverPct": fold_eval['backtestMetrics']['annualTurnoverEstPct'],
-                "top1HitRate": fold_eval['hitRates5d']['top1HitRateVsNifty'],
-                "top3StockHitRate": fold_eval['hitRates5d']['top3StockHitRateVsNifty'],
-                "top3PortfolioHitRate": fold_eval['hitRates5d']['top3PortfolioHitRateVsNifty'],
-                "meanExcessReturn5d": fold_eval['hitRates5d']['meanExcessReturnPct'],
-                "sectorClusteringPct": fold_eval['factorCrowding']['sectorClusteringPct'],
-                "pairwiseCorrelation": fold_eval['factorCrowding']['meanPairwiseCorrelation']
+                "cagr": fold_eval_5d['backtestMetrics']['cagr'],
+                "sharpe": fold_eval_5d['backtestMetrics']['sharpe'],
+                "sortino": fold_eval_5d['backtestMetrics']['sortino'],
+                "maxDrawdown": fold_eval_5d['backtestMetrics']['maxDrawdown'],
+                "annualTurnoverPct": fold_eval_5d['backtestMetrics']['annualTurnoverEstPct'],
+                "top1HitRate": fold_eval_5d['hitRates5d']['top1HitRateVsNifty'],
+                "top3StockHitRate": fold_eval_5d['hitRates5d']['top3StockHitRateVsNifty'],
+                "top3PortfolioHitRate": fold_eval_5d['hitRates5d']['top3PortfolioHitRateVsNifty'],
+                "meanExcessReturn5d": fold_eval_5d['hitRates5d']['meanExcessReturnPct'],
+                "top1HitRate20d": fold_eval_20d['hitRates20d']['top1HitRateVsNifty'],
+                "top3PortfolioHitRate20d": fold_eval_20d['hitRates20d']['top3PortfolioHitRateVsNifty'],
+                "meanExcessReturn20d": fold_eval_20d['hitRates20d']['meanExcessReturnPct'],
+                "sectorClusteringPct": fold_eval_5d['factorCrowding']['sectorClusteringPct'],
+                "pairwiseCorrelation": fold_eval_5d['factorCrowding']['meanPairwiseCorrelation']
             })
             
         full_oos_df = pd.concat(all_oos_predictions, axis=0) if all_oos_predictions else pd.DataFrame()
+        
+        # CRITICAL HOLDOUT ISOLATION (P0 Issue 9):
+        # Development aggregate contains ONLY pre-holdout folds (Folds 0-7, pre-2025).
+        # Fold 8 is strictly quarantined and reported separately.
+        dev_oos_df = full_oos_df[full_oos_df['foldIndex'] < 8] if 'foldIndex' in full_oos_df.columns else full_oos_df
+        holdout_oos_df = full_oos_df[full_oos_df['foldIndex'] == 8] if 'foldIndex' in full_oos_df.columns else pd.DataFrame()
+
         aggregate_eval = {}
-        if not full_oos_df.empty:
+        if not dev_oos_df.empty:
             aggregate_eval = self.evaluator.evaluate_top3_alpha(
-                oos_predictions_df=full_oos_df,
+                oos_predictions_df=dev_oos_df,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.benchmark_df,
+                ranking_metric='canonical_alpha'
+            )
+
+        holdout_eval = {}
+        if not holdout_oos_df.empty:
+            holdout_eval = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=holdout_oos_df,
                 historical_candles=self.historical_candles,
                 nifty_candles=self.benchmark_df,
                 ranking_metric='canonical_alpha'
@@ -282,8 +318,12 @@ class LongHistoryResearchEngine:
             "modelType": model_type,
             "folds": fold_results,
             "aggregate": aggregate_eval,
+            "frozenHoldout": holdout_eval,
+            "devOosRows": len(dev_oos_df),
+            "holdoutRows": len(holdout_oos_df),
             "totalOosRows": len(full_oos_df),
-            "oos_df": full_oos_df
+            "oos_df": dev_oos_df,
+            "holdout_df": holdout_oos_df
         }
 
     def run_era_and_crisis_evaluations(self, oos_predictions_df: pd.DataFrame) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -331,9 +371,9 @@ class LongHistoryResearchEngine:
                 nifty_candles=self.benchmark_df,
                 ranking_metric='canonical_alpha'
             )
-            # Measure benchmark return over same crisis window
-            nifty_sub = self.nifty_df.loc[crisis['startDate']:crisis['endDate']]
-            nifty_crash_return = ((nifty_sub['Close'].iloc[-1] - nifty_sub['Close'].iloc[0]) / nifty_sub['Close'].iloc[0]) * 100 if len(nifty_sub) > 1 else 0.0
+            # Measure benchmark return over same crisis window — use consistent spliced benchmark
+            bench_sub = self.benchmark_df.loc[crisis['startDate']:crisis['endDate']]
+            nifty_crash_return = ((bench_sub['Close'].iloc[-1] - bench_sub['Close'].iloc[0]) / bench_sub['Close'].iloc[0]) * 100 if len(bench_sub) > 1 else 0.0
             
             crisis_results.append({
                 "crisisId": crisis['crisisId'],
@@ -350,6 +390,116 @@ class LongHistoryResearchEngine:
             
         return {"eras": era_results}, {"crises": crisis_results}
 
+    def run_benchmark_splice_validation(self, fold_0_oos: pd.DataFrame) -> Dict[str, Any]:
+        """
+        P0 Issue 3: Tests SENSEX-relative and NIFTY-relative results separately
+        around the splice transition (2008-2009 GFC fold).
+        Confirms that alpha remains positive under independently defined benchmark variants.
+        """
+        print("\n>>> RUNNING BENCHMARK SPLICE VALIDATION (FOLD 0: 2008-2009 GFC) <<<")
+        results = {}
+        
+        # 1. Continuous Spliced Benchmark
+        ev_spliced = self.evaluator.evaluate_top3_alpha(
+            oos_predictions_df=fold_0_oos,
+            historical_candles=self.historical_candles,
+            nifty_candles=self.benchmark_df,
+            ranking_metric='canonical_alpha'
+        )
+        results['splicedBenchmark'] = {
+            'benchmark': 'SENSEX pre-Sep07 + NIFTY post-Sep07',
+            'cagr': ev_spliced['backtestMetrics']['cagr'],
+            'sharpe': ev_spliced['backtestMetrics']['sharpe'],
+            'top3HitRateVsBench': ev_spliced['hitRates5d']['top3PortfolioHitRateVsNifty'],
+            'meanExcessReturn5d': ev_spliced['hitRates5d']['meanExcessReturnPct'],
+            'isAlphaPositive': ev_spliced['hitRates5d']['meanExcessReturnPct'] > 0
+        }
+        
+        # 2. Pure NIFTY 50 Benchmark
+        ev_nifty = self.evaluator.evaluate_top3_alpha(
+            oos_predictions_df=fold_0_oos,
+            historical_candles=self.historical_candles,
+            nifty_candles=self.nifty_df,
+            ranking_metric='canonical_alpha'
+        )
+        results['pureNiftyBenchmark'] = {
+            'benchmark': '^NSEI (NIFTY 50 only)',
+            'cagr': ev_nifty['backtestMetrics']['cagr'],
+            'sharpe': ev_nifty['backtestMetrics']['sharpe'],
+            'top3HitRateVsBench': ev_nifty['hitRates5d']['top3PortfolioHitRateVsNifty'],
+            'meanExcessReturn5d': ev_nifty['hitRates5d']['meanExcessReturnPct'],
+            'isAlphaPositive': ev_nifty['hitRates5d']['meanExcessReturnPct'] > 0
+        }
+        
+        return results
+
+    def run_scoring_ablation_study(self, dev_oos_df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        P0 Issue 4 & P1 Issue 19: Ablation study across candidate ranking objectives
+        evaluated strictly on pre-holdout development walk-forward data.
+        """
+        print("\n>>> RUNNING SCORING OBJECTIVE ABLATION STUDY (PRE-HOLDOUT DEVELOPMENT DATA) <<<")
+        objectives = [
+            ('canonical_alpha', 'Canonical AlphaScore (RankPct * [1 + clip(RiskAdjExcess)])'),
+            ('risk_adjusted_ev', 'Risk-Adjusted EV (NetEV / ExpectedRisk)'),
+            ('net_ev', 'Expected Net Excess Return Rank'),
+            ('calibrated_prob', 'Calibrated Probability Rank'),
+            ('lambda_rank', 'Raw LambdaMART Percentile Rank'),
+        ]
+        
+        ablation_results = []
+        for metric_id, metric_name in objectives:
+            ev = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=dev_oos_df,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.benchmark_df,
+                ranking_metric=metric_id
+            )
+            ablation_results.append({
+                'metricId': metric_id,
+                'name': metric_name,
+                'cagr': ev['backtestMetrics']['cagr'],
+                'sharpe': ev['backtestMetrics']['sharpe'],
+                'sortino': ev['backtestMetrics']['sortino'],
+                'maxDrawdown': ev['backtestMetrics']['maxDrawdown'],
+                'top3PortfolioHitRate5d': ev['hitRates5d']['top3PortfolioHitRateVsNifty'],
+                'meanExcessReturn5d': ev['hitRates5d']['meanExcessReturnPct'],
+                'top3PortfolioHitRate20d': ev['hitRates20d']['top3PortfolioHitRateVsNifty'],
+                'meanExcessReturn20d': ev['hitRates20d']['meanExcessReturnPct'],
+            })
+        return ablation_results
+
+    def run_cost_stress_testing(self, dev_oos_df: pd.DataFrame) -> List[Dict[str, Any]]:
+        """
+        P0 Issue 11: Transaction cost stress testing at multiple friction multipliers:
+        1.0x (13 bps), 1.5x (19.5 bps), 2.0x (26 bps), 3.0x (39 bps).
+        """
+        print("\n>>> RUNNING TRANSACTION COST STRESS TESTING <<<")
+        multipliers = [1.0, 1.5, 2.0, 3.0]
+        stress_results = []
+        
+        for mult in multipliers:
+            ev = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=dev_oos_df,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.benchmark_df,
+                ranking_metric='canonical_alpha',
+                cost_multiplier=mult
+            )
+            bps = round(0.0013 * mult * 10000, 1)
+            stress_results.append({
+                'multiplier': mult,
+                'roundTripBps': bps,
+                'cagr': ev['backtestMetrics']['cagr'],
+                'sharpe': ev['backtestMetrics']['sharpe'],
+                'sortino': ev['backtestMetrics']['sortino'],
+                'maxDrawdown': ev['backtestMetrics']['maxDrawdown'],
+                'meanPortfolioNetReturn5d': ev['hitRates5d']['meanPortfolioNetReturnPct'],
+                'meanExcessReturn5d': ev['hitRates5d']['meanExcessReturnPct'],
+                'isAlphaPositive': bool(ev['hitRates5d']['meanExcessReturnPct'] > 0)
+            })
+        return stress_results
+
 def run_comprehensive_long_history_study():
     engine = LongHistoryResearchEngine()
     engine.load_and_preprocess_panel()
@@ -363,11 +513,20 @@ def run_comprehensive_long_history_study():
     # 3. Evaluate Model A (Short History Baseline 2021+)
     res_a = engine.run_walk_forward_evaluation('MODEL_A_SHORT_2021')
     
-    # 4. Era-by-Era & Crisis Diagnostics using Model B's complete out-of-sample predictions
-    oos_master = res_b.get('oos_df', pd.DataFrame())
-    era_report, crisis_report = engine.run_era_and_crisis_evaluations(oos_master)
+    # 4. Benchmark Splice Validation (Fold 0: 2008-2009 GFC)
+    fold_0_data = res_b['oos_df'][res_b['oos_df']['foldIndex'] == 0] if 'foldIndex' in res_b['oos_df'].columns else res_b['oos_df']
+    splice_validation = engine.run_benchmark_splice_validation(fold_0_data)
+
+    # 5. Scoring Objective Ablation Study on Development Data
+    scoring_ablation = engine.run_scoring_ablation_study(res_b['oos_df'])
+
+    # 6. Transaction Cost Stress Testing
+    cost_stress = engine.run_cost_stress_testing(res_b['oos_df'])
+
+    # 7. Era-by-Era & Crisis Diagnostics using Model B's development out-of-sample predictions
+    era_report, crisis_report = engine.run_era_and_crisis_evaluations(res_b['oos_df'])
     
-    # 5. Compile Master Artifact Manifest
+    # 8. Compile Master Artifact Manifest
     manifest = {
         "datasetMetadata": {
             "earliestValidMarketDate": "2002-07-01",
@@ -412,6 +571,13 @@ def run_comprehensive_long_history_study():
                 "meanExcessReturn5d": res_c['aggregate'].get('hitRates5d', {}).get('meanExcessReturnPct')
             }
         },
+        "frozenHoldoutValidation": {
+            "modelB_Holdout": res_b.get('frozenHoldout', {}),
+            "modelC_Holdout": res_c.get('frozenHoldout', {}),
+        },
+        "benchmarkSpliceValidation": splice_validation,
+        "scoringAblationStudy": scoring_ablation,
+        "costStressTesting": cost_stress,
         "eraPerformance": era_report['eras'],
         "crisisStressPerformance": crisis_report['crises']
     }
@@ -426,6 +592,9 @@ def run_comprehensive_long_history_study():
             "modelB_Expanding": res_b,
             "modelC_Rolling": res_c,
             "modelA_Short": res_a,
+            "benchmarkSpliceValidation": splice_validation,
+            "scoringAblationStudy": scoring_ablation,
+            "costStressTesting": cost_stress,
             "eras": era_report,
             "crises": crisis_report
         }, f, indent=2, default=str)

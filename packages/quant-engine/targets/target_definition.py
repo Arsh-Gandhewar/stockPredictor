@@ -81,6 +81,11 @@ def compute_targets(
         target_series[exit_price.isna() | entry_price.isna()] = np.nan
         df[f'target_{h}d'] = target_series
 
+        # Exact production executable event: excess return net of friction > 0
+        net_excess_series = (net_excess_ret > 0.0).astype(float)
+        net_excess_series[exit_price.isna() | entry_price.isna()] = np.nan
+        df[f'target_net_excess_binary_{h}d'] = net_excess_series
+
     return df
 
 def assign_cross_sectional_relevance_grades(
