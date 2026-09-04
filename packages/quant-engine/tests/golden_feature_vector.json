@@ -4830,7 +4830,7 @@
     "rel_volume": 1.1487738188092793,
     "vol_20d": 0.23754121784008603,
     "vol_60d": 0.2607175405404809,
-    "market_vol_regime": 0.39285714285714285,
+    "market_vol_regime": 0.2,
     "market_trend_60d": 1.0,
     "breadth_pct_above_20ma": 0.5,
     "vix_percentile_252d": 0.5,

@@ -202,7 +202,8 @@ class LongHistoryResearchEngine:
         """
         print(f"\n>>> RUNNING WALK-FORWARD EVALUATION FOR: {model_type} <<<")
         fold_results = []
-        all_oos_predictions = []
+        all_oos_predictions_5d = []
+        all_oos_predictions_20d = []
         
         for fold in WALK_FORWARD_FOLDS:
             f_idx = fold['foldIndex']
@@ -250,20 +251,23 @@ class LongHistoryResearchEngine:
             oos_scored_20d = ranker_20d.predict(test_data, features=FEATURE_NAMES)
             oos_scored_20d['foldIndex'] = f_idx
 
-            all_oos_predictions.append(oos_scored_5d)
+            all_oos_predictions_5d.append(oos_scored_5d)
+            all_oos_predictions_20d.append(oos_scored_20d)
             
-            # Evaluate Top-3 alpha on this fold's test period
+            # Evaluate Top-3 alpha on this fold's test period with matching horizon parameters
             fold_eval_5d = self.evaluator.evaluate_top3_alpha(
                 oos_predictions_df=oos_scored_5d,
                 historical_candles=self.historical_candles,
                 nifty_candles=self.benchmark_df,
-                ranking_metric='canonical_alpha'
+                ranking_metric='canonical_alpha',
+                horizon='5d'
             )
             fold_eval_20d = self.evaluator.evaluate_top3_alpha(
                 oos_predictions_df=oos_scored_20d,
                 historical_candles=self.historical_candles,
                 nifty_candles=self.benchmark_df,
-                ranking_metric='canonical_alpha'
+                ranking_metric='canonical_alpha',
+                horizon='20d'
             )
             
             fold_results.append({
@@ -279,6 +283,11 @@ class LongHistoryResearchEngine:
                 "sortino": fold_eval_5d['backtestMetrics']['sortino'],
                 "maxDrawdown": fold_eval_5d['backtestMetrics']['maxDrawdown'],
                 "annualTurnoverPct": fold_eval_5d['backtestMetrics']['annualTurnoverEstPct'],
+                "cagr20d": fold_eval_20d['backtestMetrics']['cagr'],
+                "sharpe20d": fold_eval_20d['backtestMetrics']['sharpe'],
+                "sortino20d": fold_eval_20d['backtestMetrics']['sortino'],
+                "maxDrawdown20d": fold_eval_20d['backtestMetrics']['maxDrawdown'],
+                "annualTurnoverPct20d": fold_eval_20d['backtestMetrics']['annualTurnoverEstPct'],
                 "top1HitRate": fold_eval_5d['hitRates5d']['top1HitRateVsNifty'],
                 "top3StockHitRate": fold_eval_5d['hitRates5d']['top3StockHitRateVsNifty'],
                 "top3PortfolioHitRate": fold_eval_5d['hitRates5d']['top3PortfolioHitRateVsNifty'],
@@ -290,42 +299,72 @@ class LongHistoryResearchEngine:
                 "pairwiseCorrelation": fold_eval_5d['factorCrowding']['meanPairwiseCorrelation']
             })
             
-        full_oos_df = pd.concat(all_oos_predictions, axis=0) if all_oos_predictions else pd.DataFrame()
+        full_oos_df_5d = pd.concat(all_oos_predictions_5d, axis=0) if all_oos_predictions_5d else pd.DataFrame()
+        full_oos_df_20d = pd.concat(all_oos_predictions_20d, axis=0) if all_oos_predictions_20d else pd.DataFrame()
         
         # CRITICAL HOLDOUT ISOLATION (P0 Issue 9):
         # Development aggregate contains ONLY pre-holdout folds (Folds 0-7, pre-2025).
         # Fold 8 is strictly quarantined and reported separately.
-        dev_oos_df = full_oos_df[full_oos_df['foldIndex'] < 8] if 'foldIndex' in full_oos_df.columns else full_oos_df
-        holdout_oos_df = full_oos_df[full_oos_df['foldIndex'] == 8] if 'foldIndex' in full_oos_df.columns else pd.DataFrame()
+        dev_oos_df_5d = full_oos_df_5d[full_oos_df_5d['foldIndex'] < 8] if 'foldIndex' in full_oos_df_5d.columns else full_oos_df_5d
+        holdout_oos_df_5d = full_oos_df_5d[full_oos_df_5d['foldIndex'] == 8] if 'foldIndex' in full_oos_df_5d.columns else pd.DataFrame()
+
+        dev_oos_df_20d = full_oos_df_20d[full_oos_df_20d['foldIndex'] < 8] if 'foldIndex' in full_oos_df_20d.columns else full_oos_df_20d
+        holdout_oos_df_20d = full_oos_df_20d[full_oos_df_20d['foldIndex'] == 8] if 'foldIndex' in full_oos_df_20d.columns else pd.DataFrame()
 
         aggregate_eval = {}
-        if not dev_oos_df.empty:
+        if not dev_oos_df_5d.empty:
             aggregate_eval = self.evaluator.evaluate_top3_alpha(
-                oos_predictions_df=dev_oos_df,
+                oos_predictions_df=dev_oos_df_5d,
                 historical_candles=self.historical_candles,
                 nifty_candles=self.benchmark_df,
-                ranking_metric='canonical_alpha'
+                ranking_metric='canonical_alpha',
+                horizon='5d'
+            )
+
+        aggregate_eval_20d = {}
+        if not dev_oos_df_20d.empty:
+            aggregate_eval_20d = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=dev_oos_df_20d,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.benchmark_df,
+                ranking_metric='canonical_alpha',
+                horizon='20d'
             )
 
         holdout_eval = {}
-        if not holdout_oos_df.empty:
+        if not holdout_oos_df_5d.empty:
             holdout_eval = self.evaluator.evaluate_top3_alpha(
-                oos_predictions_df=holdout_oos_df,
+                oos_predictions_df=holdout_oos_df_5d,
                 historical_candles=self.historical_candles,
                 nifty_candles=self.benchmark_df,
-                ranking_metric='canonical_alpha'
+                ranking_metric='canonical_alpha',
+                horizon='5d'
+            )
+
+        holdout_eval_20d = {}
+        if not holdout_oos_df_20d.empty:
+            holdout_eval_20d = self.evaluator.evaluate_top3_alpha(
+                oos_predictions_df=holdout_oos_df_20d,
+                historical_candles=self.historical_candles,
+                nifty_candles=self.benchmark_df,
+                ranking_metric='canonical_alpha',
+                horizon='20d'
             )
             
         return {
             "modelType": model_type,
             "folds": fold_results,
             "aggregate": aggregate_eval,
+            "aggregate20d": aggregate_eval_20d,
             "frozenHoldout": holdout_eval,
-            "devOosRows": len(dev_oos_df),
-            "holdoutRows": len(holdout_oos_df),
-            "totalOosRows": len(full_oos_df),
-            "oos_df": dev_oos_df,
-            "holdout_df": holdout_oos_df
+            "frozenHoldout20d": holdout_eval_20d,
+            "devOosRows": len(dev_oos_df_5d),
+            "holdoutRows": len(holdout_oos_df_5d),
+            "totalOosRows": len(full_oos_df_5d),
+            "oos_df": dev_oos_df_5d,
+            "oos_df_20d": dev_oos_df_20d,
+            "holdout_df": holdout_oos_df_5d,
+            "holdout_df_20d": holdout_oos_df_20d
         }
 
     def run_era_and_crisis_evaluations(self, oos_predictions_df: pd.DataFrame) -> Tuple[Dict[str, Any], Dict[str, Any]]:
@@ -575,7 +614,9 @@ def run_comprehensive_long_history_study():
         },
         "frozenHoldoutValidation": {
             "modelB_Holdout": res_b.get('frozenHoldout', {}),
+            "modelB_Holdout20d": res_b.get('frozenHoldout20d', {}),
             "modelC_Holdout": res_c.get('frozenHoldout', {}),
+            "modelC_Holdout20d": res_c.get('frozenHoldout20d', {}),
         },
         "benchmarkSpliceValidation": splice_validation,
         "scoringAblationStudy": scoring_ablation,
@@ -583,6 +624,15 @@ def run_comprehensive_long_history_study():
         "eraPerformance": era_report['eras'],
         "crisisStressPerformance": crisis_report['crises']
     }
+    
+    # Load IC diagnostic report if present and bind into manifest
+    ic_rep_path = "packages/quant-engine/research/ic_diagnostic_report.json"
+    if os.path.exists(ic_rep_path):
+        try:
+            with open(ic_rep_path, 'r') as ic_f:
+                manifest["icDiagnosticReport"] = json.load(ic_f)
+        except Exception:
+            pass
     
     manifest_path = "packages/quant-engine/research/historical_data_manifest.json"
     report_path = "packages/quant-engine/research/long_history_alpha_report.json"

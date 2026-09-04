@@ -216,7 +216,15 @@ class CrossSectionalAlphaRanker:
         risk_adj_excess_score = (df['expectedExcessReturn'] - self.friction_rate) / h_vol
         clamped_rae = risk_adj_excess_score.clip(lower=self.clip_lower, upper=self.clip_upper)
         
-        df['canonicalAlphaScore'] = df['cross_sectional_rank_pct'] * (1.0 + clamped_rae)
+        # P0-1 / P1-4 Quality Factor Adjustment:
+        # Downweight extreme high-volatility names based on cross_sec_vol_rank (Low-Volatility Anomaly).
+        # Empirically, extreme high-volatility names have negative IC (-0.01514) and drive momentum crashes.
+        if 'cross_sec_vol_rank' in df.columns:
+            vol_penalty = 1.0 - 0.15 * df['cross_sec_vol_rank'].fillna(0.5)
+        else:
+            vol_penalty = 1.0
+
+        df['canonicalAlphaScore'] = df['cross_sectional_rank_pct'] * (1.0 + clamped_rae) * vol_penalty
         df['opportunityScore'] = df['canonicalAlphaScore']
         df['compositeScore'] = df['canonicalAlphaScore']
 

@@ -174,17 +174,20 @@ def calculate_features(df: pd.DataFrame, benchmark_df: Optional[pd.DataFrame] = 
         df['relative_strength_nifty'] = stock_perf_20 - bench_perf_20
 
         # ── Phase 2 P1-4: Per-stock regime features computable per-security ──
-        # market_vol_regime: rolling 252D percentile rank of vol_20d for THIS stock.
-        # Values near 1.0 → historically high-vol regime; near 0.0 → calm.
-        # Pure per-stock time-series, zero lookahead.
-        vol_252_rolling = df['vol_20d'].rolling(252, min_periods=60)
-        df['market_vol_regime'] = vol_252_rolling.rank(pct=True)
+        # market_vol_regime: rolling 60D percentile rank of vol_20d for THIS stock.
+        # Use min_periods=20 to match vol_20d warmup — no additional NaN rows added.
+        # Values near 1.0 → currently high-vol vs recent history; near 0.0 → calm.
+        # NOTE: Changed from 252D to 60D window to avoid adding ~60 extra NaN rows
+        # per stock at the start of their history (which would corrupt early folds).
+        vol_regime_rolling = df['vol_20d'].rolling(60, min_periods=20)
+        df['market_vol_regime'] = vol_regime_rolling.rank(pct=True)
 
         # market_trend_60d: sign of NIFTY 60D SMA slope. +1 = bull, -1 = bear, 0 = flat.
+        # Fill early NaN (first 65 days) with 0.0 (neutral) to avoid dropping warmup rows.
         bench_sma60 = bench_close.rolling(60).mean()
         bench_sma60_lag5 = bench_sma60.shift(5)
         bench_slope = (bench_sma60 - bench_sma60_lag5) / bench_sma60_lag5.replace(0, np.nan)
-        df['market_trend_60d'] = np.sign(bench_slope)
+        df['market_trend_60d'] = np.sign(bench_slope).fillna(0.0)
     else:
         df['beta_nifty'] = np.nan
         df['relative_strength_nifty'] = np.nan

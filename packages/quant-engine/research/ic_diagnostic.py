@@ -186,4 +186,4 @@ def main():
         print(f"  {fs['fractile']}: excess={fs['mean_excess_vs_universe']:+.5f}  IR={fs['ir']}")
 
 if __name__ == "__main__":
-    main()
+    main()

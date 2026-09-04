@@ -1,0 +1,298 @@
+{
+  "description": "P0-3 IC Diagnostic + P1-5 Raw Alpha Spread (pre-2025 OOS only)",
+  "oosRows": 204366,
+  "overallIC": {
+    "5d": {
+      "mean": 0.01554,
+      "std": 0.1876,
+      "ir": 1.315,
+      "pct_positive": 0.529,
+      "n": 3764
+    },
+    "20d": {
+      "mean": 0.02559,
+      "std": 0.18479,
+      "ir": 2.198,
+      "pct_positive": 0.549,
+      "n": 3764
+    }
+  },
+  "icByEra": [
+    {
+      "eraId": "ERA_1_GFC",
+      "name": "2008 Global Financial Crisis & V-Recovery",
+      "ic_5d": {
+        "mean": 0.02584,
+        "std": 0.22331,
+        "ir": 1.837,
+        "pct_positive": 0.552,
+        "n": 484
+      },
+      "ic_20d": {
+        "mean": 0.03707,
+        "std": 0.22183,
+        "ir": 2.653,
+        "pct_positive": 0.589,
+        "n": 484
+      }
+    },
+    {
+      "eraId": "ERA_2_EURO_INFLATION",
+      "name": "2010-2011 European Debt Crisis & Inflation Shock",
+      "ic_5d": {
+        "mean": 0.08385,
+        "std": 0.1774,
+        "ir": 7.503,
+        "pct_positive": 0.658,
+        "n": 222
+      },
+      "ic_20d": {
+        "mean": 0.08385,
+        "std": 0.19192,
+        "ir": 6.935,
+        "pct_positive": 0.64,
+        "n": 222
+      }
+    },
+    {
+      "eraId": "ERA_3_TAPER_ELECTION",
+      "name": "2012-2014 Taper Tantrum & Modi 1.0 Rally",
+      "ic_5d": {
+        "mean": 0.01659,
+        "std": 0.20417,
+        "ir": 1.29,
+        "pct_positive": 0.524,
+        "n": 712
+      },
+      "ic_20d": {
+        "mean": 0.03084,
+        "std": 0.20722,
+        "ir": 2.363,
+        "pct_positive": 0.546,
+        "n": 712
+      }
+    },
+    {
+      "eraId": "ERA_4_COMMODITY_DEMON",
+      "name": "2015-2016 Commodity Slowdown & Demonetization",
+      "ic_5d": {
+        "mean": 0.01992,
+        "std": 0.16734,
+        "ir": 1.89,
+        "pct_positive": 0.571,
+        "n": 468
+      },
+      "ic_20d": {
+        "mean": 0.04608,
+        "std": 0.15474,
+        "ir": 4.728,
+        "pct_positive": 0.592,
+        "n": 468
+      }
+    },
+    {
+      "eraId": "ERA_5_GST_NBFC",
+      "name": "2017-2019 GST Rollout & IL&FS Liquidity Shock",
+      "ic_5d": {
+        "mean": 0.00884,
+        "std": 0.17839,
+        "ir": 0.787,
+        "pct_positive": 0.507,
+        "n": 688
+      },
+      "ic_20d": {
+        "mean": 0.02907,
+        "std": 0.16255,
+        "ir": 2.839,
+        "pct_positive": 0.545,
+        "n": 688
+      }
+    },
+    {
+      "eraId": "ERA_6_COVID_SHOCK",
+      "name": "2020 COVID-19 Crash & Rapid Liquidity Recovery",
+      "ic_5d": {
+        "mean": 0.00174,
+        "std": 0.19434,
+        "ir": 0.142,
+        "pct_positive": 0.55,
+        "n": 251
+      },
+      "ic_20d": {
+        "mean": 0.00483,
+        "std": 0.17961,
+        "ir": 0.427,
+        "pct_positive": 0.57,
+        "n": 251
+      }
+    },
+    {
+      "eraId": "ERA_7_RETAIL_TIGHTENING",
+      "name": "2021-2024 Retail Expansion, Global Inflation & Capex Boom",
+      "ic_5d": {
+        "mean": -0.00032,
+        "std": 0.16639,
+        "ir": -0.031,
+        "pct_positive": 0.482,
+        "n": 939
+      },
+      "ic_20d": {
+        "mean": -0.00531,
+        "std": 0.16847,
+        "ir": -0.5,
+        "pct_positive": 0.485,
+        "n": 939
+      }
+    }
+  ],
+  "featureFamilyIC": {
+    "momentum": {
+      "n_features": 8,
+      "features": [
+        "momentum_5",
+        "momentum_20",
+        "ret_1d",
+        "ret_5d",
+        "ret_20d",
+        "roc_12",
+        "dist_52w_high",
+        "dist_52w_low"
+      ],
+      "mean_ic_5d": -0.00763,
+      "pct_positive_ic": 0.25
+    },
+    "oscillator": {
+      "n_features": 3,
+      "features": [
+        "rsi_14",
+        "macd_hist",
+        "stoch_k"
+      ],
+      "mean_ic_5d": -0.01264,
+      "pct_positive_ic": 0.0
+    },
+    "ma_trend": {
+      "n_features": 3,
+      "features": [
+        "sma_20_dist",
+        "sma_50_dist",
+        "ema_20_dist"
+      ],
+      "mean_ic_5d": -0.01008,
+      "pct_positive_ic": 0.0
+    },
+    "volatility": {
+      "n_features": 6,
+      "features": [
+        "atr_percent",
+        "bb_width",
+        "annualized_volatility",
+        "downside_deviation",
+        "vol_20d",
+        "vol_60d"
+      ],
+      "mean_ic_5d": -0.01514,
+      "pct_positive_ic": 0.0
+    },
+    "volume": {
+      "n_features": 2,
+      "features": [
+        "volume_z_score",
+        "rel_volume"
+      ],
+      "mean_ic_5d": -0.01007,
+      "pct_positive_ic": 0.0
+    },
+    "benchmark": {
+      "n_features": 3,
+      "features": [
+        "beta_nifty",
+        "relative_strength_nifty",
+        "gap_pct"
+      ],
+      "mean_ic_5d": -0.01068,
+      "pct_positive_ic": 0.0
+    },
+    "regime": {
+      "n_features": 6,
+      "features": [
+        "market_vol_regime",
+        "market_trend_60d",
+        "breadth_pct_above_20ma",
+        "vix_percentile_252d",
+        "cross_sec_vol_rank",
+        "adv_decline_ratio"
+      ],
+      "mean_ic_5d": 0.0098,
+      "pct_positive_ic": 0.667
+    }
+  },
+  "rawFractileSpreads5d": [
+    {
+      "fractile": "Top-1",
+      "n_days": 3764,
+      "mean_excess_vs_universe": 0.08427,
+      "std": 1.45901,
+      "ir": 0.917,
+      "pct_positive": 0.492
+    },
+    {
+      "fractile": "Top-3",
+      "n_days": 3764,
+      "mean_excess_vs_universe": 0.07267,
+      "std": 0.87715,
+      "ir": 1.315,
+      "pct_positive": 0.521
+    },
+    {
+      "fractile": "Top-5",
+      "n_days": 3764,
+      "mean_excess_vs_universe": 0.05436,
+      "std": 0.66587,
+      "ir": 1.296,
+      "pct_positive": 0.528
+    },
+    {
+      "fractile": "Top-10",
+      "n_days": 3764,
+      "mean_excess_vs_universe": 0.05065,
+      "std": 0.43588,
+      "ir": 1.845,
+      "pct_positive": 0.535
+    }
+  ],
+  "rawFractileSpreads20d": [
+    {
+      "fractile": "Top-1",
+      "n_days": 3764,
+      "mean_excess_vs_universe": 0.1098,
+      "std": 1.54802,
+      "ir": 1.126,
+      "pct_positive": 0.517
+    },
+    {
+      "fractile": "Top-3",
+      "n_days": 3764,
+      "mean_excess_vs_universe": 0.10581,
+      "std": 0.90784,
+      "ir": 1.85,
+      "pct_positive": 0.547
+    },
+    {
+      "fractile": "Top-5",
+      "n_days": 3764,
+      "mean_excess_vs_universe": 0.08089,
+      "std": 0.68796,
+      "ir": 1.867,
+      "pct_positive": 0.561
+    },
+    {
+      "fractile": "Top-10",
+      "n_days": 3764,
+      "mean_excess_vs_universe": 0.05691,
+      "std": 0.45,
+      "ir": 2.007,
+      "pct_positive": 0.555
+    }
+  ]
+}

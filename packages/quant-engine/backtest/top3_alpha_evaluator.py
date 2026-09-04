@@ -147,10 +147,13 @@ class Top3AlphaEvaluator:
         historical_candles: Dict[str, pd.DataFrame],
         nifty_candles: pd.DataFrame,
         ranking_metric: str = 'canonical_alpha',
-        cost_multiplier: Optional[float] = None
+        cost_multiplier: Optional[float] = None,
+        horizon: str = '5d'
     ) -> Dict[str, Any]:
         """
         Executes complete out-of-sample Top-3 alpha evaluation.
+        Supports dual horizons ('5d' and '20d') with horizon-aware holding periods
+        and inverse-volatility position scaling.
         """
         df = oos_predictions_df.copy()
         if 'predictionTimestamp' in df.columns:
@@ -391,8 +394,8 @@ class Top3AlphaEvaluator:
             # Stocks held for fewer than MIN_HOLDING_DAYS receive a score boost so
             # that the ranker must overcome a meaningful hurdle before rotating them
             # out. This cuts daily churn without hard-locking positions.
-            MIN_HOLDING_DAYS = 5
-            CONTINUITY_BONUS = 0.15  # Applied as additive boost to the raw score
+            MIN_HOLDING_DAYS = 20 if horizon == '20d' else 5
+            CONTINUITY_BONUS = 0.25 if horizon == '20d' else 0.15
 
             # Determine effective scores with continuity bonus applied
             for cand in eligible_candidates:
@@ -482,12 +485,20 @@ class Top3AlphaEvaluator:
             is_clustered = len(set(selected_sectors)) < 3
             port_beta = float(np.nanmean([x['beta'] for x in selected_top3 if x['beta'] is not None])) if any(x['beta'] is not None for x in selected_top3) else float('nan')
 
-            port_gross_5d = float(np.mean([x['realizedGrossReturn5d'] for x in selected_top3]))
-            rets_20d = [x['realizedGrossReturn20d'] for x in selected_top3 if not np.isnan(x['realizedGrossReturn20d'])]
-            port_gross_20d = float(np.mean(rets_20d)) if rets_20d else float('nan')
-            port_net_5d = float(np.mean([x['realizedNetReturn5d'] for x in selected_top3]))
-            net_rets_20d = [x['realizedNetReturn20d'] for x in selected_top3 if not np.isnan(x['realizedNetReturn20d'])]
-            port_net_20d = float(np.mean(net_rets_20d)) if net_rets_20d else float('nan')
+            # P1-5: Inverse-volatility portfolio position weighting
+            inv_vols = [1.0 / max(0.005, float(x.get('expectedRisk', 0.02))) for x in selected_top3]
+            total_inv_vol = sum(inv_vols) if sum(inv_vols) > 0 else 1.0
+            port_weights = [iv / total_inv_vol for iv in inv_vols]
+
+            port_gross_5d = float(sum(w * x['realizedGrossReturn5d'] for w, x in zip(port_weights, selected_top3)))
+            rets_20d = [(w, x['realizedGrossReturn20d']) for w, x in zip(port_weights, selected_top3) if not np.isnan(x['realizedGrossReturn20d'])]
+            sum_w20 = sum(w for w, _ in rets_20d)
+            port_gross_20d = float(sum(w * r for w, r in rets_20d) / sum_w20) if sum_w20 > 0 else float('nan')
+
+            port_net_5d = float(sum(w * x['realizedNetReturn5d'] for w, x in zip(port_weights, selected_top3)))
+            net_rets_20d = [(w, x['realizedNetReturn20d']) for w, x in zip(port_weights, selected_top3) if not np.isnan(x['realizedNetReturn20d'])]
+            sum_wnet20 = sum(w for w, _ in net_rets_20d)
+            port_net_20d = float(sum(w * r for w, r in net_rets_20d) / sum_wnet20) if sum_wnet20 > 0 else float('nan')
 
             port_excess_5d = port_net_5d - nifty_ret_5d
             port_excess_20d = (port_net_20d - nifty_ret_20d) if not np.isnan(port_net_20d) and not np.isnan(nifty_ret_20d) else float('nan')
@@ -600,7 +611,9 @@ class Top3AlphaEvaluator:
         # -------------------------------------------------------------------------
         # 5. Daily Equity Curve & Financial Risk Ratios
         # -------------------------------------------------------------------------
-        equity_series, daily_returns = self._build_continuous_equity_curve(portfolio_daily_records, initial_cash=1_000_000.0)
+        equity_series, daily_returns = self._build_continuous_equity_curve(
+            portfolio_daily_records, initial_cash=1_000_000.0, horizon=horizon
+        )
         cagr, sharpe, sortino, max_dd, pf = self._compute_performance_ratios(equity_series, daily_returns)
 
         # -------------------------------------------------------------------------
@@ -741,14 +754,20 @@ class Top3AlphaEvaluator:
     def _build_continuous_equity_curve(
         self,
         portfolio_records: List[Top3DailyPortfolioRecord],
-        initial_cash: float = 1_000_000.0
+        initial_cash: float = 1_000_000.0,
+        horizon: str = '5d'
     ) -> Tuple[pd.Series, pd.Series]:
         equity = initial_cash
         equity_dict = {}
         daily_rets = []
+        h_days = 20.0 if horizon == '20d' else 5.0
 
         for p in portfolio_records:
-            r_day = ((1.0 + p.portfolioNetReturn5d) ** (1.0 / 5.0)) - 1.0
+            if horizon == '20d' and not np.isnan(p.portfolioNetReturn20d):
+                net_ret = p.portfolioNetReturn20d
+            else:
+                net_ret = p.portfolioNetReturn5d
+            r_day = ((1.0 + net_ret) ** (1.0 / h_days)) - 1.0
             equity *= (1.0 + r_day)
             equity_dict[p.date] = equity
             daily_rets.append(r_day)
