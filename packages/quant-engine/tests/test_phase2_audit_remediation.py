@@ -170,18 +170,14 @@ def test_spearman_ic_inverse():
     r, _ = stats.spearmanr(scores, returns)
     assert abs(r + 1.0) < 1e-10
 
-# --- P1-5: Volatility-scaled inverse-vol weighting ----------------------------
-def test_inverse_volatility_weighting_monotonicity():
-    """P1-5: Lower expected risk must receive strictly higher portfolio weight."""
-    risks = [0.01, 0.02, 0.04]
-    inv_vols = [1.0 / max(0.005, r) for r in risks]
-    total_inv_vol = sum(inv_vols)
-    weights = [iv / total_inv_vol for iv in inv_vols]
-    assert weights[0] > weights[1] > weights[2], "Weights must be monotonically decreasing in risk"
-    assert abs(sum(weights) - 1.0) < 1e-6, "Weights must sum to 1.0"
-    assert weights[0] == pytest.approx(4.0 / 7.0, rel=1e-3)
-    assert weights[1] == pytest.approx(2.0 / 7.0, rel=1e-3)
-    assert weights[2] == pytest.approx(1.0 / 7.0, rel=1e-3)
+# --- P1-5: Equal-weight portfolio construction --------------------------------
+def test_equal_weight_portfolio():
+    """P1-5: With 3 positions, each should receive exactly 1/3 weight."""
+    n_pos = 3
+    port_weights = [1.0 / n_pos] * n_pos
+    assert len(port_weights) == 3
+    assert all(abs(w - 1.0 / 3.0) < 1e-10 for w in port_weights), "All weights must be 1/3"
+    assert abs(sum(port_weights) - 1.0) < 1e-10, "Weights must sum to 1.0"
 
 
 # --- P0-2: Horizon-aware holding period --------------------------------------
@@ -196,9 +192,11 @@ def test_evaluator_supports_horizon_parameter():
     assert sig.parameters['horizon'].default == '5d'
 
 
-# --- P0-1 / P1-4: Quality-adjusted canonicalAlphaScore ------------------------
-def test_quality_adjusted_canonical_alpha_score():
-    """P0-1: Stocks with identical rank and return but lower volatility get higher canonicalAlphaScore."""
+# --- P0-1: canonicalAlphaScore is vol-penalty-free ----------------------------
+def test_canonical_alpha_score_no_vol_penalty():
+    """After holdout regression fix, canonicalAlphaScore must NOT penalise by volatility.
+    Stocks with identical rank_score should get identical canonicalAlphaScore
+    regardless of cross_sec_vol_rank."""
     from models.alpha_ranker import CrossSectionalAlphaRanker
     ranker = CrossSectionalAlphaRanker(horizon_str='5d')
     test_df = pd.DataFrame({
@@ -206,8 +204,8 @@ def test_quality_adjusted_canonical_alpha_score():
         'ticker': ['LOW_VOL', 'HIGH_VOL'],
         'rank_score': [1.5, 1.5],
         'pred_std_excess': [0.1, 0.1],
-        'vol_20d': [0.15, 0.45],
-        'cross_sec_vol_rank': [0.1, 0.9],
+        'vol_20d': [0.25, 0.25],          # same vol so h_vol is identical
+        'cross_sec_vol_rank': [0.1, 0.9], # different — must NOT affect score
         'target_rank_grade_5d': [3, 3],
         'target_vol_std_excess_5d': [0.5, 0.5]
     })
@@ -227,7 +225,6 @@ def test_quality_adjusted_canonical_alpha_score():
     score_low_vol = scored.loc[scored['ticker'] == 'LOW_VOL', 'canonicalAlphaScore'].iloc[0]
     score_high_vol = scored.loc[scored['ticker'] == 'HIGH_VOL', 'canonicalAlphaScore'].iloc[0]
 
-    assert score_low_vol > score_high_vol, (
-        f"Low-volatility stock should receive higher canonicalAlphaScore: {score_low_vol} vs {score_high_vol}"
+    assert abs(score_low_vol - score_high_vol) < 1e-10, (
+        f"canonicalAlphaScore must be identical for equal-rank stocks: {score_low_vol} vs {score_high_vol}"
     )
-

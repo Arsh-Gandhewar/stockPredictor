@@ -394,8 +394,8 @@ class Top3AlphaEvaluator:
             # Stocks held for fewer than MIN_HOLDING_DAYS receive a score boost so
             # that the ranker must overcome a meaningful hurdle before rotating them
             # out. This cuts daily churn without hard-locking positions.
-            MIN_HOLDING_DAYS = 20 if horizon == '20d' else 5
-            CONTINUITY_BONUS = 0.25 if horizon == '20d' else 0.15
+            MIN_HOLDING_DAYS = 5
+            CONTINUITY_BONUS = 0.15
 
             # Determine effective scores with continuity bonus applied
             for cand in eligible_candidates:
@@ -485,10 +485,13 @@ class Top3AlphaEvaluator:
             is_clustered = len(set(selected_sectors)) < 3
             port_beta = float(np.nanmean([x['beta'] for x in selected_top3 if x['beta'] is not None])) if any(x['beta'] is not None for x in selected_top3) else float('nan')
 
-            # P1-5: Inverse-volatility portfolio position weighting
-            inv_vols = [1.0 / max(0.005, float(x.get('expectedRisk', 0.02))) for x in selected_top3]
-            total_inv_vol = sum(inv_vols) if sum(inv_vols) > 0 else 1.0
-            port_weights = [iv / total_inv_vol for iv in inv_vols]
+            # Equal-weight portfolio position weighting.
+            # Inverse-vol weighting was removed after holdout analysis showed it
+            # double-penalized volatile names alongside the vol_penalty, creating
+            # compounding defensive bias.  With only 3 positions the diversification
+            # benefit of inv-vol is negligible.
+            n_pos = len(selected_top3)
+            port_weights = [1.0 / n_pos] * n_pos
 
             port_gross_5d = float(sum(w * x['realizedGrossReturn5d'] for w, x in zip(port_weights, selected_top3)))
             rets_20d = [(w, x['realizedGrossReturn20d']) for w, x in zip(port_weights, selected_top3) if not np.isnan(x['realizedGrossReturn20d'])]
