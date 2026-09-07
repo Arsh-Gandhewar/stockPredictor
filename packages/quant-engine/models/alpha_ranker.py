@@ -295,3 +295,129 @@ def train_walk_forward_alpha_ranker(
         'oos_predictions_df': oos_df,
         'holdout_bounds': holdout_bounds
     }
+
+
+class RegimeConditionedAlphaRanker:
+    """
+    Hierarchical multi-regime specialist alpha ranker.
+    Trains:
+    - 1 Global Anchor Ranker on the entire training partition.
+    - Specialized CrossSectionalAlphaRanker instances for every distinct regime_state
+      in the training set with >= min_specialist_samples (default 800) and >= min_specialist_dates (default 15).
+    
+    At prediction time:
+    - Routes each date's cross-section to its active regime specialist.
+    - Regimes with insufficient historical samples gracefully fall back to the global anchor model.
+    - Preserves exact scale consistency of canonicalAlphaScore, expectedExcessReturn,
+      and calibratedProbability.
+    """
+
+    def __init__(
+        self,
+        horizon_str: str = '5d',
+        min_specialist_samples: int = 800,
+        min_specialist_dates: int = 15,
+        default_regime: str = 'BULL_LOWVOL_CHOPPY',
+        **ranker_kwargs
+    ):
+        self.horizon_str = horizon_str
+        self.min_specialist_samples = min_specialist_samples
+        self.min_specialist_dates = min_specialist_dates
+        self.default_regime = default_regime
+        self.ranker_kwargs = ranker_kwargs
+        self.global_ranker = CrossSectionalAlphaRanker(horizon_str=horizon_str, **ranker_kwargs)
+        self.specialists: Dict[str, CrossSectionalAlphaRanker] = {}
+        self.trained_states: List[str] = []
+        self.is_fitted = False
+
+    def fit(
+        self,
+        train_df: pd.DataFrame,
+        features: List[str],
+        tune_df: Optional[pd.DataFrame] = None
+    ) -> 'RegimeConditionedAlphaRanker':
+        """
+        Fits global anchor model and all qualifying regime specialist models.
+        """
+        # 1. Fit Global Anchor Ranker
+        self.global_ranker.fit(train_df, features=features, tune_df=tune_df)
+
+        # 2. Fit Specialist Models for qualifying regimes
+        if 'regime_state' not in train_df.columns:
+            self.is_fitted = True
+            return self
+
+        unique_states = train_df['regime_state'].dropna().unique()
+        for state in unique_states:
+            st_sub = train_df[train_df['regime_state'] == state]
+            n_dates = (
+                st_sub['predictionTimestamp'].nunique()
+                if 'predictionTimestamp' in st_sub.columns
+                else len(st_sub.index.unique())
+            )
+
+            if len(st_sub) >= self.min_specialist_samples and n_dates >= self.min_specialist_dates:
+                st_ranker = CrossSectionalAlphaRanker(horizon_str=self.horizon_str, **self.ranker_kwargs)
+                st_tune = (
+                    tune_df[tune_df['regime_state'] == state]
+                    if (tune_df is not None and 'regime_state' in tune_df.columns)
+                    else None
+                )
+                st_ranker.fit(st_sub, features=features, tune_df=st_tune)
+                self.specialists[state] = st_ranker
+                self.trained_states.append(state)
+            else:
+                self.specialists[state] = self.global_ranker
+
+        self.is_fitted = True
+        return self
+
+    def predict(self, test_df: pd.DataFrame, features: List[str]) -> pd.DataFrame:
+        """
+        Routes predictions to each date's corresponding regime specialist or global fallback.
+        """
+        if not self.is_fitted:
+            raise RuntimeError("RegimeConditionedAlphaRanker must be fitted before predict.")
+
+        if 'regime_state' not in test_df.columns or not self.specialists:
+            return self.global_ranker.predict(test_df, features=features)
+
+        scored_slices = []
+        unique_test_states = test_df['regime_state'].dropna().unique()
+
+        for state in unique_test_states:
+            st_test = test_df[test_df['regime_state'] == state]
+            if len(st_test) > 0:
+                ranker = self.specialists.get(state, self.global_ranker)
+                scored = ranker.predict(st_test, features=features)
+                scored['active_regime_model'] = state if state in self.trained_states else 'GLOBAL_FALLBACK'
+                scored_slices.append(scored)
+
+        missing_idx = test_df['regime_state'].isna()
+        if missing_idx.any():
+            scored_miss = self.global_ranker.predict(test_df[missing_idx], features=features)
+            scored_miss['active_regime_model'] = 'GLOBAL_FALLBACK'
+            scored_slices.append(scored_miss)
+
+        if not scored_slices:
+            return self.global_ranker.predict(test_df, features=features)
+
+        result_df = pd.concat(scored_slices, axis=0)
+        # Sort consistently with input test_df
+        if 'predictionTimestamp' in test_df.columns and 'ticker' in test_df.columns:
+            result_df = result_df.sort_values(['predictionTimestamp', 'ticker'])
+        else:
+            result_df = result_df.sort_index()
+
+        return result_df
+
+    def get_specialist_summary(self) -> Dict[str, Any]:
+        """Returns metadata on fitted regime specialists."""
+        return {
+            'horizon': self.horizon_str,
+            'isFitted': self.is_fitted,
+            'totalTrainedSpecialists': len(self.trained_states),
+            'trainedSpecialistStates': self.trained_states,
+            'fallbackStates': [s for s, r in self.specialists.items() if s not in self.trained_states]
+        }
+

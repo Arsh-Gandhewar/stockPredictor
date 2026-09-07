@@ -1,4 +1,876 @@
 {
+  "modelB_RegimeSpecialist": {
+    "modelType": "MODEL_B_REGIME_SPECIALIST",
+    "folds": [
+      {
+        "foldIndex": 0,
+        "label": "2008-2009 GFC Out-of-Sample",
+        "isFrozenHoldout": false,
+        "trainWindow": "2002-07-01 to 2007-12-31",
+        "testWindow": "2008-01-08 to 2009-12-31",
+        "trainRows": 66014,
+        "testRows": 25652,
+        "cagr": -20.37,
+        "sharpe": -1.06,
+        "sortino": -1.34,
+        "maxDrawdown": -71.79,
+        "annualTurnoverPct": 5413.7,
+        "cagr20d": -19.84,
+        "sharpe20d": -1.52,
+        "sortino20d": -1.59,
+        "maxDrawdown20d": -76.65,
+        "annualTurnoverPct20d": 4610.4,
+        "top1HitRate": 51.56,
+        "top3StockHitRate": 47.75,
+        "top3PortfolioHitRate": 47.82,
+        "meanExcessReturn5d": -0.147,
+        "top1HitRate20d": 53.43,
+        "top3PortfolioHitRate20d": 59.04,
+        "meanExcessReturn20d": -0.113,
+        "sectorClusteringPct": 0.0,
+        "pairwiseCorrelation": 0.276
+      },
+      {
+        "foldIndex": 1,
+        "label": "2011-2012 Out-of-Sample",
+        "isFrozenHoldout": false,
+        "trainWindow": "2002-07-01 to 2010-12-31",
+        "testWindow": "2011-02-05 to 2012-12-31",
+        "trainRows": 105221,
+        "testRows": 25218,
+        "cagr": 13.0,
+        "sharpe": 1.03,
+        "sortino": 1.86,
+        "maxDrawdown": -14.94,
+        "annualTurnoverPct": 5843.5,
+        "cagr20d": 11.52,
+        "sharpe20d": 1.93,
+        "sortino20d": 3.29,
+        "maxDrawdown20d": -12.6,
+        "annualTurnoverPct20d": 4492.2,
+        "top1HitRate": 55.22,
+        "top3StockHitRate": 51.23,
+        "top3PortfolioHitRate": 52.61,
+        "meanExcessReturn5d": 0.185,
+        "top1HitRate20d": 48.26,
+        "top3PortfolioHitRate20d": 55.22,
+        "meanExcessReturn20d": 0.458,
+        "sectorClusteringPct": 0.0,
+        "pairwiseCorrelation": 0.128
+      },
+      {
+        "foldIndex": 2,
+        "label": "2013-2014 Out-of-Sample",
+        "isFrozenHoldout": false,
+        "trainWindow": "2002-07-01 to 2012-12-31",
+        "testWindow": "2013-02-05 to 2014-12-31",
+        "trainRows": 131735,
+        "testRows": 25218,
+        "cagr": 12.36,
+        "sharpe": 0.83,
+        "sortino": 1.54,
+        "maxDrawdown": -13.25,
+        "annualTurnoverPct": 4172.8,
+        "cagr20d": 30.19,
+        "sharpe20d": 3.93,
+        "sortino20d": 8.02,
+        "maxDrawdown20d": -17.24,
+        "annualTurnoverPct20d": 3882.5,
+        "top1HitRate": 52.27,
+        "top3StockHitRate": 49.82,
+        "top3PortfolioHitRate": 50.54,
+        "meanExcessReturn5d": -0.015,
+        "top1HitRate20d": 49.89,
+        "top3PortfolioHitRate20d": 55.29,
+        "meanExcessReturn20d": 0.751,
+        "sectorClusteringPct": 0.0,
+        "pairwiseCorrelation": 0.059
+      },
+      {
+        "foldIndex": 3,
+        "label": "2015-2016 Out-of-Sample",
+        "isFrozenHoldout": false,
+        "trainWindow": "2002-07-01 to 2014-12-31",
+        "testWindow": "2015-02-05 to 2016-12-31",
+        "trainRows": 158303,
+        "testRows": 25272,
+        "cagr": 4.79,
+        "sharpe": 0.15,
+        "sortino": 0.21,
+        "maxDrawdown": -24.34,
+        "annualTurnoverPct": 5292.9,
+        "cagr20d": 5.31,
+        "sharpe20d": 0.37,
+        "sortino20d": 0.61,
+        "maxDrawdown20d": -14.8,
+        "annualTurnoverPct20d": 4281.3,
+        "top1HitRate": 51.4,
+        "top3StockHitRate": 52.76,
+        "top3PortfolioHitRate": 55.91,
+        "meanExcessReturn5d": 0.275,
+        "top1HitRate20d": 52.69,
+        "top3PortfolioHitRate20d": 58.06,
+        "meanExcessReturn20d": 0.855,
+        "sectorClusteringPct": 0.0,
+        "pairwiseCorrelation": 0.12
+      },
+      {
+        "foldIndex": 4,
+        "label": "2017-2018 Out-of-Sample",
+        "isFrozenHoldout": false,
+        "trainWindow": "2002-07-01 to 2016-12-31",
+        "testWindow": "2017-02-05 to 2018-12-31",
+        "trainRows": 184871,
+        "testRows": 25566,
+        "cagr": 3.12,
+        "sharpe": -0.1,
+        "sortino": -0.16,
+        "maxDrawdown": -13.11,
+        "annualTurnoverPct": 4728.4,
+        "cagr20d": 2.69,
+        "sharpe20d": -0.33,
+        "sortino20d": -0.49,
+        "maxDrawdown20d": -11.17,
+        "annualTurnoverPct20d": 3797.0,
+        "top1HitRate": 49.47,
+        "top3StockHitRate": 49.54,
+        "top3PortfolioHitRate": 48.4,
+        "meanExcessReturn5d": -0.017,
+        "top1HitRate20d": 49.04,
+        "top3PortfolioHitRate20d": 45.63,
+        "meanExcessReturn20d": -0.475,
+        "sectorClusteringPct": 0.0,
+        "pairwiseCorrelation": 0.07
+      },
+      {
+        "foldIndex": 5,
+        "label": "2019-2020 Out-of-Sample",
+        "isFrozenHoldout": false,
+        "trainWindow": "2002-07-01 to 2018-12-31",
+        "testWindow": "2019-02-05 to 2020-12-31",
+        "trainRows": 211733,
+        "testRows": 25795,
+        "cagr": 10.26,
+        "sharpe": 0.43,
+        "sortino": 0.69,
+        "maxDrawdown": -37.85,
+        "annualTurnoverPct": 4280.9,
+        "cagr20d": 29.56,
+        "sharpe20d": 3.05,
+        "sortino20d": 4.12,
+        "maxDrawdown20d": -17.08,
+        "annualTurnoverPct20d": 3957.2,
+        "top1HitRate": 46.9,
+        "top3StockHitRate": 45.18,
+        "top3PortfolioHitRate": 46.9,
+        "meanExcessReturn5d": 0.166,
+        "top1HitRate20d": 60.39,
+        "top3PortfolioHitRate20d": 55.67,
+        "meanExcessReturn20d": 1.184,
+        "sectorClusteringPct": 0.0,
+        "pairwiseCorrelation": 0.091
+      },
+      {
+        "foldIndex": 6,
+        "label": "2021-2022 Out-of-Sample",
+        "isFrozenHoldout": false,
+        "trainWindow": "2002-07-01 to 2020-12-31",
+        "testWindow": "2021-02-05 to 2022-12-31",
+        "trainRows": 238903,
+        "testRows": 25960,
+        "cagr": -0.67,
+        "sharpe": -0.55,
+        "sortino": -0.86,
+        "maxDrawdown": -16.57,
+        "annualTurnoverPct": 3861.9,
+        "cagr20d": 10.84,
+        "sharpe20d": 1.51,
+        "sortino20d": 3.34,
+        "maxDrawdown20d": -16.77,
+        "annualTurnoverPct20d": 3239.0,
+        "top1HitRate": 47.88,
+        "top3StockHitRate": 45.76,
+        "top3PortfolioHitRate": 50.0,
+        "meanExcessReturn5d": -0.103,
+        "top1HitRate20d": 43.22,
+        "top3PortfolioHitRate20d": 53.81,
+        "meanExcessReturn20d": 0.204,
+        "sectorClusteringPct": 0.0,
+        "pairwiseCorrelation": 0.163
+      },
+      {
+        "foldIndex": 7,
+        "label": "2023-2024 Out-of-Sample",
+        "isFrozenHoldout": false,
+        "trainWindow": "2002-07-01 to 2022-12-31",
+        "testWindow": "2023-02-05 to 2024-12-31",
+        "trainRows": 266183,
+        "testRows": 25685,
+        "cagr": -0.86,
+        "sharpe": -0.55,
+        "sortino": -1.0,
+        "maxDrawdown": -19.1,
+        "annualTurnoverPct": 3885.2,
+        "cagr20d": 19.13,
+        "sharpe20d": 3.53,
+        "sortino20d": 5.86,
+        "maxDrawdown20d": -13.73,
+        "annualTurnoverPct20d": 3453.5,
+        "top1HitRate": 41.33,
+        "top3StockHitRate": 43.11,
+        "top3PortfolioHitRate": 41.33,
+        "meanExcessReturn5d": -0.2,
+        "top1HitRate20d": 58.46,
+        "top3PortfolioHitRate20d": 53.1,
+        "meanExcessReturn20d": 0.38,
+        "sectorClusteringPct": 0.0,
+        "pairwiseCorrelation": 0.094
+      },
+      {
+        "foldIndex": 8,
+        "label": "2025-2026 Final Holdout",
+        "isFrozenHoldout": true,
+        "trainWindow": "2002-07-01 to 2024-12-31",
+        "testWindow": "2025-02-05 to 2026-09-03",
+        "trainRows": 293188,
+        "testRows": 21602,
+        "cagr": -10.38,
+        "sharpe": -1.84,
+        "sortino": -2.84,
+        "maxDrawdown": -25.2,
+        "annualTurnoverPct": 3903.9,
+        "cagr20d": 9.83,
+        "sharpe20d": 1.47,
+        "sortino20d": 2.14,
+        "maxDrawdown20d": -9.6,
+        "annualTurnoverPct20d": 4167.1,
+        "top1HitRate": 38.64,
+        "top3StockHitRate": 41.17,
+        "top3PortfolioHitRate": 43.34,
+        "meanExcessReturn5d": -0.229,
+        "top1HitRate20d": 51.36,
+        "top3PortfolioHitRate20d": 48.64,
+        "meanExcessReturn20d": 0.513,
+        "sectorClusteringPct": 0.0,
+        "pairwiseCorrelation": 0.111
+      }
+    ],
+    "aggregate": {
+      "diversificationMode": "CONSTRAINED",
+      "rankingMetric": "canonical_alpha",
+      "evaluationDaysCount": 3744,
+      "totalStockEvaluations": 11232,
+      "hitRates5d": {
+        "top1HitRateVsNifty": 49.6,
+        "top3StockHitRateVsNifty": 48.13,
+        "top3PortfolioHitRateVsNifty": 49.09,
+        "top1AbsoluteWinRate": 52.24,
+        "top3StockAbsoluteWinRate": 49.84,
+        "top3PortfolioAbsoluteWinRate": 50.72,
+        "meanPortfolioNetReturnPct": 0.116,
+        "meanNiftyReturnPct": 0.099,
+        "meanExcessReturnPct": 0.017
+      },
+      "hitRates20d": {
+        "top1HitRateVsNifty": 53.58,
+        "top3StockHitRateVsNifty": 51.73,
+        "top3PortfolioHitRateVsNifty": 54.86,
+        "meanPortfolioNetReturnPct": 1.334,
+        "meanNiftyReturnPct": 0.775,
+        "meanExcessReturnPct": 0.559
+      },
+      "statisticalInference": {
+        "hac5d": {
+          "mean": 0.016692,
+          "hacStdError": 0.082888,
+          "tStat": 0.201,
+          "pValue": 0.84041,
+          "ci95Lower": -0.145818,
+          "ci95Upper": 0.179202,
+          "effectiveN": 1370.1,
+          "rawN": 3744,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap5d": {
+          "bootMean": 0.018723,
+          "ciLower": -0.139269,
+          "ciUpper": 0.163666,
+          "isBootstrapPositive": false
+        },
+        "hac20d": {
+          "mean": 0.558664,
+          "hacStdError": 0.241394,
+          "tStat": 2.314,
+          "pValue": 0.0207,
+          "ci95Lower": 0.085388,
+          "ci95Upper": 1.031939,
+          "effectiveN": 554.8,
+          "rawN": 3744,
+          "isStatisticallySignificant": true
+        },
+        "bootstrap20d": {
+          "bootMean": 0.570709,
+          "ciLower": 0.1608,
+          "ciUpper": 1.045086,
+          "isBootstrapPositive": true
+        }
+      },
+      "backtestMetrics": {
+        "cagr": 1.94,
+        "sharpe": -0.1,
+        "sortino": -0.13,
+        "maxDrawdown": -71.79,
+        "profitFactor": 1.04,
+        "annualTurnoverEstPct": 4709.3
+      },
+      "factorCrowding": {
+        "sectorClusteringPct": 0.0,
+        "meanPairwiseCorrelation": 0.126,
+        "meanPortfolioBeta": NaN
+      },
+      "fractileSpreadAnalysis": {
+        "fractileSlices": [
+          {
+            "fractile": "Top 1%",
+            "sampleCount": 0,
+            "meanNet5d": 0.0,
+            "excessVsUniverse5d": 0.074,
+            "hitRateVsNifty5d": 0.0,
+            "meanNet20d": 0.0,
+            "excessVsUniverse20d": -1.138,
+            "hitRateVsNifty20d": 0.0
+          },
+          {
+            "fractile": "Top 2%",
+            "sampleCount": 3744,
+            "meanNet5d": 0.404,
+            "excessVsUniverse5d": 0.477,
+            "hitRateVsNifty5d": 49.87,
+            "meanNet20d": 1.877,
+            "excessVsUniverse20d": 0.739,
+            "hitRateVsNifty20d": 54.75
+          },
+          {
+            "fractile": "Top 5%",
+            "sampleCount": 7488,
+            "meanNet5d": 0.227,
+            "excessVsUniverse5d": 0.301,
+            "hitRateVsNifty5d": 48.96,
+            "meanNet20d": 1.56,
+            "excessVsUniverse20d": 0.422,
+            "hitRateVsNifty20d": 53.3
+          },
+          {
+            "fractile": "Top 10% (D1)",
+            "sampleCount": 18720,
+            "meanNet5d": 0.083,
+            "excessVsUniverse5d": 0.157,
+            "hitRateVsNifty5d": 47.88,
+            "meanNet20d": 1.298,
+            "excessVsUniverse20d": 0.16,
+            "hitRateVsNifty20d": 51.88
+          },
+          {
+            "fractile": "Top 20% (D2)",
+            "sampleCount": 39012,
+            "meanNet5d": 0.017,
+            "excessVsUniverse5d": 0.091,
+            "hitRateVsNifty5d": 46.98,
+            "meanNet20d": 1.126,
+            "excessVsUniverse20d": -0.012,
+            "hitRateVsNifty20d": 50.43
+          },
+          {
+            "fractile": "Top 50%",
+            "sampleCount": 100607,
+            "meanNet5d": -0.033,
+            "excessVsUniverse5d": 0.04,
+            "hitRateVsNifty5d": 46.27,
+            "meanNet20d": 1.118,
+            "excessVsUniverse20d": -0.02,
+            "hitRateVsNifty20d": 49.88
+          },
+          {
+            "fractile": "Full Universe Baseline",
+            "sampleCount": 203267,
+            "meanNet5d": -0.074,
+            "excessVsUniverse5d": 0.0,
+            "hitRateVsNifty5d": 45.72,
+            "meanNet20d": 1.138,
+            "excessVsUniverse20d": 0.0,
+            "hitRateVsNifty20d": 49.33
+          }
+        ],
+        "isMonotonic5d": true,
+        "isMonotonic20d": true,
+        "top10vsUniverseSpread5d": 0.157,
+        "top10vsUniverseSpread20d": 0.16
+      }
+    },
+    "aggregate20d": {
+      "diversificationMode": "CONSTRAINED",
+      "rankingMetric": "canonical_alpha",
+      "evaluationDaysCount": 3744,
+      "totalStockEvaluations": 11232,
+      "hitRates5d": {
+        "top1HitRateVsNifty": 46.79,
+        "top3StockHitRateVsNifty": 47.35,
+        "top3PortfolioHitRateVsNifty": 47.7,
+        "top1AbsoluteWinRate": 47.78,
+        "top3StockAbsoluteWinRate": 48.44,
+        "top3PortfolioAbsoluteWinRate": 50.32,
+        "meanPortfolioNetReturnPct": 0.071,
+        "meanNiftyReturnPct": 0.099,
+        "meanExcessReturnPct": -0.028
+      },
+      "hitRates20d": {
+        "top1HitRateVsNifty": 52.22,
+        "top3StockHitRateVsNifty": 51.19,
+        "top3PortfolioHitRateVsNifty": 54.33,
+        "meanPortfolioNetReturnPct": 1.166,
+        "meanNiftyReturnPct": 0.775,
+        "meanExcessReturnPct": 0.391
+      },
+      "statisticalInference": {
+        "hac5d": {
+          "mean": -0.028399,
+          "hacStdError": 0.086768,
+          "tStat": -0.327,
+          "pValue": 0.74346,
+          "ci95Lower": -0.198516,
+          "ci95Upper": 0.141719,
+          "effectiveN": 1213.9,
+          "rawN": 3744,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap5d": {
+          "bootMean": -0.024152,
+          "ciLower": -0.1833,
+          "ciUpper": 0.126131,
+          "isBootstrapPositive": false
+        },
+        "hac20d": {
+          "mean": 0.391064,
+          "hacStdError": 0.27689,
+          "tStat": 1.412,
+          "pValue": 0.15793,
+          "ci95Lower": -0.151807,
+          "ci95Upper": 0.933934,
+          "effectiveN": 443.2,
+          "rawN": 3744,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap20d": {
+          "bootMean": 0.407146,
+          "ciLower": -0.174673,
+          "ciUpper": 0.970411,
+          "isBootstrapPositive": false
+        }
+      },
+      "backtestMetrics": {
+        "cagr": 9.82,
+        "sharpe": 0.76,
+        "sortino": 0.76,
+        "maxDrawdown": -76.65,
+        "profitFactor": 1.3,
+        "annualTurnoverEstPct": 4004.8
+      },
+      "factorCrowding": {
+        "sectorClusteringPct": 0.0,
+        "meanPairwiseCorrelation": 0.131,
+        "meanPortfolioBeta": NaN
+      },
+      "fractileSpreadAnalysis": {
+        "fractileSlices": [
+          {
+            "fractile": "Top 1%",
+            "sampleCount": 0,
+            "meanNet5d": 0.0,
+            "excessVsUniverse5d": 0.074,
+            "hitRateVsNifty5d": 0.0,
+            "meanNet20d": 0.0,
+            "excessVsUniverse20d": -1.138,
+            "hitRateVsNifty20d": 0.0
+          },
+          {
+            "fractile": "Top 2%",
+            "sampleCount": 3744,
+            "meanNet5d": 0.222,
+            "excessVsUniverse5d": 0.296,
+            "hitRateVsNifty5d": 48.61,
+            "meanNet20d": 1.511,
+            "excessVsUniverse20d": 0.373,
+            "hitRateVsNifty20d": 52.56
+          },
+          {
+            "fractile": "Top 5%",
+            "sampleCount": 7488,
+            "meanNet5d": 0.189,
+            "excessVsUniverse5d": 0.263,
+            "hitRateVsNifty5d": 48.32,
+            "meanNet20d": 1.582,
+            "excessVsUniverse20d": 0.444,
+            "hitRateVsNifty20d": 52.9
+          },
+          {
+            "fractile": "Top 10% (D1)",
+            "sampleCount": 18720,
+            "meanNet5d": 0.109,
+            "excessVsUniverse5d": 0.182,
+            "hitRateVsNifty5d": 47.56,
+            "meanNet20d": 1.308,
+            "excessVsUniverse20d": 0.17,
+            "hitRateVsNifty20d": 51.31
+          },
+          {
+            "fractile": "Top 20% (D2)",
+            "sampleCount": 39012,
+            "meanNet5d": 0.038,
+            "excessVsUniverse5d": 0.112,
+            "hitRateVsNifty5d": 46.87,
+            "meanNet20d": 1.252,
+            "excessVsUniverse20d": 0.114,
+            "hitRateVsNifty20d": 50.59
+          },
+          {
+            "fractile": "Top 50%",
+            "sampleCount": 100607,
+            "meanNet5d": -0.007,
+            "excessVsUniverse5d": 0.066,
+            "hitRateVsNifty5d": 46.15,
+            "meanNet20d": 1.281,
+            "excessVsUniverse20d": 0.143,
+            "hitRateVsNifty20d": 50.28
+          },
+          {
+            "fractile": "Full Universe Baseline",
+            "sampleCount": 203267,
+            "meanNet5d": -0.074,
+            "excessVsUniverse5d": 0.0,
+            "hitRateVsNifty5d": 45.72,
+            "meanNet20d": 1.138,
+            "excessVsUniverse20d": 0.0,
+            "hitRateVsNifty20d": 49.33
+          }
+        ],
+        "isMonotonic5d": true,
+        "isMonotonic20d": true,
+        "top10vsUniverseSpread5d": 0.183,
+        "top10vsUniverseSpread20d": 0.17
+      }
+    },
+    "frozenHoldout": {
+      "diversificationMode": "CONSTRAINED",
+      "rankingMetric": "canonical_alpha",
+      "evaluationDaysCount": 383,
+      "totalStockEvaluations": 1149,
+      "hitRates5d": {
+        "top1HitRateVsNifty": 38.64,
+        "top3StockHitRateVsNifty": 41.17,
+        "top3PortfolioHitRateVsNifty": 43.34,
+        "top1AbsoluteWinRate": 43.86,
+        "top3StockAbsoluteWinRate": 45.26,
+        "top3PortfolioAbsoluteWinRate": 49.87,
+        "meanPortfolioNetReturnPct": -0.195,
+        "meanNiftyReturnPct": 0.034,
+        "meanExcessReturnPct": -0.229
+      },
+      "hitRates20d": {
+        "top1HitRateVsNifty": 45.92,
+        "top3StockHitRateVsNifty": 44.29,
+        "top3PortfolioHitRateVsNifty": 45.11,
+        "meanPortfolioNetReturnPct": 0.357,
+        "meanNiftyReturnPct": 0.372,
+        "meanExcessReturnPct": -0.014
+      },
+      "statisticalInference": {
+        "hac5d": {
+          "mean": -0.229387,
+          "hacStdError": 0.16907,
+          "tStat": -1.357,
+          "pValue": 0.17566,
+          "ci95Lower": -0.56181,
+          "ci95Upper": 0.103037,
+          "effectiveN": 121.7,
+          "rawN": 383,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap5d": {
+          "bootMean": -0.215685,
+          "ciLower": -0.542705,
+          "ciUpper": 0.093899,
+          "isBootstrapPositive": false
+        },
+        "hac20d": {
+          "mean": -0.014274,
+          "hacStdError": 0.525497,
+          "tStat": -0.027,
+          "pValue": 0.97835,
+          "ci95Lower": -1.047637,
+          "ci95Upper": 1.01909,
+          "effectiveN": 60.3,
+          "rawN": 368,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap20d": {
+          "bootMean": 0.040669,
+          "ciLower": -0.951603,
+          "ciUpper": 1.128687,
+          "isBootstrapPositive": false
+        }
+      },
+      "backtestMetrics": {
+        "cagr": -10.38,
+        "sharpe": -1.84,
+        "sortino": -2.84,
+        "maxDrawdown": -25.2,
+        "profitFactor": 0.8,
+        "annualTurnoverEstPct": 3903.9
+      },
+      "factorCrowding": {
+        "sectorClusteringPct": 0.0,
+        "meanPairwiseCorrelation": 0.111,
+        "meanPortfolioBeta": NaN
+      },
+      "fractileSpreadAnalysis": {
+        "fractileSlices": [
+          {
+            "fractile": "Top 1%",
+            "sampleCount": 0,
+            "meanNet5d": 0.0,
+            "excessVsUniverse5d": 0.156,
+            "hitRateVsNifty5d": 0.0,
+            "meanNet20d": 0.0,
+            "excessVsUniverse20d": -0.695,
+            "hitRateVsNifty20d": 0.0
+          },
+          {
+            "fractile": "Top 2%",
+            "sampleCount": 382,
+            "meanNet5d": -0.091,
+            "excessVsUniverse5d": 0.065,
+            "hitRateVsNifty5d": 45.55,
+            "meanNet20d": 1.399,
+            "excessVsUniverse20d": 0.704,
+            "hitRateVsNifty20d": 51.77
+          },
+          {
+            "fractile": "Top 5%",
+            "sampleCount": 766,
+            "meanNet5d": -0.033,
+            "excessVsUniverse5d": 0.124,
+            "hitRateVsNifty5d": 45.69,
+            "meanNet20d": 1.358,
+            "excessVsUniverse20d": 0.663,
+            "hitRateVsNifty20d": 51.22
+          },
+          {
+            "fractile": "Top 10% (D1)",
+            "sampleCount": 1914,
+            "meanNet5d": -0.046,
+            "excessVsUniverse5d": 0.11,
+            "hitRateVsNifty5d": 45.45,
+            "meanNet20d": 0.997,
+            "excessVsUniverse20d": 0.302,
+            "hitRateVsNifty20d": 49.92
+          },
+          {
+            "fractile": "Top 20% (D2)",
+            "sampleCount": 4210,
+            "meanNet5d": -0.086,
+            "excessVsUniverse5d": 0.071,
+            "hitRateVsNifty5d": 44.99,
+            "meanNet20d": 0.922,
+            "excessVsUniverse20d": 0.227,
+            "hitRateVsNifty20d": 51.05
+          },
+          {
+            "fractile": "Top 50%",
+            "sampleCount": 10336,
+            "meanNet5d": -0.21,
+            "excessVsUniverse5d": -0.054,
+            "hitRateVsNifty5d": 43.56,
+            "meanNet20d": 0.656,
+            "excessVsUniverse20d": -0.04,
+            "hitRateVsNifty20d": 49.9
+          },
+          {
+            "fractile": "Full Universe Baseline",
+            "sampleCount": 21054,
+            "meanNet5d": -0.156,
+            "excessVsUniverse5d": 0.0,
+            "hitRateVsNifty5d": 44.72,
+            "meanNet20d": 0.695,
+            "excessVsUniverse20d": 0.0,
+            "hitRateVsNifty20d": 49.89
+          }
+        ],
+        "isMonotonic5d": true,
+        "isMonotonic20d": true,
+        "top10vsUniverseSpread5d": 0.11,
+        "top10vsUniverseSpread20d": 0.302
+      }
+    },
+    "frozenHoldout20d": {
+      "diversificationMode": "CONSTRAINED",
+      "rankingMetric": "canonical_alpha",
+      "evaluationDaysCount": 383,
+      "totalStockEvaluations": 1149,
+      "hitRates5d": {
+        "top1HitRateVsNifty": 43.86,
+        "top3StockHitRateVsNifty": 43.26,
+        "top3PortfolioHitRateVsNifty": 48.83,
+        "top1AbsoluteWinRate": 47.52,
+        "top3StockAbsoluteWinRate": 45.6,
+        "top3PortfolioAbsoluteWinRate": 48.56,
+        "meanPortfolioNetReturnPct": 0.01,
+        "meanNiftyReturnPct": 0.034,
+        "meanExcessReturnPct": -0.025
+      },
+      "hitRates20d": {
+        "top1HitRateVsNifty": 51.36,
+        "top3StockHitRateVsNifty": 46.29,
+        "top3PortfolioHitRateVsNifty": 48.64,
+        "meanPortfolioNetReturnPct": 0.884,
+        "meanNiftyReturnPct": 0.372,
+        "meanExcessReturnPct": 0.513
+      },
+      "statisticalInference": {
+        "hac5d": {
+          "mean": -0.024672,
+          "hacStdError": 0.168284,
+          "tStat": -0.147,
+          "pValue": 0.88352,
+          "ci95Lower": -0.35555,
+          "ci95Upper": 0.306206,
+          "effectiveN": 138.0,
+          "rawN": 383,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap5d": {
+          "bootMean": -0.03405,
+          "ciLower": -0.358157,
+          "ciUpper": 0.313764,
+          "isBootstrapPositive": false
+        },
+        "hac20d": {
+          "mean": 0.51276,
+          "hacStdError": 0.504103,
+          "tStat": 1.017,
+          "pValue": 0.30974,
+          "ci95Lower": -0.478531,
+          "ci95Upper": 1.504052,
+          "effectiveN": 49.6,
+          "rawN": 368,
+          "isStatisticallySignificant": false
+        },
+        "bootstrap20d": {
+          "bootMean": 0.559037,
+          "ciLower": -0.366069,
+          "ciUpper": 1.667599,
+          "isBootstrapPositive": false
+        }
+      },
+      "backtestMetrics": {
+        "cagr": 9.83,
+        "sharpe": 1.47,
+        "sortino": 2.14,
+        "maxDrawdown": -9.6,
+        "profitFactor": 1.54,
+        "annualTurnoverEstPct": 4167.1
+      },
+      "factorCrowding": {
+        "sectorClusteringPct": 0.0,
+        "meanPairwiseCorrelation": 0.12,
+        "meanPortfolioBeta": NaN
+      },
+      "fractileSpreadAnalysis": {
+        "fractileSlices": [
+          {
+            "fractile": "Top 1%",
+            "sampleCount": 0,
+            "meanNet5d": 0.0,
+            "excessVsUniverse5d": 0.156,
+            "hitRateVsNifty5d": 0.0,
+            "meanNet20d": 0.0,
+            "excessVsUniverse20d": -0.695,
+            "hitRateVsNifty20d": 0.0
+          },
+          {
+            "fractile": "Top 2%",
+            "sampleCount": 382,
+            "meanNet5d": 0.246,
+            "excessVsUniverse5d": 0.402,
+            "hitRateVsNifty5d": 47.12,
+            "meanNet20d": 2.461,
+            "excessVsUniverse20d": 1.766,
+            "hitRateVsNifty20d": 53.68
+          },
+          {
+            "fractile": "Top 5%",
+            "sampleCount": 766,
+            "meanNet5d": 0.173,
+            "excessVsUniverse5d": 0.329,
+            "hitRateVsNifty5d": 46.74,
+            "meanNet20d": 1.57,
+            "excessVsUniverse20d": 0.874,
+            "hitRateVsNifty20d": 49.73
+          },
+          {
+            "fractile": "Top 10% (D1)",
+            "sampleCount": 1914,
+            "meanNet5d": 0.035,
+            "excessVsUniverse5d": 0.191,
+            "hitRateVsNifty5d": 45.98,
+            "meanNet20d": 1.052,
+            "excessVsUniverse20d": 0.357,
+            "hitRateVsNifty20d": 49.37
+          },
+          {
+            "fractile": "Top 20% (D2)",
+            "sampleCount": 4210,
+            "meanNet5d": -0.009,
+            "excessVsUniverse5d": 0.148,
+            "hitRateVsNifty5d": 45.13,
+            "meanNet20d": 0.897,
+            "excessVsUniverse20d": 0.202,
+            "hitRateVsNifty20d": 48.92
+          },
+          {
+            "fractile": "Top 50%",
+            "sampleCount": 10336,
+            "meanNet5d": -0.196,
+            "excessVsUniverse5d": -0.04,
+            "hitRateVsNifty5d": 44.15,
+            "meanNet20d": 0.715,
+            "excessVsUniverse20d": 0.02,
+            "hitRateVsNifty20d": 49.61
+          },
+          {
+            "fractile": "Full Universe Baseline",
+            "sampleCount": 21054,
+            "meanNet5d": -0.156,
+            "excessVsUniverse5d": 0.0,
+            "hitRateVsNifty5d": 44.72,
+            "meanNet20d": 0.695,
+            "excessVsUniverse20d": 0.0,
+            "hitRateVsNifty20d": 49.89
+          }
+        ],
+        "isMonotonic5d": true,
+        "isMonotonic20d": true,
+        "top10vsUniverseSpread5d": 0.191,
+        "top10vsUniverseSpread20d": 0.357
+      }
+    },
+    "devOosRows": 204366,
+    "holdoutRows": 21602,
+    "totalOosRows": 225968,
+    "oos_df": "                   Open         High  ...  active_regime_model  foldIndex\nDate                                  ...                                \n2008-01-08    79.037834    80.856959  ...   BEAR_HIGHVOL_TREND          0\n2008-01-08   223.628979   226.334168  ...   BEAR_HIGHVOL_TREND          0\n2008-01-08   101.138563   108.473619  ...   BEAR_HIGHVOL_TREND          0\n2008-01-08   195.779286   200.228816  ...   BEAR_HIGHVOL_TREND          0\n2008-01-08  2523.248648  2541.831432  ...   BEAR_HIGHVOL_TREND          0\n...                 ...          ...  ...                  ...        ...\n2024-12-31   487.820629   496.064679  ...   BEAR_LOWVOL_CHOPPY          7\n2024-12-31   409.966277   416.970257  ...   BEAR_LOWVOL_CHOPPY          7\n2024-12-31   278.925240   280.825201  ...   BEAR_LOWVOL_CHOPPY          7\n2024-12-31    19.500000    19.700001  ...   BEAR_LOWVOL_CHOPPY          7\n2024-12-31   118.708530   119.864274  ...   BEAR_LOWVOL_CHOPPY          7\n\n[204366 rows x 89 columns]",
+    "oos_df_20d": "                   Open         High  ...  active_regime_model  foldIndex\nDate                                  ...                                \n2008-01-08    79.037834    80.856959  ...   BEAR_HIGHVOL_TREND          0\n2008-01-08   223.628979   226.334168  ...   BEAR_HIGHVOL_TREND          0\n2008-01-08   101.138563   108.473619  ...   BEAR_HIGHVOL_TREND          0\n2008-01-08   195.779286   200.228816  ...   BEAR_HIGHVOL_TREND          0\n2008-01-08  2523.248648  2541.831432  ...   BEAR_HIGHVOL_TREND          0\n...                 ...          ...  ...                  ...        ...\n2024-12-31   487.820629   496.064679  ...   BEAR_LOWVOL_CHOPPY          7\n2024-12-31   409.966277   416.970257  ...   BEAR_LOWVOL_CHOPPY          7\n2024-12-31   278.925240   280.825201  ...   BEAR_LOWVOL_CHOPPY          7\n2024-12-31    19.500000    19.700001  ...   BEAR_LOWVOL_CHOPPY          7\n2024-12-31   118.708530   119.864274  ...   BEAR_LOWVOL_CHOPPY          7\n\n[204366 rows x 89 columns]",
+    "holdout_df": "                   Open         High  ...  active_regime_model  foldIndex\nDate                                  ...                                \n2025-02-05  2312.768858  2347.186351  ...   BEAR_LOWVOL_CHOPPY          8\n2025-02-05  1115.845657  1144.485059  ...   BEAR_LOWVOL_CHOPPY          8\n2025-02-05  2225.445671  2251.486081  ...   BEAR_LOWVOL_CHOPPY          8\n2025-02-05  1018.942675  1020.390332  ...   BEAR_LOWVOL_CHOPPY          8\n2025-02-05  1808.574789  1824.104014  ...   BEAR_LOWVOL_CHOPPY          8\n...                 ...          ...  ...                  ...        ...\n2026-09-03   579.000000   586.150024  ...    BEAR_LOWVOL_TREND          8\n2026-09-03   272.000000   274.750000  ...    BEAR_LOWVOL_TREND          8\n2026-09-03   177.500000   177.779999  ...    BEAR_LOWVOL_TREND          8\n2026-09-03    22.150000    22.510000  ...    BEAR_LOWVOL_TREND          8\n2026-09-03    91.080002    92.820000  ...    BEAR_LOWVOL_TREND          8\n\n[21602 rows x 89 columns]",
+    "holdout_df_20d": "                   Open         High  ...  active_regime_model  foldIndex\nDate                                  ...                                \n2025-02-05  2312.768858  2347.186351  ...   BEAR_LOWVOL_CHOPPY          8\n2025-02-05  1115.845657  1144.485059  ...   BEAR_LOWVOL_CHOPPY          8\n2025-02-05  2225.445671  2251.486081  ...   BEAR_LOWVOL_CHOPPY          8\n2025-02-05  1018.942675  1020.390332  ...   BEAR_LOWVOL_CHOPPY          8\n2025-02-05  1808.574789  1824.104014  ...   BEAR_LOWVOL_CHOPPY          8\n...                 ...          ...  ...                  ...        ...\n2026-09-03   579.000000   586.150024  ...    BEAR_LOWVOL_TREND          8\n2026-09-03   272.000000   274.750000  ...    BEAR_LOWVOL_TREND          8\n2026-09-03   177.500000   177.779999  ...    BEAR_LOWVOL_TREND          8\n2026-09-03    22.150000    22.510000  ...    BEAR_LOWVOL_TREND          8\n2026-09-03    91.080002    92.820000  ...    BEAR_LOWVOL_TREND          8\n\n[21602 rows x 89 columns]"
+  },
   "modelB_Expanding": {
     "modelType": "MODEL_B_LONG_EXPANDING",
     "folds": [
@@ -866,10 +1738,10 @@
     "devOosRows": 204366,
     "holdoutRows": 21602,
     "totalOosRows": 225968,
-    "oos_df": "                  Open        High  ...   grossEV  foldIndex\nDate                                ...                     \n2008-01-08  223.628979  226.334168  ...  0.002478          0\n2008-01-08   37.334085   38.117815  ...  0.003739          0\n2008-01-08  782.036301  798.165800  ...  0.002234          0\n2008-01-08  179.086843  185.178024  ...  0.003066          0\n2008-01-08   60.300133   61.521404  ...  0.002106          0\n...                ...         ...  ...       ...        ...\n2024-12-31  131.048269  132.781279  ...  0.000227          7\n2024-12-31  315.712605  320.016472  ...  0.000061          7\n2024-12-31  110.346995  112.243228  ...  0.000242          7\n2024-12-31  678.610301  679.306713  ...  0.000266          7\n2024-12-31  593.923393  598.367449  ...  0.000223          7\n\n[204366 rows x 87 columns]",
-    "oos_df_20d": "                  Open        High  ...   grossEV  foldIndex\nDate                                ...                     \n2008-01-08  223.628979  226.334168  ...  0.051585          0\n2008-01-08   37.334085   38.117815  ...  0.016800          0\n2008-01-08  782.036301  798.165800  ...  0.012291          0\n2008-01-08  179.086843  185.178024  ...  0.011086          0\n2008-01-08   60.300133   61.521404  ...  0.015108          0\n...                ...         ...  ...       ...        ...\n2024-12-31  131.048269  132.781279  ...  0.002267          7\n2024-12-31  315.712605  320.016472  ...  0.001584          7\n2024-12-31  110.346995  112.243228  ...  0.002308          7\n2024-12-31  678.610301  679.306713  ...  0.001599          7\n2024-12-31  593.923393  598.367449  ...  0.001439          7\n\n[204366 rows x 87 columns]",
-    "holdout_df": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.001156          8\n2025-02-05  3936.911711  3985.217376  ...  0.000283          8\n2025-02-05  2225.445671  2251.486081  ...  0.000075          8\n2025-02-05   577.233481   596.984840  ...  0.000496          8\n2025-02-05  1741.482818  1741.482818  ...  0.000539          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.000096          8\n2026-09-03  1265.000000  1278.900024  ...  0.000577          8\n2026-09-03   136.300003   137.770004  ...  0.000075          8\n2026-09-03   705.000000   710.900024  ...  0.000080          8\n2026-09-03    91.080002    92.820000  ...  0.001122          8\n\n[21602 rows x 87 columns]",
-    "holdout_df_20d": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.003596          8\n2025-02-05  3936.911711  3985.217376  ...  0.003047          8\n2025-02-05  2225.445671  2251.486081  ...  0.003565          8\n2025-02-05   577.233481   596.984840  ...  0.003251          8\n2025-02-05  1741.482818  1741.482818  ...  0.006198          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.002049          8\n2026-09-03  1265.000000  1278.900024  ...  0.002476          8\n2026-09-03   136.300003   137.770004  ...  0.001491          8\n2026-09-03   705.000000   710.900024  ...  0.001436          8\n2026-09-03    91.080002    92.820000  ...  0.006451          8\n\n[21602 rows x 87 columns]"
+    "oos_df": "                  Open        High  ...   grossEV  foldIndex\nDate                                ...                     \n2008-01-08  223.628979  226.334168  ...  0.002478          0\n2008-01-08   37.334085   38.117815  ...  0.003739          0\n2008-01-08  782.036301  798.165800  ...  0.002234          0\n2008-01-08  179.086843  185.178024  ...  0.003066          0\n2008-01-08   60.300133   61.521404  ...  0.002106          0\n...                ...         ...  ...       ...        ...\n2024-12-31  131.048269  132.781279  ...  0.000227          7\n2024-12-31  315.712605  320.016472  ...  0.000061          7\n2024-12-31  110.346995  112.243228  ...  0.000242          7\n2024-12-31  678.610301  679.306713  ...  0.000266          7\n2024-12-31  593.923393  598.367449  ...  0.000223          7\n\n[204366 rows x 88 columns]",
+    "oos_df_20d": "                  Open        High  ...   grossEV  foldIndex\nDate                                ...                     \n2008-01-08  223.628979  226.334168  ...  0.051585          0\n2008-01-08   37.334085   38.117815  ...  0.016800          0\n2008-01-08  782.036301  798.165800  ...  0.012291          0\n2008-01-08  179.086843  185.178024  ...  0.011086          0\n2008-01-08   60.300133   61.521404  ...  0.015108          0\n...                ...         ...  ...       ...        ...\n2024-12-31  131.048269  132.781279  ...  0.002267          7\n2024-12-31  315.712605  320.016472  ...  0.001584          7\n2024-12-31  110.346995  112.243228  ...  0.002308          7\n2024-12-31  678.610301  679.306713  ...  0.001599          7\n2024-12-31  593.923393  598.367449  ...  0.001439          7\n\n[204366 rows x 88 columns]",
+    "holdout_df": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.001156          8\n2025-02-05  3936.911711  3985.217376  ...  0.000283          8\n2025-02-05  2225.445671  2251.486081  ...  0.000075          8\n2025-02-05   577.233481   596.984840  ...  0.000496          8\n2025-02-05  1741.482818  1741.482818  ...  0.000539          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.000096          8\n2026-09-03  1265.000000  1278.900024  ...  0.000577          8\n2026-09-03   136.300003   137.770004  ...  0.000075          8\n2026-09-03   705.000000   710.900024  ...  0.000080          8\n2026-09-03    91.080002    92.820000  ...  0.001122          8\n\n[21602 rows x 88 columns]",
+    "holdout_df_20d": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.003596          8\n2025-02-05  3936.911711  3985.217376  ...  0.003047          8\n2025-02-05  2225.445671  2251.486081  ...  0.003565          8\n2025-02-05   577.233481   596.984840  ...  0.003251          8\n2025-02-05  1741.482818  1741.482818  ...  0.006198          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.002049          8\n2026-09-03  1265.000000  1278.900024  ...  0.002476          8\n2026-09-03   136.300003   137.770004  ...  0.001491          8\n2026-09-03   705.000000   710.900024  ...  0.001436          8\n2026-09-03    91.080002    92.820000  ...  0.006451          8\n\n[21602 rows x 88 columns]"
   },
   "modelC_Rolling": {
     "modelType": "MODEL_C_ROLLING_5Y",
@@ -1738,10 +2610,10 @@
     "devOosRows": 204366,
     "holdoutRows": 21602,
     "totalOosRows": 225968,
-    "oos_df": "                  Open        High  ...   grossEV  foldIndex\nDate                                ...                     \n2008-01-08  223.628979  226.334168  ...  0.002478          0\n2008-01-08   37.334085   38.117815  ...  0.003739          0\n2008-01-08  782.036301  798.165800  ...  0.002234          0\n2008-01-08  179.086843  185.178024  ...  0.003066          0\n2008-01-08   60.300133   61.521404  ...  0.002106          0\n...                ...         ...  ...       ...        ...\n2024-12-31  131.048269  132.781279  ... -0.000943          7\n2024-12-31  315.712605  320.016472  ... -0.001651          7\n2024-12-31  110.346995  112.243228  ... -0.000673          7\n2024-12-31  678.610301  679.306713  ... -0.001091          7\n2024-12-31  593.923393  598.367449  ...  0.000192          7\n\n[204366 rows x 87 columns]",
-    "oos_df_20d": "                  Open        High  ...   grossEV  foldIndex\nDate                                ...                     \n2008-01-08  223.628979  226.334168  ...  0.051585          0\n2008-01-08   37.334085   38.117815  ...  0.016800          0\n2008-01-08  782.036301  798.165800  ...  0.012291          0\n2008-01-08  179.086843  185.178024  ...  0.011086          0\n2008-01-08   60.300133   61.521404  ...  0.015108          0\n...                ...         ...  ...       ...        ...\n2024-12-31  131.048269  132.781279  ...  0.000058          7\n2024-12-31  315.712605  320.016472  ... -0.000150          7\n2024-12-31  110.346995  112.243228  ... -0.002528          7\n2024-12-31  678.610301  679.306713  ... -0.000712          7\n2024-12-31  593.923393  598.367449  ...  0.000358          7\n\n[204366 rows x 87 columns]",
-    "holdout_df": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.000441          8\n2025-02-05  3936.911711  3985.217376  ... -0.000278          8\n2025-02-05  2225.445671  2251.486081  ... -0.000411          8\n2025-02-05   577.233481   596.984840  ...  0.000792          8\n2025-02-05  1741.482818  1741.482818  ...  0.000303          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.000665          8\n2026-09-03  1265.000000  1278.900024  ...  0.000982          8\n2026-09-03   136.300003   137.770004  ...  0.000553          8\n2026-09-03   705.000000   710.900024  ...  0.000439          8\n2026-09-03    91.080002    92.820000  ... -0.000126          8\n\n[21602 rows x 87 columns]",
-    "holdout_df_20d": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.004919          8\n2025-02-05  3936.911711  3985.217376  ...  0.006430          8\n2025-02-05  2225.445671  2251.486081  ...  0.007082          8\n2025-02-05   577.233481   596.984840  ...  0.008616          8\n2025-02-05  1741.482818  1741.482818  ...  0.005900          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.005175          8\n2026-09-03  1265.000000  1278.900024  ...  0.005531          8\n2026-09-03   136.300003   137.770004  ...  0.003637          8\n2026-09-03   705.000000   710.900024  ...  0.003427          8\n2026-09-03    91.080002    92.820000  ... -0.001979          8\n\n[21602 rows x 87 columns]"
+    "oos_df": "                  Open        High  ...   grossEV  foldIndex\nDate                                ...                     \n2008-01-08  223.628979  226.334168  ...  0.002478          0\n2008-01-08   37.334085   38.117815  ...  0.003739          0\n2008-01-08  782.036301  798.165800  ...  0.002234          0\n2008-01-08  179.086843  185.178024  ...  0.003066          0\n2008-01-08   60.300133   61.521404  ...  0.002106          0\n...                ...         ...  ...       ...        ...\n2024-12-31  131.048269  132.781279  ... -0.000943          7\n2024-12-31  315.712605  320.016472  ... -0.001651          7\n2024-12-31  110.346995  112.243228  ... -0.000673          7\n2024-12-31  678.610301  679.306713  ... -0.001091          7\n2024-12-31  593.923393  598.367449  ...  0.000192          7\n\n[204366 rows x 88 columns]",
+    "oos_df_20d": "                  Open        High  ...   grossEV  foldIndex\nDate                                ...                     \n2008-01-08  223.628979  226.334168  ...  0.051585          0\n2008-01-08   37.334085   38.117815  ...  0.016800          0\n2008-01-08  782.036301  798.165800  ...  0.012291          0\n2008-01-08  179.086843  185.178024  ...  0.011086          0\n2008-01-08   60.300133   61.521404  ...  0.015108          0\n...                ...         ...  ...       ...        ...\n2024-12-31  131.048269  132.781279  ...  0.000058          7\n2024-12-31  315.712605  320.016472  ... -0.000150          7\n2024-12-31  110.346995  112.243228  ... -0.002528          7\n2024-12-31  678.610301  679.306713  ... -0.000712          7\n2024-12-31  593.923393  598.367449  ...  0.000358          7\n\n[204366 rows x 88 columns]",
+    "holdout_df": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.000441          8\n2025-02-05  3936.911711  3985.217376  ... -0.000278          8\n2025-02-05  2225.445671  2251.486081  ... -0.000411          8\n2025-02-05   577.233481   596.984840  ...  0.000792          8\n2025-02-05  1741.482818  1741.482818  ...  0.000303          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.000665          8\n2026-09-03  1265.000000  1278.900024  ...  0.000982          8\n2026-09-03   136.300003   137.770004  ...  0.000553          8\n2026-09-03   705.000000   710.900024  ...  0.000439          8\n2026-09-03    91.080002    92.820000  ... -0.000126          8\n\n[21602 rows x 88 columns]",
+    "holdout_df_20d": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.004919          8\n2025-02-05  3936.911711  3985.217376  ...  0.006430          8\n2025-02-05  2225.445671  2251.486081  ...  0.007082          8\n2025-02-05   577.233481   596.984840  ...  0.008616          8\n2025-02-05  1741.482818  1741.482818  ...  0.005900          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.005175          8\n2026-09-03  1265.000000  1278.900024  ...  0.005531          8\n2026-09-03   136.300003   137.770004  ...  0.003637          8\n2026-09-03   705.000000   710.900024  ...  0.003427          8\n2026-09-03    91.080002    92.820000  ... -0.001979          8\n\n[21602 rows x 88 columns]"
   },
   "modelA_Short": {
     "modelType": "MODEL_A_SHORT_2021",
@@ -2414,10 +3286,10 @@
     "devOosRows": 25685,
     "holdoutRows": 21602,
     "totalOosRows": 47287,
-    "oos_df": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2023-02-06   981.723368   987.450040  ... -0.000880          7\n2023-02-06   765.616159   770.415208  ...  0.001043          7\n2023-02-06   236.952107   244.023048  ...  0.000298          7\n2023-02-06   445.835042   445.835042  ...  0.001441          7\n2023-02-06  3134.236349  3134.236349  ...  0.000204          7\n...                 ...          ...  ...       ...        ...\n2024-12-31   131.048269   132.781279  ...  0.000831          7\n2024-12-31   315.712605   320.016472  ...  0.001117          7\n2024-12-31   110.346995   112.243228  ...  0.000994          7\n2024-12-31   678.610301   679.306713  ...  0.000966          7\n2024-12-31   593.923393   598.367449  ...  0.001060          7\n\n[25685 rows x 87 columns]",
-    "oos_df_20d": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2023-02-06   981.723368   987.450040  ... -0.002449          7\n2023-02-06   765.616159   770.415208  ...  0.006906          7\n2023-02-06   236.952107   244.023048  ...  0.000163          7\n2023-02-06   445.835042   445.835042  ...  0.005952          7\n2023-02-06  3134.236349  3134.236349  ...  0.002408          7\n...                 ...          ...  ...       ...        ...\n2024-12-31   131.048269   132.781279  ...  0.002534          7\n2024-12-31   315.712605   320.016472  ...  0.005522          7\n2024-12-31   110.346995   112.243228  ...  0.007224          7\n2024-12-31   678.610301   679.306713  ...  0.005053          7\n2024-12-31   593.923393   598.367449  ...  0.003989          7\n\n[25685 rows x 87 columns]",
-    "holdout_df": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.000280          8\n2025-02-05  3936.911711  3985.217376  ...  0.000413          8\n2025-02-05  2225.445671  2251.486081  ...  0.000444          8\n2025-02-05   577.233481   596.984840  ...  0.000541          8\n2025-02-05  1741.482818  1741.482818  ...  0.000437          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.001051          8\n2026-09-03  1265.000000  1278.900024  ...  0.000603          8\n2026-09-03   136.300003   137.770004  ...  0.000637          8\n2026-09-03   705.000000   710.900024  ...  0.000411          8\n2026-09-03    91.080002    92.820000  ... -0.000694          8\n\n[21602 rows x 87 columns]",
-    "holdout_df_20d": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.004826          8\n2025-02-05  3936.911711  3985.217376  ...  0.005382          8\n2025-02-05  2225.445671  2251.486081  ...  0.006687          8\n2025-02-05   577.233481   596.984840  ...  0.008062          8\n2025-02-05  1741.482818  1741.482818  ...  0.005485          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.005285          8\n2026-09-03  1265.000000  1278.900024  ...  0.005116          8\n2026-09-03   136.300003   137.770004  ...  0.002952          8\n2026-09-03   705.000000   710.900024  ...  0.002781          8\n2026-09-03    91.080002    92.820000  ... -0.001005          8\n\n[21602 rows x 87 columns]"
+    "oos_df": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2023-02-06   981.723368   987.450040  ... -0.000880          7\n2023-02-06   765.616159   770.415208  ...  0.001043          7\n2023-02-06   236.952107   244.023048  ...  0.000298          7\n2023-02-06   445.835042   445.835042  ...  0.001441          7\n2023-02-06  3134.236349  3134.236349  ...  0.000204          7\n...                 ...          ...  ...       ...        ...\n2024-12-31   131.048269   132.781279  ...  0.000831          7\n2024-12-31   315.712605   320.016472  ...  0.001117          7\n2024-12-31   110.346995   112.243228  ...  0.000994          7\n2024-12-31   678.610301   679.306713  ...  0.000966          7\n2024-12-31   593.923393   598.367449  ...  0.001060          7\n\n[25685 rows x 88 columns]",
+    "oos_df_20d": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2023-02-06   981.723368   987.450040  ... -0.002449          7\n2023-02-06   765.616159   770.415208  ...  0.006906          7\n2023-02-06   236.952107   244.023048  ...  0.000163          7\n2023-02-06   445.835042   445.835042  ...  0.005952          7\n2023-02-06  3134.236349  3134.236349  ...  0.002408          7\n...                 ...          ...  ...       ...        ...\n2024-12-31   131.048269   132.781279  ...  0.002534          7\n2024-12-31   315.712605   320.016472  ...  0.005522          7\n2024-12-31   110.346995   112.243228  ...  0.007224          7\n2024-12-31   678.610301   679.306713  ...  0.005053          7\n2024-12-31   593.923393   598.367449  ...  0.003989          7\n\n[25685 rows x 88 columns]",
+    "holdout_df": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.000280          8\n2025-02-05  3936.911711  3985.217376  ...  0.000413          8\n2025-02-05  2225.445671  2251.486081  ...  0.000444          8\n2025-02-05   577.233481   596.984840  ...  0.000541          8\n2025-02-05  1741.482818  1741.482818  ...  0.000437          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.001051          8\n2026-09-03  1265.000000  1278.900024  ...  0.000603          8\n2026-09-03   136.300003   137.770004  ...  0.000637          8\n2026-09-03   705.000000   710.900024  ...  0.000411          8\n2026-09-03    91.080002    92.820000  ... -0.000694          8\n\n[21602 rows x 88 columns]",
+    "holdout_df_20d": "                   Open         High  ...   grossEV  foldIndex\nDate                                  ...                     \n2025-02-05  1249.936436  1257.366039  ...  0.004826          8\n2025-02-05  3936.911711  3985.217376  ...  0.005382          8\n2025-02-05  2225.445671  2251.486081  ...  0.006687          8\n2025-02-05   577.233481   596.984840  ...  0.008062          8\n2025-02-05  1741.482818  1741.482818  ...  0.005485          8\n...                 ...          ...  ...       ...        ...\n2026-09-03  1144.000000  1144.000000  ...  0.005285          8\n2026-09-03  1265.000000  1278.900024  ...  0.005116          8\n2026-09-03   136.300003   137.770004  ...  0.002952          8\n2026-09-03   705.000000   710.900024  ...  0.002781          8\n2026-09-03    91.080002    92.820000  ... -0.001005          8\n\n[21602 rows x 88 columns]"
   },
   "benchmarkSpliceValidation": {
     "splicedBenchmark": {

@@ -30,7 +30,8 @@ from models.universe_engine import (
     FULL_VIX_START_DATE,
     HISTORICAL_DATA_WINDOW_END
 )
-from models.alpha_ranker import CrossSectionalAlphaRanker
+from models.alpha_ranker import CrossSectionalAlphaRanker, RegimeConditionedAlphaRanker
+from models.regime_specialist_engine import RegimeSpecialistEngine
 from backtest.top3_alpha_evaluator import Top3AlphaEvaluator
 
 # Exact Historical Regimes / Eras spanning 2008 to 2026
@@ -188,6 +189,9 @@ class LongHistoryResearchEngine:
         self.panel_df = assign_cross_sectional_relevance_grades(self.panel_df)
         print("Enriching panel with cross-sectional regime meta-features (breadth, VIX, A/D ratio)...")
         self.panel_df = enrich_panel_with_regime_features(self.panel_df, vix_df=self.vix_df)
+        print("Enriching panel with point-in-time macro regime states (Bull/Bear x LowVol/HighVol x Trend/Choppy)...")
+        self.regime_specialist_engine = RegimeSpecialistEngine(benchmark_df=self.benchmark_df)
+        self.panel_df = self.regime_specialist_engine.classify_panel(self.panel_df)
         print(f"Panel loaded: {len(self.panel_df)} total observations across {len(self.historical_candles)} securities.")
         print(f"Dates span: {self.panel_df['predictionTimestamp'].min()} to {self.panel_df['predictionTimestamp'].max()}")
         return self.panel_df
@@ -241,12 +245,17 @@ class LongHistoryResearchEngine:
             print(f"[{now_str}] Fold {f_idx} ({label}): Train [{actual_tr_start} -> {tr_end}] ({len(train_data)} rows) | Test [{te_start} -> {te_end}] ({len(test_data)} rows)", flush=True)
             
             # Train independent 5D and 20D Alpha Rankers on fold training data
-            ranker_5d = CrossSectionalAlphaRanker(horizon_str='5d')
+            if model_type == 'MODEL_B_REGIME_SPECIALIST':
+                ranker_5d = RegimeConditionedAlphaRanker(horizon_str='5d')
+                ranker_20d = RegimeConditionedAlphaRanker(horizon_str='20d')
+            else:
+                ranker_5d = CrossSectionalAlphaRanker(horizon_str='5d')
+                ranker_20d = CrossSectionalAlphaRanker(horizon_str='20d')
+
             ranker_5d.fit(train_data, features=FEATURE_NAMES)
             oos_scored_5d = ranker_5d.predict(test_data, features=FEATURE_NAMES)
             oos_scored_5d['foldIndex'] = f_idx
 
-            ranker_20d = CrossSectionalAlphaRanker(horizon_str='20d')
             ranker_20d.fit(train_data, features=FEATURE_NAMES)
             oos_scored_20d = ranker_20d.predict(test_data, features=FEATURE_NAMES)
             oos_scored_20d['foldIndex'] = f_idx
@@ -545,29 +554,32 @@ def run_comprehensive_long_history_study():
     engine = LongHistoryResearchEngine()
     engine.load_and_preprocess_panel()
     
-    # 1. Evaluate Model B (Long History Expanding Window)
+    # 1. Evaluate Model B Regime Specialist (Regime-Conditioned Specialists)
+    res_b_spec = engine.run_walk_forward_evaluation('MODEL_B_REGIME_SPECIALIST')
+
+    # 2. Evaluate Model B Baseline (Long History Expanding Window)
     res_b = engine.run_walk_forward_evaluation('MODEL_B_LONG_EXPANDING')
     
-    # 2. Evaluate Model C (Rolling 5-Year Window)
+    # 3. Evaluate Model C (Rolling 5-Year Window)
     res_c = engine.run_walk_forward_evaluation('MODEL_C_ROLLING_5Y')
     
-    # 3. Evaluate Model A (Short History Baseline 2021+)
+    # 4. Evaluate Model A (Short History Baseline 2021+)
     res_a = engine.run_walk_forward_evaluation('MODEL_A_SHORT_2021')
     
-    # 4. Benchmark Splice Validation (Fold 0: 2008-2009 GFC)
+    # 5. Benchmark Splice Validation (Fold 0: 2008-2009 GFC)
     fold_0_data = res_b['oos_df'][res_b['oos_df']['foldIndex'] == 0] if 'foldIndex' in res_b['oos_df'].columns else res_b['oos_df']
     splice_validation = engine.run_benchmark_splice_validation(fold_0_data)
 
-    # 5. Scoring Objective Ablation Study on Development Data
+    # 6. Scoring Objective Ablation Study on Development Data
     scoring_ablation = engine.run_scoring_ablation_study(res_b['oos_df'])
 
-    # 6. Transaction Cost Stress Testing
+    # 7. Transaction Cost Stress Testing
     cost_stress = engine.run_cost_stress_testing(res_b['oos_df'])
 
-    # 7. Era-by-Era & Crisis Diagnostics using Model B's development out-of-sample predictions
+    # 8. Era-by-Era & Crisis Diagnostics using Model B's development out-of-sample predictions
     era_report, crisis_report = engine.run_era_and_crisis_evaluations(res_b['oos_df'])
     
-    # 8. Compile Master Artifact Manifest
+    # 9. Compile Master Artifact Manifest
     manifest = {
         "datasetMetadata": {
             "earliestValidMarketDate": "2002-07-01",
@@ -603,6 +615,14 @@ def run_comprehensive_long_history_study():
                 "top3PortfolioHitRate": res_b['aggregate'].get('hitRates5d', {}).get('top3PortfolioHitRateVsNifty'),
                 "meanExcessReturn5d": res_b['aggregate'].get('hitRates5d', {}).get('meanExcessReturnPct')
             },
+            "modelB_RegimeSpecialist": {
+                "cagr": res_b_spec['aggregate'].get('backtestMetrics', {}).get('cagr'),
+                "sharpe": res_b_spec['aggregate'].get('backtestMetrics', {}).get('sharpe'),
+                "sortino": res_b_spec['aggregate'].get('backtestMetrics', {}).get('sortino'),
+                "maxDrawdown": res_b_spec['aggregate'].get('backtestMetrics', {}).get('maxDrawdown'),
+                "top3PortfolioHitRate": res_b_spec['aggregate'].get('hitRates5d', {}).get('top3PortfolioHitRateVsNifty'),
+                "meanExcessReturn5d": res_b_spec['aggregate'].get('hitRates5d', {}).get('meanExcessReturnPct')
+            },
             "modelC_Rolling5Y": {
                 "cagr": res_c['aggregate'].get('backtestMetrics', {}).get('cagr'),
                 "sharpe": res_c['aggregate'].get('backtestMetrics', {}).get('sharpe'),
@@ -615,6 +635,8 @@ def run_comprehensive_long_history_study():
         "frozenHoldoutValidation": {
             "modelB_Holdout": res_b.get('frozenHoldout', {}),
             "modelB_Holdout20d": res_b.get('frozenHoldout20d', {}),
+            "modelB_RegimeSpecialist_Holdout": res_b_spec.get('frozenHoldout', {}),
+            "modelB_RegimeSpecialist_Holdout20d": res_b_spec.get('frozenHoldout20d', {}),
             "modelC_Holdout": res_c.get('frozenHoldout', {}),
             "modelC_Holdout20d": res_c.get('frozenHoldout20d', {}),
         },
@@ -641,6 +663,7 @@ def run_comprehensive_long_history_study():
         json.dump(manifest, f, indent=2, default=str)
     with open(report_path, 'w') as f:
         json.dump({
+            "modelB_RegimeSpecialist": res_b_spec,
             "modelB_Expanding": res_b,
             "modelC_Rolling": res_c,
             "modelA_Short": res_a,
@@ -654,17 +677,25 @@ def run_comprehensive_long_history_study():
     print(f"\nArtifact saved to {manifest_path}")
     print(f"Complete report saved to {report_path}")
     
-    print("\n" + "=" * 85)
-    print("3-WAY MODEL ARCHITECTURE COMPARISON (STRICT OUT-OF-SAMPLE)")
-    print(f"{'Metric':<32} | {'Model A (Short 2021+)':<20} | {'Model B (Long Expanding)':<24} | {'Model C (Rolling 5Y)':<20}")
-    print("-" * 105)
-    print(f"{'CAGR':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['cagr'])+'%':>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['cagr'])+'%':>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['cagr'])+'%':>18}")
-    print(f"{'Sharpe Ratio':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['sharpe']):>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['sharpe']):>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['sharpe']):>18}")
-    print(f"{'Sortino Ratio':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['sortino']):>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['sortino']):>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['sortino']):>18}")
-    print(f"{'Max Drawdown':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['maxDrawdown'])+'%':>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['maxDrawdown'])+'%':>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['maxDrawdown'])+'%':>18}")
-    print(f"{'Top-3 Hit Rate vs NIFTY':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['top3PortfolioHitRate'])+'%':>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['top3PortfolioHitRate'])+'%':>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['top3PortfolioHitRate'])+'%':>18}")
-    print(f"{'Mean Excess Return / 5d':<32} | {str(manifest['modelComparison']['modelA_ShortHistory2021']['meanExcessReturn5d'])+'%':>18} | {str(manifest['modelComparison']['modelB_LongHistoryExpanding']['meanExcessReturn5d'])+'%':>22} | {str(manifest['modelComparison']['modelC_Rolling5Y']['meanExcessReturn5d'])+'%':>18}")
-    print("=" * 85)
+    print("\n" + "=" * 115)
+    print("4-WAY MODEL ARCHITECTURE COMPARISON (STRICT OUT-OF-SAMPLE)")
+    print(f"{'Metric':<28} | {'Model A (Short)':<16} | {'Model B (Baseline)':<18} | {'Model B (Regime Spec)':<22} | {'Model C (Rolling)':<18}")
+    print("-" * 115)
+    m_comp = manifest['modelComparison']
+    for metric_name, field in [
+        ('CAGR', 'cagr'),
+        ('Sharpe Ratio', 'sharpe'),
+        ('Sortino Ratio', 'sortino'),
+        ('Max Drawdown', 'maxDrawdown'),
+        ('Top-3 Hit Rate vs NIFTY', 'top3PortfolioHitRate'),
+        ('Mean Excess Return / 5d', 'meanExcessReturn5d')
+    ]:
+        val_a = str(m_comp['modelA_ShortHistory2021'][field]) + ('%' if 'CAGR' in metric_name or 'Rate' in metric_name or 'Drawdown' in metric_name or 'Return' in metric_name else '')
+        val_b = str(m_comp['modelB_LongHistoryExpanding'][field]) + ('%' if 'CAGR' in metric_name or 'Rate' in metric_name or 'Drawdown' in metric_name or 'Return' in metric_name else '')
+        val_b_spec = str(m_comp['modelB_RegimeSpecialist'][field]) + ('%' if 'CAGR' in metric_name or 'Rate' in metric_name or 'Drawdown' in metric_name or 'Return' in metric_name else '')
+        val_c = str(m_comp['modelC_Rolling5Y'][field]) + ('%' if 'CAGR' in metric_name or 'Rate' in metric_name or 'Drawdown' in metric_name or 'Return' in metric_name else '')
+        print(f"{metric_name:<28} | {val_a:>16} | {val_b:>18} | {val_b_spec:>22} | {val_c:>18}")
+    print("=" * 115)
 
 if __name__ == '__main__':
     run_comprehensive_long_history_study()
