@@ -31,6 +31,7 @@ class CrossSectionalAlphaRanker:
     def __init__(
         self,
         horizon_str: str = '5d',
+        target_type: str = 'std_excess',
         cal_y_min: Optional[float] = None,
         cal_y_max: Optional[float] = None,
         friction_rate: float = 0.0013,
@@ -38,6 +39,7 @@ class CrossSectionalAlphaRanker:
         clip_upper: float = 0.5
     ):
         self.horizon_str = horizon_str
+        self.target_type = target_type
         self.h_days = 5 if horizon_str == '5d' else (20 if horizon_str == '20d' else 1)
         self.cal_y_min = cal_y_min
         self.cal_y_max = cal_y_max
@@ -59,8 +61,18 @@ class CrossSectionalAlphaRanker:
         Fits LambdaMART ranker and Huber magnitude model on train_df grouped by date.
         """
         h = self.h_days
-        grade_col = f'target_rank_grade_{self.horizon_str}'
-        excess_col = f'target_vol_std_excess_{self.horizon_str}'
+        if self.target_type == 'std_excess':
+            grade_col = f'target_rank_grade_{self.horizon_str}'
+            excess_col = f'target_vol_std_excess_{self.horizon_str}'
+        else:
+            grade_col = f'target_rank_grade_{self.target_type}_{self.horizon_str}'
+            excess_col = f'target_{self.target_type}_{self.horizon_str}'
+            
+        # Fallback to standard columns if specific target columns are absent
+        if grade_col not in train_df.columns:
+            grade_col = f'target_rank_grade_{self.horizon_str}'
+        if excess_col not in train_df.columns:
+            excess_col = f'target_vol_std_excess_{self.horizon_str}'
         
         req_cols = features + [grade_col, excess_col]
         clean_train = train_df.dropna(subset=req_cols).copy()
@@ -112,7 +124,6 @@ class CrossSectionalAlphaRanker:
             'learning_rate': lr,
             'num_leaves': n_leaves,
             'max_depth': 4,
-            'eval_at': [1, 3, 5],
             'label_gain': [0, 1, 3, 7, 15],
             'subsample': 0.8,
             'colsample_bytree': 0.8,
@@ -177,26 +188,35 @@ class CrossSectionalAlphaRanker:
         X = df[features]
         
         raw_rank_score = self.ranker.predict(X)
-        pred_std_excess = self.magnitude_model.predict(X)
+        pred_excess_model = self.magnitude_model.predict(X)
         
         df['rank_score'] = raw_rank_score
-        df['pred_std_excess'] = pred_std_excess
         
-        # De-standardize expected excess return: std_excess * (daily_vol * sqrt(h))
-        # Use return-based volatility consistently with target construction
-        # vol_20d is annualized (sqrt(252)), so de-annualize to get daily vol
+        # Calculate horizon volatility: vol_20d is annualized (sqrt(252)), de-annualize to daily
         daily_vol = df['vol_20d'] / np.sqrt(252) if 'vol_20d' in df.columns else df['atr_percent']
+        daily_vol = daily_vol.fillna(0.01)
         h_vol = daily_vol * np.sqrt(self.h_days)
         h_vol = h_vol.clip(lower=0.005)
         
-        df['expectedExcessReturn'] = pred_std_excess * h_vol
+        # De-standardize expected excess return depending on target family:
+        if self.target_type in ('std_excess', 'vol_adj_net_excess'):
+            df['pred_std_excess'] = pred_excess_model
+            df['expectedExcessReturn'] = pred_excess_model * h_vol
+        else:
+            # Model directly predicts unscaled net/raw excess return
+            df['expectedExcessReturn'] = pred_excess_model
+            df['pred_std_excess'] = pred_excess_model / h_vol
+
+        df['pred_std_excess'] = df['pred_std_excess'].fillna(0.0)
+        df['expectedExcessReturn'] = df['expectedExcessReturn'].fillna(0.0)
         df['expectedReturn'] = df['expectedExcessReturn']  # Excess is primary alpha return
         
         # True empirical calibrated probability from Isotonic Calibrator
         if self.calibrator is not None:
-            df['calibratedProbability'] = self.calibrator.predict(pred_std_excess)
+            cal_in = np.nan_to_num(df['pred_std_excess'].values, nan=0.0)
+            df['calibratedProbability'] = self.calibrator.predict(cal_in)
         else:
-            df['calibratedProbability'] = np.clip(0.5 + 0.15 * pred_std_excess, 0.10, 0.90)
+            df['calibratedProbability'] = np.clip(0.5 + 0.15 * df['pred_std_excess'], 0.10, 0.90)
         df['pred_prob'] = df['calibratedProbability']
         
         # Daily cross-sectional percentile rank for LambdaMART score
@@ -216,11 +236,6 @@ class CrossSectionalAlphaRanker:
         risk_adj_excess_score = (df['expectedExcessReturn'] - self.friction_rate) / h_vol
         clamped_rae = risk_adj_excess_score.clip(lower=self.clip_lower, upper=self.clip_upper)
         
-        # Canonical AlphaScore: cross-sectional rank scaled by risk-adjusted excess return.
-        # Note: cross_sec_vol_rank is available as a LambdaMART input feature so the model
-        # can learn volatility effects from training data.  A post-hoc vol_penalty was removed
-        # after holdout analysis showed it biased toward defensive names that underperformed
-        # in the bullish 2025-26 holdout period (20D excess = -1.37%, t = -2.66).
         df['canonicalAlphaScore'] = df['cross_sectional_rank_pct'] * (1.0 + clamped_rae)
         df['opportunityScore'] = df['canonicalAlphaScore']
         df['compositeScore'] = df['canonicalAlphaScore']
@@ -315,17 +330,19 @@ class RegimeConditionedAlphaRanker:
     def __init__(
         self,
         horizon_str: str = '5d',
+        target_type: str = 'std_excess',
         min_specialist_samples: int = 800,
         min_specialist_dates: int = 15,
         default_regime: str = 'BULL_LOWVOL_CHOPPY',
         **ranker_kwargs
     ):
         self.horizon_str = horizon_str
+        self.target_type = target_type
         self.min_specialist_samples = min_specialist_samples
         self.min_specialist_dates = min_specialist_dates
         self.default_regime = default_regime
         self.ranker_kwargs = ranker_kwargs
-        self.global_ranker = CrossSectionalAlphaRanker(horizon_str=horizon_str, **ranker_kwargs)
+        self.global_ranker = CrossSectionalAlphaRanker(horizon_str=horizon_str, target_type=target_type, **ranker_kwargs)
         self.specialists: Dict[str, CrossSectionalAlphaRanker] = {}
         self.trained_states: List[str] = []
         self.is_fitted = False
@@ -357,7 +374,7 @@ class RegimeConditionedAlphaRanker:
             )
 
             if len(st_sub) >= self.min_specialist_samples and n_dates >= self.min_specialist_dates:
-                st_ranker = CrossSectionalAlphaRanker(horizon_str=self.horizon_str, **self.ranker_kwargs)
+                st_ranker = CrossSectionalAlphaRanker(horizon_str=self.horizon_str, target_type=self.target_type, **self.ranker_kwargs)
                 st_tune = (
                     tune_df[tune_df['regime_state'] == state]
                     if (tune_df is not None and 'regime_state' in tune_df.columns)
@@ -415,6 +432,7 @@ class RegimeConditionedAlphaRanker:
         """Returns metadata on fitted regime specialists."""
         return {
             'horizon': self.horizon_str,
+            'targetType': self.target_type,
             'isFitted': self.is_fitted,
             'totalTrainedSpecialists': len(self.trained_states),
             'trainedSpecialistStates': self.trained_states,

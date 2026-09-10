@@ -196,15 +196,20 @@ class LongHistoryResearchEngine:
         print(f"Dates span: {self.panel_df['predictionTimestamp'].min()} to {self.panel_df['predictionTimestamp'].max()}")
         return self.panel_df
 
-    def run_walk_forward_evaluation(self, model_type: str = 'MODEL_B_LONG_EXPANDING') -> Dict[str, Any]:
+    def run_walk_forward_evaluation(
+        self,
+        model_type: str = 'MODEL_B_LONG_EXPANDING',
+        target_type: str = 'vol_adj_net_excess'
+    ) -> Dict[str, Any]:
         """
         Executes strict walk-forward evaluation across all 8 chronological folds.
         Supports:
         - MODEL_A_SHORT_2021: Trained only on post-2021 data (legacy design)
         - MODEL_B_LONG_EXPANDING: Trained expanding from 2008
         - MODEL_C_ROLLING_5Y: Trained on rolling trailing 5-year window
+        - MODEL_B_REGIME_SPECIALIST: Regime-conditioned specialist ensemble
         """
-        print(f"\n>>> RUNNING WALK-FORWARD EVALUATION FOR: {model_type} <<<")
+        print(f"\n>>> RUNNING WALK-FORWARD EVALUATION FOR: {model_type} [target={target_type}] <<<")
         fold_results = []
         all_oos_predictions_5d = []
         all_oos_predictions_20d = []
@@ -246,11 +251,11 @@ class LongHistoryResearchEngine:
             
             # Train independent 5D and 20D Alpha Rankers on fold training data
             if model_type == 'MODEL_B_REGIME_SPECIALIST':
-                ranker_5d = RegimeConditionedAlphaRanker(horizon_str='5d')
-                ranker_20d = RegimeConditionedAlphaRanker(horizon_str='20d')
+                ranker_5d = RegimeConditionedAlphaRanker(horizon_str='5d', target_type=target_type)
+                ranker_20d = RegimeConditionedAlphaRanker(horizon_str='20d', target_type=target_type)
             else:
-                ranker_5d = CrossSectionalAlphaRanker(horizon_str='5d')
-                ranker_20d = CrossSectionalAlphaRanker(horizon_str='20d')
+                ranker_5d = CrossSectionalAlphaRanker(horizon_str='5d', target_type=target_type)
+                ranker_20d = CrossSectionalAlphaRanker(horizon_str='20d', target_type=target_type)
 
             ranker_5d.fit(train_data, features=FEATURE_NAMES)
             oos_scored_5d = ranker_5d.predict(test_data, features=FEATURE_NAMES)
@@ -653,6 +658,15 @@ def run_comprehensive_long_history_study():
         try:
             with open(ic_rep_path, 'r') as ic_f:
                 manifest["icDiagnosticReport"] = json.load(ic_f)
+        except Exception:
+            pass
+
+    # Load Target Ablation Study if present and bind into manifest
+    target_abl_path = "packages/quant-engine/research/target_ablation_results.json"
+    if os.path.exists(target_abl_path):
+        try:
+            with open(target_abl_path, 'r') as ta_f:
+                manifest["targetAblationStudy"] = json.load(ta_f)
         except Exception:
             pass
     
