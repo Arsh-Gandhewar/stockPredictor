@@ -1,0 +1,272 @@
+{
+  "evaluationTimestamp": "2026-09-10 13:07:49",
+  "strategyHorizon": "20d",
+  "targetType": "vol_adj_net_excess",
+  "baselinePerformance": {
+    "medianExcess20d": 0.4085,
+    "meanExcess20d": 0.48062499999999997,
+    "iqrExcess20d": 0.9517499999999999,
+    "minExcess20d": -0.451,
+    "maxExcess20d": 1.43,
+    "cagr": 9.87,
+    "sharpe": 0.74,
+    "sortino": 0.79,
+    "maxDrawdown": -77.67,
+    "annualTurnover": 2102.2,
+    "top3HitRate": 52.08
+  },
+  "foldSummaries": [
+    {
+      "foldIndex": 0,
+      "label": "2008-2009 GFC Out-of-Sample",
+      "testStart": "2008-01-08",
+      "testEnd": "2009-12-31",
+      "meanExcess20d": 0.393,
+      "sharpe20d": -1.25,
+      "sortino20d": -1.43,
+      "cagr20d": -16.98,
+      "maxDrawdown20d": -77.67,
+      "annualTurnover20d": 2549.7,
+      "top3HitRate20d": 55.3
+    },
+    {
+      "foldIndex": 1,
+      "label": "2011-2012 Out-of-Sample",
+      "testStart": "2011-02-05",
+      "testEnd": "2012-12-31",
+      "meanExcess20d": 0.85,
+      "sharpe20d": 2.19,
+      "sortino20d": 4.87,
+      "cagr20d": 15.62,
+      "maxDrawdown20d": -12.8,
+      "annualTurnover20d": 2246.1,
+      "top3HitRate20d": 56.74
+    },
+    {
+      "foldIndex": 2,
+      "label": "2013-2014 Out-of-Sample",
+      "testStart": "2013-02-05",
+      "testEnd": "2014-12-31",
+      "meanExcess20d": 0.424,
+      "sharpe20d": 3.59,
+      "sortino20d": 6.57,
+      "cagr20d": 25.81,
+      "maxDrawdown20d": -17.36,
+      "annualTurnover20d": 1941.3,
+      "top3HitRate20d": 50.97
+    },
+    {
+      "foldIndex": 3,
+      "label": "2015-2016 Out-of-Sample",
+      "testStart": "2015-02-05",
+      "testEnd": "2016-12-31",
+      "meanExcess20d": 1.38,
+      "sharpe20d": 1.73,
+      "sortino20d": 3.08,
+      "cagr20d": 12.49,
+      "maxDrawdown20d": -13.93,
+      "annualTurnover20d": 2167.7,
+      "top3HitRate20d": 58.92
+    },
+    {
+      "foldIndex": 4,
+      "label": "2017-2018 Out-of-Sample",
+      "testStart": "2017-02-05",
+      "testEnd": "2018-12-31",
+      "meanExcess20d": -0.451,
+      "sharpe20d": -0.26,
+      "sortino20d": -0.37,
+      "cagr20d": 2.9,
+      "maxDrawdown20d": -13.61,
+      "annualTurnover20d": 2077.6,
+      "top3HitRate20d": 47.55
+    },
+    {
+      "foldIndex": 5,
+      "label": "2019-2020 Out-of-Sample",
+      "testStart": "2019-02-05",
+      "testEnd": "2020-12-31",
+      "meanExcess20d": 1.43,
+      "sharpe20d": 3.2,
+      "sortino20d": 4.63,
+      "cagr20d": 32.66,
+      "maxDrawdown20d": -20.96,
+      "annualTurnover20d": 1978.6,
+      "top3HitRate20d": 55.25
+    },
+    {
+      "foldIndex": 6,
+      "label": "2021-2022 Out-of-Sample",
+      "testStart": "2021-02-05",
+      "testEnd": "2022-12-31",
+      "meanExcess20d": 0.152,
+      "sharpe20d": 1.34,
+      "sortino20d": 2.23,
+      "cagr20d": 10.09,
+      "maxDrawdown20d": -18.51,
+      "annualTurnover20d": 1494.9,
+      "top3HitRate20d": 51.06
+    },
+    {
+      "foldIndex": 7,
+      "label": "2023-2024 Out-of-Sample",
+      "testStart": "2023-02-05",
+      "testEnd": "2024-12-31",
+      "meanExcess20d": -0.333,
+      "sharpe20d": 1.36,
+      "sortino20d": 2.46,
+      "cagr20d": 9.22,
+      "maxDrawdown20d": -10.33,
+      "annualTurnover20d": 1996.6,
+      "top3HitRate20d": 44.11
+    }
+  ],
+  "loeoCrossValidation": {
+    "passed": false,
+    "worstCaseExcludedEra": "2019-2020 COVID Crash & Stimulus Rebound",
+    "worstCaseSurvivingExcess": 0.294,
+    "worstCaseSurvivingSharpe": 0.39,
+    "results": [
+      {
+        "excludedEraId": "ERA_1_GFC",
+        "excludedEraName": "2008-2009 Global Financial Crisis",
+        "excludedPeriod": "2008-01-01 to 2009-12-31",
+        "remainingObservations": 178714,
+        "meanExcess20d": 0.452,
+        "cagr": 14.61,
+        "sharpe": 1.94,
+        "sortino": 3.19,
+        "maxDrawdown": -21.51,
+        "annualTurnover": 2028.6,
+        "top3HitRate": 51.7
+      },
+      {
+        "excludedEraId": "ERA_2_EURO_INFLATION",
+        "excludedEraName": "2010-2011 Euro Debt & Inflation Shock",
+        "excludedPeriod": "2010-01-01 to 2012-12-31",
+        "remainingObservations": 179148,
+        "meanExcess20d": 0.413,
+        "cagr": 9.54,
+        "sharpe": 0.67,
+        "sortino": 0.7,
+        "maxDrawdown": -77.67,
+        "annualTurnover": 2066.7,
+        "top3HitRate": 51.71
+      },
+      {
+        "excludedEraId": "ERA_3_TAPER_ELECTION",
+        "excludedEraName": "2013-2014 Taper Tantrum & Modi 1.0 Rally",
+        "excludedPeriod": "2013-01-01 to 2014-12-31",
+        "remainingObservations": 179148,
+        "meanExcess20d": 0.464,
+        "cagr": 8.17,
+        "sharpe": 0.52,
+        "sortino": 0.55,
+        "maxDrawdown": -77.67,
+        "annualTurnover": 2109.6,
+        "top3HitRate": 52.36
+      },
+      {
+        "excludedEraId": "ERA_4_COMMODITY_DEMON",
+        "excludedEraName": "2015-2016 Commodity Slowdown & Demonetization",
+        "excludedPeriod": "2015-01-01 to 2016-12-31",
+        "remainingObservations": 179094,
+        "meanExcess20d": 0.313,
+        "cagr": 9.59,
+        "sharpe": 0.68,
+        "sortino": 0.71,
+        "maxDrawdown": -77.67,
+        "annualTurnover": 2087.8,
+        "top3HitRate": 51.27
+      },
+      {
+        "excludedEraId": "ERA_5_GST_NBFC",
+        "excludedEraName": "2017-2018 GST Rollout & IL&FS Liquidity Shock",
+        "excludedPeriod": "2017-01-01 to 2018-12-31",
+        "remainingObservations": 178800,
+        "meanExcess20d": 0.571,
+        "cagr": 11.01,
+        "sharpe": 0.83,
+        "sortino": 0.88,
+        "maxDrawdown": -77.67,
+        "annualTurnover": 2100.6,
+        "top3HitRate": 52.92
+      },
+      {
+        "excludedEraId": "ERA_6_COVID_SHOCK",
+        "excludedEraName": "2019-2020 COVID Crash & Stimulus Rebound",
+        "excludedPeriod": "2019-01-01 to 2020-12-31",
+        "remainingObservations": 178571,
+        "meanExcess20d": 0.294,
+        "cagr": 6.96,
+        "sharpe": 0.39,
+        "sortino": 0.41,
+        "maxDrawdown": -77.67,
+        "annualTurnover": 2117.3,
+        "top3HitRate": 51.79
+      },
+      {
+        "excludedEraId": "ERA_7_RETAIL_TIGHTENING",
+        "excludedEraName": "2021-2024 Retail Boom & Global Rate Hiking",
+        "excludedPeriod": "2021-01-01 to 2024-12-31",
+        "remainingObservations": 152721,
+        "meanExcess20d": 0.611,
+        "cagr": 9.95,
+        "sharpe": 0.68,
+        "sortino": 0.72,
+        "maxDrawdown": -77.67,
+        "annualTurnover": 2207.1,
+        "top3HitRate": 53.58
+      }
+    ]
+  },
+  "costStressTesting": {
+    "stress2xPassed": true,
+    "stressMatrix": [
+      {
+        "costMultiplier": 1.0,
+        "effectiveFrictionBps": 13.0,
+        "meanExcess20d": 0.436,
+        "meanNetReturn20d": 1.211,
+        "cagr": 9.87,
+        "sharpe": 0.74,
+        "sortino": 0.79,
+        "maxDrawdown": -77.67,
+        "profitFactor": 1.28
+      },
+      {
+        "costMultiplier": 1.5,
+        "effectiveFrictionBps": 19.5,
+        "meanExcess20d": 0.289,
+        "meanNetReturn20d": 1.064,
+        "cagr": 7.86,
+        "sharpe": 0.5,
+        "sortino": 0.54,
+        "maxDrawdown": -78.17,
+        "profitFactor": 1.22
+      },
+      {
+        "costMultiplier": 2.0,
+        "effectiveFrictionBps": 26.0,
+        "meanExcess20d": 0.142,
+        "meanNetReturn20d": 0.917,
+        "cagr": 5.88,
+        "sharpe": 0.26,
+        "sortino": 0.28,
+        "maxDrawdown": -78.66,
+        "profitFactor": 1.17
+      },
+      {
+        "costMultiplier": 3.0,
+        "effectiveFrictionBps": 39.0,
+        "meanExcess20d": -0.152,
+        "meanNetReturn20d": 0.623,
+        "cagr": 2.02,
+        "sharpe": -0.21,
+        "sortino": -0.23,
+        "maxDrawdown": -79.61,
+        "profitFactor": 1.06
+      }
+    ]
+  }
+}

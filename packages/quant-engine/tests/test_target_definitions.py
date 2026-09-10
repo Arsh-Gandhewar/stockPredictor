@@ -141,3 +141,40 @@ def test_ranker_target_type_integration():
     regime_net.fit(panel, features=features)
     preds_regime = regime_net.predict(panel, features=features)
     assert 'canonicalAlphaScore' in preds_regime.columns
+
+def test_fail_closed_missing_target_columns_raises_keyerror():
+    panel, _ = _create_synthetic_panel()
+    features = ['rsi_14', 'vol_20d', 'ret_5d', 'ret_20d', 'atr_percent', 'bb_width']
+    
+    # Intentionally drop target columns to test fail-closed assertion
+    bad_panel = panel.drop(columns=['target_rank_grade_vol_adj_net_excess_20d', 'target_vol_adj_net_excess_20d'])
+    
+    ranker = CrossSectionalAlphaRanker(horizon_str='20d', target_type='vol_adj_net_excess')
+    with pytest.raises(KeyError) as excinfo:
+        ranker.fit(bad_panel, features=features)
+    assert "FAIL-CLOSED" in str(excinfo.value)
+    assert "target_rank_grade_vol_adj_net_excess_20d" in str(excinfo.value)
+
+    # Intentionally drop only excess return column
+    bad_panel2 = panel.drop(columns=['target_vol_adj_net_excess_20d'])
+    with pytest.raises(KeyError) as excinfo2:
+        ranker.fit(bad_panel2, features=features)
+    assert "FAIL-CLOSED" in str(excinfo2.value)
+    assert "target_vol_adj_net_excess_20d" in str(excinfo2.value)
+
+def test_ranker_training_lineage_tracked():
+    panel, _ = _create_synthetic_panel()
+    features = ['rsi_14', 'vol_20d', 'ret_5d', 'ret_20d', 'atr_percent', 'bb_width']
+    panel['regime_state'] = 'BULL_LOWVOL_CHOPPY'
+    
+    regime_ranker = RegimeConditionedAlphaRanker(horizon_str='20d', target_type='vol_adj_net_excess')
+    regime_ranker.fit(panel, features=features)
+    
+    assert regime_ranker.global_ranker.actual_training_target == 'vol_adj_net_excess'
+    assert regime_ranker.global_ranker.actual_grade_col == 'target_rank_grade_vol_adj_net_excess_20d'
+    assert regime_ranker.global_ranker.actual_excess_col == 'target_vol_adj_net_excess_20d'
+    
+    summary = regime_ranker.get_specialist_summary()
+    assert summary['actualTrainingTarget'] == 'vol_adj_net_excess'
+    assert summary['actualGradeCol'] == 'target_rank_grade_vol_adj_net_excess_20d'
+    assert summary['actualExcessCol'] == 'target_vol_adj_net_excess_20d'

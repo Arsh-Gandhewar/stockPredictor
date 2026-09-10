@@ -1,0 +1,602 @@
+{
+  "protocol": "Pre-Registered Nested Walk-Forward Target Selection (20D Primary Strategy)",
+  "timestamp": "2026-09-10 12:21:07",
+  "strategyHorizon": "20d",
+  "targetCandidates": [
+    "vol_adj_net_excess",
+    "std_excess",
+    "raw_excess",
+    "net_excess",
+    "pct_rank",
+    "tail_aware"
+  ],
+  "devFoldsCount": 8,
+  "devFoldsSummary": {
+    "medianExcess20d": -0.0535,
+    "meanExcess20d": -0.07774999999999999,
+    "stdExcess20d": 1.1486232791912236,
+    "iqrExcess20d": 1.04275,
+    "minExcess20d": -2.377,
+    "maxExcess20d": 1.651,
+    "positiveFoldsPct": 50.0,
+    "positiveFoldsCount": "4/8",
+    "aggregateCagr": -0.86,
+    "aggregateSharpe": -0.46,
+    "aggregateSortino": -0.54,
+    "aggregateMaxDrawdown": -81.76,
+    "medianTurnover": 1842.1,
+    "baselineAggregateSharpe": 1.22,
+    "baselineMedianExcess": 0.426
+  },
+  "foldDetails": [
+    {
+      "foldIndex": 0,
+      "label": "2008-2009 GFC Out-of-Sample",
+      "chosenTarget": "tail_aware",
+      "candidateRankings": [
+        {
+          "targetId": "tail_aware",
+          "meanExcess20d": 7.543,
+          "sharpe20d": 7.47,
+          "turnover20d": 2265.5,
+          "selectionScore": 7.51645
+        },
+        {
+          "targetId": "net_excess",
+          "meanExcess20d": 5.697,
+          "sharpe20d": 5.37,
+          "turnover20d": 2621.8,
+          "selectionScore": 5.63482
+        },
+        {
+          "targetId": "pct_rank",
+          "meanExcess20d": 5.65,
+          "sharpe20d": 5.96,
+          "turnover20d": 2647.3,
+          "selectionScore": 5.58527
+        },
+        {
+          "targetId": "raw_excess",
+          "meanExcess20d": 5.151,
+          "sharpe20d": 4.67,
+          "turnover20d": 2825.5,
+          "selectionScore": 5.0684499999999995
+        },
+        {
+          "targetId": "vol_adj_net_excess",
+          "meanExcess20d": 4.092,
+          "sharpe20d": 4.99,
+          "turnover20d": 2316.4,
+          "selectionScore": 4.060359999999999
+        },
+        {
+          "targetId": "std_excess",
+          "meanExcess20d": 3.399,
+          "sharpe20d": 3.48,
+          "turnover20d": 2341.8,
+          "selectionScore": 3.36482
+        }
+      ],
+      "outerMeanExcess20d": -0.192,
+      "outerSharpe20d": -1.74,
+      "outerCagr20d": -25.02,
+      "outerSortino20d": -1.99,
+      "outerMaxDrawdown20d": -81.76,
+      "outerAnnualTurnover20d": 1903.5,
+      "outerTop3HitRate20d": 53.85,
+      "baselineMeanExcess20d": 0.371,
+      "baselineSharpe20d": -1.18,
+      "lineage": {
+        "actualTrainingTarget": "tail_aware",
+        "actualGradeCol": "target_rank_grade_tail_aware_20d",
+        "actualExcessCol": "target_tail_aware_20d"
+      }
+    },
+    {
+      "foldIndex": 1,
+      "label": "2011-2012 Out-of-Sample",
+      "chosenTarget": "tail_aware",
+      "candidateRankings": [
+        {
+          "targetId": "tail_aware",
+          "meanExcess20d": 2.004,
+          "sharpe20d": 6.65,
+          "turnover20d": 1591.4,
+          "selectionScore": 2.004
+        },
+        {
+          "targetId": "net_excess",
+          "meanExcess20d": 1.372,
+          "sharpe20d": 6.36,
+          "turnover20d": 1935.9,
+          "selectionScore": 1.372
+        },
+        {
+          "targetId": "raw_excess",
+          "meanExcess20d": 0.857,
+          "sharpe20d": 5.26,
+          "turnover20d": 2083.6,
+          "selectionScore": 0.84864
+        },
+        {
+          "targetId": "std_excess",
+          "meanExcess20d": 0.841,
+          "sharpe20d": 6.75,
+          "turnover20d": 2378.9,
+          "selectionScore": 0.80311
+        },
+        {
+          "targetId": "pct_rank",
+          "meanExcess20d": 0.703,
+          "sharpe20d": 3.98,
+          "turnover20d": 2231.3,
+          "selectionScore": 0.67987
+        },
+        {
+          "targetId": "vol_adj_net_excess",
+          "meanExcess20d": 0.683,
+          "sharpe20d": 6.07,
+          "turnover20d": 2493.8,
+          "selectionScore": 0.6336200000000001
+        }
+      ],
+      "outerMeanExcess20d": 1.026,
+      "outerSharpe20d": 1.36,
+      "outerCagr20d": 14.79,
+      "outerSortino20d": 2.57,
+      "outerMaxDrawdown20d": -23.54,
+      "outerAnnualTurnover20d": 2154.8,
+      "outerTop3HitRate20d": 55.43,
+      "baselineMeanExcess20d": 0.481,
+      "baselineSharpe20d": 1.41,
+      "lineage": {
+        "actualTrainingTarget": "tail_aware",
+        "actualGradeCol": "target_rank_grade_tail_aware_20d",
+        "actualExcessCol": "target_tail_aware_20d"
+      }
+    },
+    {
+      "foldIndex": 2,
+      "label": "2013-2014 Out-of-Sample",
+      "chosenTarget": "vol_adj_net_excess",
+      "candidateRankings": [
+        {
+          "targetId": "vol_adj_net_excess",
+          "meanExcess20d": 0.923,
+          "sharpe20d": 2.62,
+          "turnover20d": 2249.8,
+          "selectionScore": 0.89802
+        },
+        {
+          "targetId": "raw_excess",
+          "meanExcess20d": 0.646,
+          "sharpe20d": 1.02,
+          "turnover20d": 2276.4,
+          "selectionScore": 0.61836
+        },
+        {
+          "targetId": "std_excess",
+          "meanExcess20d": 0.435,
+          "sharpe20d": 1.47,
+          "turnover20d": 2143.3,
+          "selectionScore": 0.42067
+        },
+        {
+          "targetId": "pct_rank",
+          "meanExcess20d": 0.441,
+          "sharpe20d": 0.59,
+          "turnover20d": 2276.4,
+          "selectionScore": 0.23254999999999998
+        },
+        {
+          "targetId": "net_excess",
+          "meanExcess20d": 0.265,
+          "sharpe20d": 0.35,
+          "turnover20d": 2183.2,
+          "selectionScore": 0.07443000000000002
+        },
+        {
+          "targetId": "tail_aware",
+          "meanExcess20d": -0.409,
+          "sharpe20d": -1.06,
+          "turnover20d": 1930.3,
+          "selectionScore": -0.00409
+        }
+      ],
+      "outerMeanExcess20d": 0.424,
+      "outerSharpe20d": 3.59,
+      "outerCagr20d": 25.81,
+      "outerSortino20d": 6.57,
+      "outerMaxDrawdown20d": -17.36,
+      "outerAnnualTurnover20d": 1941.3,
+      "outerTop3HitRate20d": 50.97,
+      "baselineMeanExcess20d": 1.163,
+      "baselineSharpe20d": 5.21,
+      "lineage": {
+        "actualTrainingTarget": "vol_adj_net_excess",
+        "actualGradeCol": "target_rank_grade_vol_adj_net_excess_20d",
+        "actualExcessCol": "target_vol_adj_net_excess_20d"
+      }
+    },
+    {
+      "foldIndex": 3,
+      "label": "2015-2016 Out-of-Sample",
+      "chosenTarget": "net_excess",
+      "candidateRankings": [
+        {
+          "targetId": "net_excess",
+          "meanExcess20d": 2.278,
+          "sharpe20d": 5.6,
+          "turnover20d": 2222.9,
+          "selectionScore": 2.25571
+        },
+        {
+          "targetId": "tail_aware",
+          "meanExcess20d": 1.815,
+          "sharpe20d": 4.56,
+          "turnover20d": 1742.6,
+          "selectionScore": 1.815
+        },
+        {
+          "targetId": "raw_excess",
+          "meanExcess20d": 1.539,
+          "sharpe20d": 4.69,
+          "turnover20d": 2423.9,
+          "selectionScore": 1.49661
+        },
+        {
+          "targetId": "pct_rank",
+          "meanExcess20d": 1.2,
+          "sharpe20d": 3.26,
+          "turnover20d": 2401.6,
+          "selectionScore": 1.15984
+        },
+        {
+          "targetId": "std_excess",
+          "meanExcess20d": 0.841,
+          "sharpe20d": 4.56,
+          "turnover20d": 2100.0,
+          "selectionScore": 0.831
+        },
+        {
+          "targetId": "vol_adj_net_excess",
+          "meanExcess20d": 0.575,
+          "sharpe20d": 3.69,
+          "turnover20d": 2200.5,
+          "selectionScore": 0.5549499999999999
+        }
+      ],
+      "outerMeanExcess20d": 1.651,
+      "outerSharpe20d": 1.9,
+      "outerCagr20d": 15.29,
+      "outerSortino20d": 3.48,
+      "outerMaxDrawdown20d": -15.72,
+      "outerAnnualTurnover20d": 2041.3,
+      "outerTop3HitRate20d": 63.66,
+      "baselineMeanExcess20d": 1.483,
+      "baselineSharpe20d": 2.02,
+      "lineage": {
+        "actualTrainingTarget": "net_excess",
+        "actualGradeCol": "target_rank_grade_net_excess_20d",
+        "actualExcessCol": "target_net_excess_20d"
+      }
+    },
+    {
+      "foldIndex": 4,
+      "label": "2017-2018 Out-of-Sample",
+      "chosenTarget": "net_excess",
+      "candidateRankings": [
+        {
+          "targetId": "net_excess",
+          "meanExcess20d": 2.767,
+          "sharpe20d": 5.18,
+          "turnover20d": 1956.2,
+          "selectionScore": 2.767
+        },
+        {
+          "targetId": "pct_rank",
+          "meanExcess20d": 2.788,
+          "sharpe20d": 5.05,
+          "turnover20d": 2291.8,
+          "selectionScore": 2.7588199999999996
+        },
+        {
+          "targetId": "raw_excess",
+          "meanExcess20d": 2.316,
+          "sharpe20d": 5.23,
+          "turnover20d": 2109.6,
+          "selectionScore": 2.30504
+        },
+        {
+          "targetId": "vol_adj_net_excess",
+          "meanExcess20d": 1.992,
+          "sharpe20d": 5.14,
+          "turnover20d": 1956.2,
+          "selectionScore": 1.992
+        },
+        {
+          "targetId": "tail_aware",
+          "meanExcess20d": 1.885,
+          "sharpe20d": 3.36,
+          "turnover20d": 1937.0,
+          "selectionScore": 1.885
+        },
+        {
+          "targetId": "std_excess",
+          "meanExcess20d": 1.665,
+          "sharpe20d": 4.9,
+          "turnover20d": 2080.8,
+          "selectionScore": 1.65692
+        }
+      ],
+      "outerMeanExcess20d": -0.317,
+      "outerSharpe20d": -0.54,
+      "outerCagr20d": -0.86,
+      "outerSortino20d": -0.88,
+      "outerMaxDrawdown20d": -35.17,
+      "outerAnnualTurnover20d": 1450.7,
+      "outerTop3HitRate20d": 45.42,
+      "baselineMeanExcess20d": 0.235,
+      "baselineSharpe20d": 2.29,
+      "lineage": {
+        "actualTrainingTarget": "net_excess",
+        "actualGradeCol": "target_rank_grade_net_excess_20d",
+        "actualExcessCol": "target_net_excess_20d"
+      }
+    },
+    {
+      "foldIndex": 5,
+      "label": "2019-2020 Out-of-Sample",
+      "chosenTarget": "tail_aware",
+      "candidateRankings": [
+        {
+          "targetId": "tail_aware",
+          "meanExcess20d": 1.725,
+          "sharpe20d": 1.66,
+          "turnover20d": 1390.2,
+          "selectionScore": 1.725
+        },
+        {
+          "targetId": "pct_rank",
+          "meanExcess20d": 1.565,
+          "sharpe20d": 1.85,
+          "turnover20d": 2026.7,
+          "selectionScore": 1.56233
+        },
+        {
+          "targetId": "raw_excess",
+          "meanExcess20d": 1.245,
+          "sharpe20d": 1.66,
+          "turnover20d": 1959.7,
+          "selectionScore": 1.245
+        },
+        {
+          "targetId": "net_excess",
+          "meanExcess20d": 0.978,
+          "sharpe20d": 1.06,
+          "turnover20d": 1968.1,
+          "selectionScore": 0.978
+        },
+        {
+          "targetId": "vol_adj_net_excess",
+          "meanExcess20d": 0.778,
+          "sharpe20d": 2.1,
+          "turnover20d": 2018.3,
+          "selectionScore": 0.77617
+        },
+        {
+          "targetId": "std_excess",
+          "meanExcess20d": 0.708,
+          "sharpe20d": 2.26,
+          "turnover20d": 2118.8,
+          "selectionScore": 0.69612
+        }
+      ],
+      "outerMeanExcess20d": -2.377,
+      "outerSharpe20d": -2.6,
+      "outerCagr20d": -24.78,
+      "outerSortino20d": -4.31,
+      "outerMaxDrawdown20d": -60.41,
+      "outerAnnualTurnover20d": 1403.0,
+      "outerTop3HitRate20d": 39.83,
+      "baselineMeanExcess20d": 1.102,
+      "baselineSharpe20d": 3.08,
+      "lineage": {
+        "actualTrainingTarget": "tail_aware",
+        "actualGradeCol": "target_rank_grade_tail_aware_20d",
+        "actualExcessCol": "target_tail_aware_20d"
+      }
+    },
+    {
+      "foldIndex": 6,
+      "label": "2021-2022 Out-of-Sample",
+      "chosenTarget": "net_excess",
+      "candidateRankings": [
+        {
+          "targetId": "net_excess",
+          "meanExcess20d": 0.746,
+          "sharpe20d": 1.07,
+          "turnover20d": 1969.4,
+          "selectionScore": 0.746
+        },
+        {
+          "targetId": "raw_excess",
+          "meanExcess20d": 0.506,
+          "sharpe20d": 0.87,
+          "turnover20d": 2044.0,
+          "selectionScore": 0.43582
+        },
+        {
+          "targetId": "pct_rank",
+          "meanExcess20d": 0.172,
+          "sharpe20d": 0.11,
+          "turnover20d": 2148.5,
+          "selectionScore": 0.004069999999999999
+        },
+        {
+          "targetId": "tail_aware",
+          "meanExcess20d": 0.033,
+          "sharpe20d": 0.12,
+          "turnover20d": 1559.1,
+          "selectionScore": 0.00396
+        },
+        {
+          "targetId": "std_excess",
+          "meanExcess20d": -0.029,
+          "sharpe20d": 1.45,
+          "turnover20d": 1872.5,
+          "selectionScore": -0.029
+        },
+        {
+          "targetId": "vol_adj_net_excess",
+          "meanExcess20d": -0.048,
+          "sharpe20d": 1.26,
+          "turnover20d": 1902.3,
+          "selectionScore": -0.048
+        }
+      ],
+      "outerMeanExcess20d": -0.922,
+      "outerSharpe20d": -1.53,
+      "outerCagr20d": -6.26,
+      "outerSortino20d": -2.59,
+      "outerMaxDrawdown20d": -30.56,
+      "outerAnnualTurnover20d": 1619.5,
+      "outerTop3HitRate20d": 41.53,
+      "baselineMeanExcess20d": 0.235,
+      "baselineSharpe20d": 1.8,
+      "lineage": {
+        "actualTrainingTarget": "net_excess",
+        "actualGradeCol": "target_rank_grade_net_excess_20d",
+        "actualExcessCol": "target_net_excess_20d"
+      }
+    },
+    {
+      "foldIndex": 7,
+      "label": "2023-2024 Out-of-Sample",
+      "chosenTarget": "std_excess",
+      "candidateRankings": [
+        {
+          "targetId": "std_excess",
+          "meanExcess20d": 0.485,
+          "sharpe20d": 2.03,
+          "turnover20d": 2014.4,
+          "selectionScore": 0.48356
+        },
+        {
+          "targetId": "vol_adj_net_excess",
+          "meanExcess20d": 0.21,
+          "sharpe20d": 1.18,
+          "turnover20d": 2142.0,
+          "selectionScore": 0.1958
+        },
+        {
+          "targetId": "net_excess",
+          "meanExcess20d": -0.375,
+          "sharpe20d": -0.43,
+          "turnover20d": 1846.5,
+          "selectionScore": -0.00375
+        },
+        {
+          "targetId": "raw_excess",
+          "meanExcess20d": -0.535,
+          "sharpe20d": -0.77,
+          "turnover20d": 1866.7,
+          "selectionScore": -0.005350000000000001
+        },
+        {
+          "targetId": "pct_rank",
+          "meanExcess20d": -0.855,
+          "sharpe20d": -1.21,
+          "turnover20d": 1806.2,
+          "selectionScore": -0.00855
+        },
+        {
+          "targetId": "tail_aware",
+          "meanExcess20d": -1.782,
+          "sharpe20d": -2.42,
+          "turnover20d": 1591.4,
+          "selectionScore": -0.01782
+        }
+      ],
+      "outerMeanExcess20d": 0.085,
+      "outerSharpe20d": 3.23,
+      "outerCagr20d": 15.35,
+      "outerSortino20d": 5.76,
+      "outerMaxDrawdown20d": -7.94,
+      "outerAnnualTurnover20d": 1780.7,
+      "outerTop3HitRate20d": 49.46,
+      "baselineMeanExcess20d": 0.085,
+      "baselineSharpe20d": 3.23,
+      "lineage": {
+        "actualTrainingTarget": "std_excess",
+        "actualGradeCol": "target_rank_grade_20d",
+        "actualExcessCol": "target_vol_std_excess_20d"
+      }
+    }
+  ],
+  "frozenHoldout": {
+    "foldIndex": 8,
+    "label": "2025-2026 Final Holdout",
+    "testStart": "2025-02-05",
+    "testEnd": "2026-09-03",
+    "chosenTarget": "net_excess",
+    "innerCandidateScores": [
+      {
+        "targetId": "net_excess",
+        "score": 0.74,
+        "excess": 0.74,
+        "sharpe": 1.39,
+        "turnover": 1721.5
+      },
+      {
+        "targetId": "raw_excess",
+        "score": 0.686,
+        "excess": 0.686,
+        "sharpe": 1.7,
+        "turnover": 1782.6
+      },
+      {
+        "targetId": "std_excess",
+        "score": 0.586,
+        "excess": 0.586,
+        "sharpe": 2.79,
+        "turnover": 1813.1
+      },
+      {
+        "targetId": "vol_adj_net_excess",
+        "score": 0.506,
+        "excess": 0.506,
+        "sharpe": 2.42,
+        "turnover": 1819.2
+      },
+      {
+        "targetId": "pct_rank",
+        "score": 0.18492,
+        "excess": 0.268,
+        "sharpe": 0.69,
+        "turnover": 1788.7
+      },
+      {
+        "targetId": "tail_aware",
+        "score": 0.10815999999999999,
+        "excess": 0.208,
+        "sharpe": 0.52,
+        "turnover": 1233.1
+      }
+    ],
+    "meanExcess20d": 1.275,
+    "cagr20d": 18.74,
+    "sharpe20d": 2.6,
+    "sortino20d": 5.0,
+    "maxDrawdown20d": -13.45,
+    "annualTurnover20d": 1688.8,
+    "top3HitRate20d": 60.33,
+    "baselineMeanExcess20d": 0.515,
+    "baselineSharpe20d": 1.1,
+    "lineage": {
+      "actualTrainingTarget": "net_excess",
+      "actualGradeCol": "target_rank_grade_net_excess_20d",
+      "actualExcessCol": "target_net_excess_20d"
+    }
+  }
+}

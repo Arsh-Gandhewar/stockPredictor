@@ -50,6 +50,9 @@ class CrossSectionalAlphaRanker:
         self.magnitude_model: Optional[lgb.LGBMRegressor] = None
         self.calibrator: Optional[IsotonicRegression] = None
         self.is_fitted = False
+        self.actual_training_target: Optional[str] = None
+        self.actual_grade_col: Optional[str] = None
+        self.actual_excess_col: Optional[str] = None
 
     def fit(
         self,
@@ -68,11 +71,22 @@ class CrossSectionalAlphaRanker:
             grade_col = f'target_rank_grade_{self.target_type}_{self.horizon_str}'
             excess_col = f'target_{self.target_type}_{self.horizon_str}'
             
-        # Fallback to standard columns if specific target columns are absent
+        # Strict Fail-Closed Target Verification:
+        # Zero silent substitution or fallback to standard columns is permitted.
         if grade_col not in train_df.columns:
-            grade_col = f'target_rank_grade_{self.horizon_str}'
+            raise KeyError(
+                f"FAIL-CLOSED: Required grade column '{grade_col}' for target_type='{self.target_type}' "
+                f"is missing from train_df. Silent fallback to standard columns is strictly forbidden."
+            )
         if excess_col not in train_df.columns:
-            excess_col = f'target_vol_std_excess_{self.horizon_str}'
+            raise KeyError(
+                f"FAIL-CLOSED: Required excess return column '{excess_col}' for target_type='{self.target_type}' "
+                f"is missing from train_df. Silent fallback to standard columns is strictly forbidden."
+            )
+        
+        self.actual_training_target = self.target_type
+        self.actual_grade_col = grade_col
+        self.actual_excess_col = excess_col
         
         req_cols = features + [grade_col, excess_col]
         clean_train = train_df.dropna(subset=req_cols).copy()
@@ -433,6 +447,9 @@ class RegimeConditionedAlphaRanker:
         return {
             'horizon': self.horizon_str,
             'targetType': self.target_type,
+            'actualTrainingTarget': self.global_ranker.actual_training_target,
+            'actualGradeCol': self.global_ranker.actual_grade_col,
+            'actualExcessCol': self.global_ranker.actual_excess_col,
             'isFitted': self.is_fitted,
             'totalTrainedSpecialists': len(self.trained_states),
             'trainedSpecialistStates': self.trained_states,

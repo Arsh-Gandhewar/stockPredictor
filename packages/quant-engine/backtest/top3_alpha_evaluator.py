@@ -387,24 +387,29 @@ class Top3AlphaEvaluator:
             if len(eligible_candidates) < 3:
                 continue
 
-            # ---------------------------------------------------------------------
-            # 2. Candidate Selection (Hysteresis, Diversification, Turnover Control)
-            # ---------------------------------------------------------------------
-            # P0-2 Turnover Control: apply position continuity bonus to incumbents.
-            # Stocks held for fewer than MIN_HOLDING_DAYS receive a score boost so
-            # that the ranker must overcome a meaningful hurdle before rotating them
-            # out. This cuts daily churn without hard-locking positions.
-            MIN_HOLDING_DAYS = 5
-            CONTINUITY_BONUS = 0.15
+            # P0-2 & P1 Turnover Control: Horizon-aware holding horizon and retention policy.
+            # 20D strategy targets a ~3-4 week holding period (15 days minimum); 5D targets ~1 week (5 days).
+            if horizon == '20d':
+                min_holding_days = 15
+                continuity_bonus = 0.25
+                persistence_bonus = 0.10
+                eff_exit_rank = 8
+            else:  # 5d
+                min_holding_days = 5
+                continuity_bonus = 0.20
+                persistence_bonus = 0.08
+                eff_exit_rank = self.exit_rank_limit  # default 6
 
-            # Determine effective scores with continuity bonus applied
+            # Determine effective scores with continuity and persistence bonus applied
             for cand in eligible_candidates:
                 tkr = cand['ticker']
                 if tkr in current_holdings:
                     holding_info = current_holdings[tkr]
                     days_held = holding_info.get('days_held', 0)
-                    if days_held < MIN_HOLDING_DAYS:
-                        cand['score'] = cand['score'] + CONTINUITY_BONUS
+                    if days_held < min_holding_days:
+                        cand['score'] = cand['score'] + continuity_bonus
+                    else:
+                        cand['score'] = cand['score'] + persistence_bonus
 
             eligible_candidates.sort(key=lambda x: (-x['score'], x['ticker']))
             rank_map = {c['ticker']: idx + 1 for idx, c in enumerate(eligible_candidates)}
@@ -412,10 +417,10 @@ class Top3AlphaEvaluator:
 
             selected_top3: List[Dict[str, Any]] = []
 
-            # 1. Check incumbent holdings for retention if rank <= exit_rank_limit (e.g. 6)
+            # 1. Check incumbent holdings for retention if rank <= eff_exit_rank
             if self.use_hysteresis and current_holdings:
                 for tkr in list(current_holdings.keys()):
-                    if tkr in cand_map and rank_map.get(tkr, 999) <= self.exit_rank_limit:
+                    if tkr in cand_map and rank_map.get(tkr, 999) <= eff_exit_rank:
                         selected_top3.append(cand_map[tkr])
 
             # 2. Fill remaining slots up to 3
