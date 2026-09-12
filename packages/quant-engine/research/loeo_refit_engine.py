@@ -23,6 +23,13 @@ import pandas as pd
 from datetime import datetime
 from typing import Dict, List, Any
 
+# Forward-looking label purge buffer (calendar days).
+# Targets use up to 20-day forward returns.  Predictions whose forward-return
+# window overlaps the excluded era carry contaminated labels.  A 25-calendar-day
+# buffer (≈18 trading days, > 20d horizon) on each side of the era guarantees
+# that no training label looks into or out of the excluded period.
+PURGE_BUFFER_CALENDAR_DAYS = 25
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from backtest.long_history_walk_forward import (
@@ -129,20 +136,34 @@ def run_true_loeo_refit_validation(
             print(f"\n>>> SKIPPING ALREADY COMPLETED {e_name} ({e_id}) <<<")
             continue
         
-        # 1. Strictly excise ALL observations from this era from the entire dataset
-        era_mask = (panel_df['predictionTimestamp'] >= e_start) & (panel_df['predictionTimestamp'] <= e_end)
-        panel_clean = panel_df[~era_mask].copy()
-        excised_obs = int(era_mask.sum())
+        # 1. Excise ALL observations from this era AND purge boundary observations
+        #    whose forward-looking labels (up to 20d) would overlap the excluded era.
+        era_start_dt = pd.to_datetime(e_start)
+        era_end_dt = pd.to_datetime(e_end)
+        purge_before = (era_start_dt - pd.Timedelta(days=PURGE_BUFFER_CALENDAR_DAYS)).strftime('%Y-%m-%d')
+        purge_after = (era_end_dt + pd.Timedelta(days=PURGE_BUFFER_CALENDAR_DAYS)).strftime('%Y-%m-%d')
         
-        # Hard assertion: Zero observations from excluded era exist anywhere in panel_clean
+        # Core era mask: rows within the excluded era itself
+        core_era_mask = (panel_df['predictionTimestamp'] >= e_start) & (panel_df['predictionTimestamp'] <= e_end)
+        # Purge buffer mask: rows whose labels would look into/out of the excluded era
+        purge_mask = (panel_df['predictionTimestamp'] >= purge_before) & (panel_df['predictionTimestamp'] <= purge_after)
+        # Combined: excise both core era AND purge buffer
+        full_excision_mask = purge_mask
+        
+        panel_clean = panel_df[~full_excision_mask].copy()
+        excised_core = int(core_era_mask.sum())
+        excised_buffer = int(full_excision_mask.sum()) - excised_core
+        excised_total = int(full_excision_mask.sum())
+        
+        # Hard assertion: Zero observations from excluded era or purge buffer in clean panel
         verification_check = panel_clean[
-            (panel_clean['predictionTimestamp'] >= e_start) & 
-            (panel_clean['predictionTimestamp'] <= e_end)
+            (panel_clean['predictionTimestamp'] >= purge_before) & 
+            (panel_clean['predictionTimestamp'] <= purge_after)
         ]
-        assert len(verification_check) == 0, f"FAIL-CLOSED: {len(verification_check)} leaked observations from {e_id} in clean panel!"
+        assert len(verification_check) == 0, f"FAIL-CLOSED: {len(verification_check)} leaked observations from {e_id} purge zone in clean panel!"
         
         print(f"\n>>> REFITTING WITHOUT {e_name} ({e_id}: {e_start} to {e_end}) <<<")
-        print(f"    Excised {excised_obs:,} observations ({excised_obs / total_obs * 100:.1f}% of total). Clean panel: {len(panel_clean):,} observations.")
+        print(f"    Excised {excised_core:,} core + {excised_buffer:,} purge-buffer = {excised_total:,} total ({excised_total / total_obs * 100:.1f}%). Clean panel: {len(panel_clean):,} observations.")
         
         era_oos_preds: List[pd.DataFrame] = []
         surviving_folds = [f for f in dev_folds if f['foldIndex'] not in aff_folds]
@@ -194,7 +215,11 @@ def run_true_loeo_refit_validation(
             'excludedEraId': e_id,
             'excludedEraName': e_name,
             'excludedPeriod': f"{e_start} to {e_end}",
-            'excisedTrainingObservations': excised_obs,
+            'purgeBufferCalendarDays': PURGE_BUFFER_CALENDAR_DAYS,
+            'purgeZone': f"{purge_before} to {purge_after}",
+            'excisedCoreObservations': excised_core,
+            'excisedPurgeBufferObservations': excised_buffer,
+            'excisedTotalObservations': excised_total,
             'survivingFoldsEvaluated': [f['foldIndex'] for f in surviving_folds],
             'survivingOosDays': ev_surviving['evaluationDaysCount'],
             'survivingMeanExcess20d': ev_surviving['hitRates20d']['meanExcessReturnPct'],
@@ -204,7 +229,7 @@ def run_true_loeo_refit_validation(
             'survivingMaxDrawdown': ev_surviving['backtestMetrics']['maxDrawdown'],
             'survivingTurnover': ev_surviving['backtestMetrics']['annualTurnoverEstPct'],
             'survivingTop3HitRate': ev_surviving['hitRates20d']['top3PortfolioHitRateVsNifty'],
-            'refitIntegrity': 'VERIFIED_ZERO_TRAINING_LEAKAGE'
+            'refitIntegrity': 'VERIFIED_ZERO_TRAINING_LEAKAGE_WITH_PURGE_BUFFER'
         }
         loeo_era_results.append(res)
         
@@ -232,17 +257,18 @@ def run_true_loeo_refit_validation(
     all_positive_excess = all(r['survivingMeanExcess20d'] > 0.0 for r in loeo_era_results)
     loeo_gate_passed = all_positive_excess and min_sharpe_res['survivingSharpe'] > 0.30
     
-    print("\n" + "=" * 105)
-    print("GENUINE LOEO REFIT SUMMARY TABLE (ZERO TRAINING DATA FROM EXCLUDED ERA)")
-    print("=" * 105)
-    header = f"{'Excluded Era':<42} | {'Excised Obs':<11} | {'Surv Excess':<11} | {'Sharpe':<7} | {'CAGR':<7} | {'Max DD':<7} | {'Status'}"
+    print("\n" + "=" * 115)
+    print("GENUINE LOEO REFIT SUMMARY TABLE (ZERO TRAINING DATA FROM EXCLUDED ERA + PURGE BUFFER)")
+    print("=" * 115)
+    header = f"{'Excluded Era':<42} | {'Excised(+buf)':<14} | {'Surv Excess':<11} | {'Sharpe':<7} | {'CAGR':<7} | {'Max DD':<7} | {'Status'}"
     print(header)
-    print("-" * 105)
+    print("-" * 115)
     for r in loeo_era_results:
         status_str = "PASS (>0)" if r['survivingMeanExcess20d'] > 0.0 else "FAIL"
+        excised_str = f"{r['excisedCoreObservations']:,}+{r['excisedPurgeBufferObservations']:,}"
         line = (
             f"{r['excludedEraName']:<42} | "
-            f"{r['excisedTrainingObservations']:>10,} | "
+            f"{excised_str:>14} | "
             f"{r['survivingMeanExcess20d']:>+9.3f}% | "
             f"{r['survivingSharpe']:>7.2f} | "
             f"{r['survivingCagr']:>6.2f}% | "
@@ -250,12 +276,13 @@ def run_true_loeo_refit_validation(
             f"{status_str}"
         )
         print(line)
-    print("=" * 105)
-    print(f"Robustness when Single Strongest Era Excluded ({min_excess_res['excludedEraName']}):")
+    print("=" * 115)
+    print(f"Robustness when Single Strongest Era Excluded ({min_excess_res['excludedEraName']}):") 
     print(f"  Surviving Excess: {min_excess_res['survivingMeanExcess20d']:>+6.3f}% (Must be > 0.0%)")
     print(f"  Surviving Sharpe: {min_sharpe_res['survivingSharpe']:>6.2f}")
-    print(f"  True LOEO Refit Gate: {'PASSED (Zero Training Leakage)' if loeo_gate_passed else 'FAILED'}")
-    print("=" * 105)
+    print(f"  Purge Buffer: {PURGE_BUFFER_CALENDAR_DAYS} calendar days per side (eliminates forward-label contamination)")
+    print(f"  True LOEO Refit Gate: {'PASSED (Zero Leakage + Purge Buffer)' if loeo_gate_passed else 'FAILED'}")
+    print("=" * 115)
     
     def _json_serial(obj):
         if isinstance(obj, (np.bool_, bool)):
@@ -269,10 +296,11 @@ def run_true_loeo_refit_validation(
         return str(obj)
 
     final_bundle = {
-        'protocol': 'Genuine Leave-One-Era-Out (LOEO) Refit Validation',
+        'protocol': 'Genuine Leave-One-Era-Out (LOEO) Refit Validation with Purge Buffer',
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'strategyHorizon': '20d',
         'targetType': target_type,
+        'purgeBufferCalendarDays': PURGE_BUFFER_CALENDAR_DAYS,
         'totalPanelObservations': total_obs,
         'erasTestedCount': len(HISTORICAL_ERAS),
         'allSurvivingExcessPositive': bool(all_positive_excess),

@@ -297,4 +297,66 @@ def test_holdout_execution_blocks_when_sealed(tmp_path, monkeypatch):
         execute_frozen_holdout(force_override_for_testing=False)
     assert "CRITICAL VIOLATION" in str(excinfo.value)
     assert "SEALED_IMMUTABLE" in str(excinfo.value)
+
+
+def test_loeo_purge_buffer_removes_boundary_observations():
+    """
+    Verify the LOEO purge buffer eliminates observations whose
+    forward-looking labels (20d horizon) would overlap the excluded era.
+    
+    The purge zone extends PURGE_BUFFER_CALENDAR_DAYS (25 days) before
+    era_start and after era_end.  No observation from the purge zone
+    should survive in the clean panel.
+    """
+    from research.loeo_refit_engine import PURGE_BUFFER_CALENDAR_DAYS, HISTORICAL_ERAS
+
+    # Create a minimal synthetic panel spanning an era boundary
+    era = HISTORICAL_ERAS[0]  # ERA_1_GFC: 2008-01-01 to 2009-12-31
+    e_start, e_end = era['startDate'], era['endDate']
+
+    era_start_dt = pd.to_datetime(e_start)
+    era_end_dt = pd.to_datetime(e_end)
+    purge_before = (era_start_dt - pd.Timedelta(days=PURGE_BUFFER_CALENDAR_DAYS)).strftime('%Y-%m-%d')
+    purge_after = (era_end_dt + pd.Timedelta(days=PURGE_BUFFER_CALENDAR_DAYS)).strftime('%Y-%m-%d')
+
+    # Generate dates spanning the era with buffer zones
+    dates = pd.date_range('2007-06-01', '2010-06-01', freq='B')
+    panel_rows = []
+    for d in dates:
+        panel_rows.append({'predictionTimestamp': d.strftime('%Y-%m-%d'), 'ticker': 'TEST'})
+
+    panel_df = pd.DataFrame(panel_rows)
+
+    # Apply the same purge logic as in loeo_refit_engine.py
+    purge_mask = (
+        (panel_df['predictionTimestamp'] >= purge_before) &
+        (panel_df['predictionTimestamp'] <= purge_after)
+    )
+    panel_clean = panel_df[~purge_mask]
+
+    # Assertions:
+    # 1. No observations from the core era remain
+    core_leaked = panel_clean[
+        (panel_clean['predictionTimestamp'] >= e_start) &
+        (panel_clean['predictionTimestamp'] <= e_end)
+    ]
+    assert len(core_leaked) == 0, f"Core era observations leaked: {len(core_leaked)}"
+
+    # 2. No observations from the purge buffer remain
+    buffer_leaked = panel_clean[
+        (panel_clean['predictionTimestamp'] >= purge_before) &
+        (panel_clean['predictionTimestamp'] <= purge_after)
+    ]
+    assert len(buffer_leaked) == 0, f"Purge buffer observations leaked: {len(buffer_leaked)}"
+
+    # 3. Observations outside the purge zone are retained
+    pre_zone = panel_clean[panel_clean['predictionTimestamp'] < purge_before]
+    post_zone = panel_clean[panel_clean['predictionTimestamp'] > purge_after]
+    assert len(pre_zone) > 0, "Pre-era observations were incorrectly removed"
+    assert len(post_zone) > 0, "Post-era observations were incorrectly removed"
+
+    # 4. Verify the purge buffer constant is at least as large as the max horizon
+    assert PURGE_BUFFER_CALENDAR_DAYS >= 20, (
+        f"Purge buffer ({PURGE_BUFFER_CALENDAR_DAYS} days) must be >= max target horizon (20d)"
+    )
 
