@@ -25,6 +25,62 @@ from typing import Optional, List
 TARGET_HORIZONS = [1, 5, 20]
 TARGET_TYPES = ['std_excess', 'raw_excess', 'net_excess', 'vol_adj_net_excess', 'pct_rank', 'tail_aware']
 
+TARGET_REGISTRY = {
+    'std_excess': {
+        'name': 'Standardized Excess Return',
+        'grade_col': lambda h: f'target_rank_grade_std_excess_{h}d',
+        'excess_col': lambda h: f'target_std_excess_{h}d',
+        'economic_gate': False,
+        'description': 'Forward excess return divided by horizon volatility'
+    },
+    'raw_excess': {
+        'name': 'Raw Forward Excess Return',
+        'grade_col': lambda h: f'target_rank_grade_raw_excess_{h}d',
+        'excess_col': lambda h: f'target_raw_excess_{h}d',
+        'economic_gate': False,
+        'description': 'Forward excess return without volatility shrinkage'
+    },
+    'net_excess': {
+        'name': 'Net Forward Excess Return',
+        'grade_col': lambda h: f'target_rank_grade_net_excess_{h}d',
+        'excess_col': lambda h: f'target_net_excess_{h}d',
+        'economic_gate': True,
+        'description': 'Forward excess return net of 13 bps friction and volatility-scaled slippage'
+    },
+    'vol_adj_net_excess': {
+        'name': 'Volatility-Adjusted Net Excess',
+        'grade_col': lambda h: f'target_rank_grade_vol_adj_net_excess_{h}d',
+        'excess_col': lambda h: f'target_vol_adj_net_excess_{h}d',
+        'economic_gate': True,
+        'description': 'Net excess return divided by horizon volatility with economic grade gating'
+    },
+    'pct_rank': {
+        'name': 'Cross-Sectional Percentile Rank',
+        'grade_col': lambda h: f'target_rank_grade_pct_rank_{h}d',
+        'excess_col': lambda h: f'target_pct_rank_{h}d',
+        'economic_gate': False,
+        'description': 'Daily cross-sectional percentile rank of forward net excess'
+    },
+    'tail_aware': {
+        'name': 'Tail-Aware Net Excess',
+        'grade_col': lambda h: f'target_rank_grade_tail_aware_{h}d',
+        'excess_col': lambda h: f'target_tail_aware_{h}d',
+        'economic_gate': True,
+        'description': 'Forward net excess with 2.0x asymmetric penalty on negative outcomes'
+    }
+}
+
+def get_target_columns(target_type: str, horizon: int | str) -> tuple[str, str]:
+    """
+    Returns explicit (grade_column, excess_column) tuple for requested target_type and horizon.
+    Guarantees strict 1-to-1 semantic mapping with zero legacy fallbacks.
+    """
+    if target_type not in TARGET_REGISTRY:
+        raise KeyError(f"FAIL-CLOSED: Unknown target_type '{target_type}'. Registered targets: {list(TARGET_REGISTRY.keys())}")
+    h = int(str(horizon).replace('d', ''))
+    entry = TARGET_REGISTRY[target_type]
+    return entry['grade_col'](h), entry['excess_col'](h)
+
 def compute_targets(
     df: pd.DataFrame, 
     cost_engine: Optional[TransactionCostEngine] = None,

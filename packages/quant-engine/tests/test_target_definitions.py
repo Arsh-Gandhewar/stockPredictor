@@ -177,4 +177,124 @@ def test_ranker_training_lineage_tracked():
     summary = regime_ranker.get_specialist_summary()
     assert summary['actualTrainingTarget'] == 'vol_adj_net_excess'
     assert summary['actualGradeCol'] == 'target_rank_grade_vol_adj_net_excess_20d'
-    assert summary['actualExcessCol'] == 'target_vol_adj_net_excess_20d'
+    assert summary['actualExcessCol'] == 'target_vol_adj_net_excess_20d'
+
+def test_std_excess_lineage_exact_match():
+    panel, _ = _create_synthetic_panel()
+    features = ['rsi_14', 'vol_20d', 'ret_5d', 'ret_20d', 'atr_percent', 'bb_width']
+    
+    ranker = CrossSectionalAlphaRanker(horizon_str='20d', target_type='std_excess')
+    ranker.fit(panel, features=features)
+    
+    # Assert exact target-specific lineage without legacy naming
+    assert ranker.actual_training_target == 'std_excess'
+    assert ranker.actual_grade_col == 'target_rank_grade_std_excess_20d'
+    assert ranker.actual_excess_col == 'target_std_excess_20d'
+
+def test_target_registry_exact_column_isolation():
+    from targets.target_definition import TARGET_REGISTRY, get_target_columns
+    
+    # Verify every registered target maps to distinct, non-overlapping columns
+    seen_grades = set()
+    seen_excess = set()
+    for t_type in TARGET_REGISTRY:
+        g_col, e_col = get_target_columns(t_type, '20d')
+        assert g_col not in seen_grades, f"Duplicate grade column: {g_col}"
+        assert e_col not in seen_excess, f"Duplicate excess column: {e_col}"
+        seen_grades.add(g_col)
+        seen_excess.add(e_col)
+        
+    # Adversarial test: mutating raw_excess must have zero effect on std_excess model
+    panel, _ = _create_synthetic_panel()
+    features = ['rsi_14', 'vol_20d', 'ret_5d', 'ret_20d', 'atr_percent', 'bb_width']
+    
+    ranker_std = CrossSectionalAlphaRanker(horizon_str='20d', target_type='std_excess')
+    ranker_std.fit(panel, features=features)
+    preds1 = ranker_std.predict(panel, features=features)['canonicalAlphaScore'].values
+    
+    # Corrupt raw_excess and net_excess columns
+    mutated_panel = panel.copy()
+    mutated_panel['target_raw_excess_20d'] = 999.0
+    mutated_panel['target_rank_grade_raw_excess_20d'] = 4.0
+    mutated_panel['target_net_excess_20d'] = -999.0
+    
+    ranker_std_mutated = CrossSectionalAlphaRanker(horizon_str='20d', target_type='std_excess')
+    ranker_std_mutated.fit(mutated_panel, features=features)
+    preds2 = ranker_std_mutated.predict(mutated_panel, features=features)['canonicalAlphaScore'].values
+    
+    np.testing.assert_allclose(preds1, preds2, rtol=1e-5, err_msg="std_excess must be completely isolated from raw_excess and net_excess")
+
+def test_unknown_target_raises_keyerror():
+    from targets.target_definition import get_target_columns
+    with pytest.raises(KeyError) as excinfo:
+        get_target_columns('arbitrary_fake_target', '20d')
+    assert "FAIL-CLOSED" in str(excinfo.value)
+
+def test_cryptographic_protocol_guard_detects_tampering(tmp_path):
+    from research.protocol_manifest_guard import (
+        verify_protocol_integrity,
+        ProtocolIntegrityError,
+        compute_monitored_code_hashes
+    )
+    import json
+    
+    # Create valid manifest
+    real_hashes = compute_monitored_code_hashes()
+    manifest_data = {
+        "status": "PROTOCOL_SEALED",
+        "protocolDigest": "fake_digest_12345",
+        "monitoredCodeHashes": real_hashes.copy()
+    }
+    manifest_file = tmp_path / "protocol_manifest.json"
+    manifest_file.write_text(json.dumps(manifest_data))
+    
+    # Valid check passes
+    manifest = verify_protocol_integrity(str(manifest_file))
+    assert manifest["status"] == "PROTOCOL_SEALED"
+    
+    # Adversarial tampering: alter a hash in the manifest
+    tampered_hashes = real_hashes.copy()
+    first_key = list(tampered_hashes.keys())[0]
+    tampered_hashes[first_key] = "0000000000000000000000000000000000000000000000000000000000000000"
+    manifest_data["monitoredCodeHashes"] = tampered_hashes
+    manifest_file.write_text(json.dumps(manifest_data))
+    
+    # Must raise ProtocolIntegrityError
+    with pytest.raises(ProtocolIntegrityError) as excinfo:
+        verify_protocol_integrity(str(manifest_file))
+    assert "CRITICAL INTEGRITY BREACH" in str(excinfo.value)
+
+def test_holdout_execution_blocks_when_sealed(tmp_path, monkeypatch):
+    from research.execute_frozen_holdout import (
+        execute_frozen_holdout,
+        HoldoutAlreadyExecutedError
+    )
+    import json
+    
+    # Setup sealed certificate in temporary research directory
+    fake_cert = {
+        "lockStatus": "SEALED_IMMUTABLE",
+        "executionTimestamp": "2026-09-10 12:00:00",
+        "certificateDigest": "sealed_digest_abc123"
+    }
+    cert_path = tmp_path / "holdout_execution_certificate.json"
+    cert_path.write_text(json.dumps(fake_cert))
+    
+    # Monkeypatch get_repo_quant_root to return tmp_path parent
+    research_dir = tmp_path
+    monkeypatch.setattr("research.execute_frozen_holdout.get_repo_quant_root", lambda: str(tmp_path.parent))
+    monkeypatch.setattr("research.execute_frozen_holdout.CERTIFICATE_FILENAME", str(cert_path.name))
+    
+    # Put cert inside tmp_path / research
+    mock_res_dir = tmp_path / "research"
+    mock_res_dir.mkdir(exist_ok=True)
+    mock_cert_file = mock_res_dir / "holdout_execution_certificate.json"
+    mock_cert_file.write_text(json.dumps(fake_cert))
+    
+    monkeypatch.setattr("research.execute_frozen_holdout.get_repo_quant_root", lambda: str(tmp_path))
+    
+    with pytest.raises(HoldoutAlreadyExecutedError) as excinfo:
+        execute_frozen_holdout(force_override_for_testing=False)
+    assert "CRITICAL VIOLATION" in str(excinfo.value)
+    assert "SEALED_IMMUTABLE" in str(excinfo.value)
+

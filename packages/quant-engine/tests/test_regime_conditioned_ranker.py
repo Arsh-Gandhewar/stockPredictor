@@ -127,6 +127,8 @@ def test_regime_conditioned_alpha_ranker_fit_predict():
             row['regime_state'] = st
             row['target_rank_grade_5d'] = np.random.choice([0, 1, 2, 3, 4])
             row['target_vol_std_excess_5d'] = np.random.normal(0.01, 0.05)
+            row['target_rank_grade_std_excess_5d'] = row['target_rank_grade_5d']
+            row['target_std_excess_5d'] = row['target_vol_std_excess_5d']
             row['target_net_excess_binary_5d'] = 1 if row['target_vol_std_excess_5d'] > 0 else 0
             row['vol_20d'] = 0.20
             row['atr_percent'] = 0.02
@@ -174,6 +176,8 @@ def test_regime_conditioned_alpha_ranker_fallback():
             row['regime_state'] = st
             row['target_rank_grade_5d'] = np.random.choice([0, 1, 2, 3, 4])
             row['target_vol_std_excess_5d'] = np.random.normal(0.01, 0.05)
+            row['target_rank_grade_std_excess_5d'] = row['target_rank_grade_5d']
+            row['target_std_excess_5d'] = row['target_vol_std_excess_5d']
             row['target_net_excess_binary_5d'] = 1 if row['target_vol_std_excess_5d'] > 0 else 0
             row['vol_20d'] = 0.20
             row['atr_percent'] = 0.02

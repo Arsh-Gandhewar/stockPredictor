@@ -141,6 +141,8 @@ def test_volatility_consistency():
     X_data['atr_percent'] = 0.05  # intentionally different from daily return vol
     X_data['target_rank_grade_5d'] = np.random.randint(0, 5, size=100)
     X_data['target_vol_std_excess_5d'] = np.random.randn(100)
+    X_data['target_rank_grade_std_excess_5d'] = X_data['target_rank_grade_5d']
+    X_data['target_std_excess_5d'] = X_data['target_vol_std_excess_5d']
     
     df = pd.DataFrame(X_data, index=dates)
     
@@ -173,6 +175,8 @@ def test_calibration_diagnostics_and_ablation_scores():
     X_data['vol_20d'] = 0.25
     X_data['target_rank_grade_5d'] = np.random.randint(0, 5, size=80)
     X_data['target_vol_std_excess_5d'] = np.random.randn(80)
+    X_data['target_rank_grade_std_excess_5d'] = X_data['target_rank_grade_5d']
+    X_data['target_std_excess_5d'] = X_data['target_vol_std_excess_5d']
     X_data['target_net_excess_binary_5d'] = (X_data['target_vol_std_excess_5d'] > 0).astype(float)
     
     df = pd.DataFrame(X_data, index=dates)

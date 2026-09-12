@@ -1,0 +1,70 @@
+{
+  "certificateType": "QUANTX_CRYPTO_SEALED_HOLDOUT_EXECUTION",
+  "lockStatus": "SEALED_IMMUTABLE",
+  "executionTimestamp": "2026-09-12 09:50:41",
+  "protocolManifestDigest": "04ef180c9e905115f0b4c1f73a1916b215144f2cb4e395c339ae4ede434659e9",
+  "holdoutPeriod": {
+    "foldIndex": 8,
+    "startDate": "2025-02-05",
+    "endDate": "2026-09-03"
+  },
+  "certifiedProductionStrategy": "vol_adj_net_excess",
+  "metrics20d": {
+    "meanExcessPct": 0.033,
+    "top3HitRateVsNifty": 44.57,
+    "top1HitRateVsNifty": 43.48,
+    "sharpe": -0.23,
+    "sortino": -0.36,
+    "cagr": 3.18,
+    "maxDrawdown": -13.45,
+    "annualTurnoverEstPct": 2522.2,
+    "profitFactor": 1.14,
+    "evaluationDays": 383,
+    "monotonicDecileSpread": 0.2,
+    "hacInference": {
+      "mean": 0.033412,
+      "hacStdError": 0.510793,
+      "tStat": 0.065,
+      "pValue": 0.94788,
+      "ci95Lower": -0.971036,
+      "ci95Upper": 1.03786,
+      "effectiveN": 54.8,
+      "rawN": 368,
+      "isStatisticallySignificant": false
+    }
+  },
+  "metrics5d": {
+    "meanExcessPct": -0.3,
+    "top3HitRateVsNifty": 42.82,
+    "top1HitRateVsNifty": 42.82,
+    "sharpe": -2.25,
+    "sortino": -3.67,
+    "cagr": -13.17,
+    "maxDrawdown": -26.77,
+    "annualTurnoverEstPct": 3114.4,
+    "profitFactor": 0.75,
+    "evaluationDays": 383,
+    "monotonicDecileSpread": -0.005,
+    "hacInference": {
+      "mean": -0.300131,
+      "hacStdError": 0.156643,
+      "tStat": -1.916,
+      "pValue": 0.05611,
+      "ci95Lower": -0.608121,
+      "ci95Upper": 0.007859,
+      "effectiveN": 146.6,
+      "rawN": 383,
+      "isStatisticallySignificant": false
+    }
+  },
+  "verifiedCodeHashes": {
+    "models/alpha_ranker.py": "c4bf31abf811e852a47428e9b5c9c71ed6f0f277930b7065dd4f85eafb54283d",
+    "backtest/top3_alpha_evaluator.py": "4ac23fa8ddcc7b1858b3aea85f31fbeb8de49adda4669972f3a3355899c8cc74",
+    "targets/target_definition.py": "58e15fd478e63da4dcc1fcb68a1faa13443301d4f7f3eaf6734de8506d967090",
+    "models/regime_specialist_engine.py": "633fb6583a21bf75fbb22ac4e4ce1c399e4d4e34c0054e0e4eb4a6b96efd9d75",
+    "research/nested_walk_forward_selection.py": "7d567bf0a8d8acf87025bbcc33aa1e34de339db2b848f95ed685ed7c1984388d",
+    "research/loeo_refit_engine.py": "80212675b8897d0eec824ef67eaf306e97847c474bbe5aa9a4e2b3a13a673faf"
+  },
+  "governanceAttestation": "This execution certificate is cryptographically locked and final. It was generated from a single evaluation run following the pre-registered protocol manifest. No post-hoc tuning or re-execution is permitted.",
+  "certificateDigest": "e321b6814926b7c2b982b4c5d2ef983ac65fc72a19ac99c66ccab66bebc40fe6"
+}

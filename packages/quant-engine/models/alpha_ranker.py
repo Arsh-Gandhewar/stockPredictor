@@ -63,13 +63,8 @@ class CrossSectionalAlphaRanker:
         """
         Fits LambdaMART ranker and Huber magnitude model on train_df grouped by date.
         """
-        h = self.h_days
-        if self.target_type == 'std_excess':
-            grade_col = f'target_rank_grade_{self.horizon_str}'
-            excess_col = f'target_vol_std_excess_{self.horizon_str}'
-        else:
-            grade_col = f'target_rank_grade_{self.target_type}_{self.horizon_str}'
-            excess_col = f'target_{self.target_type}_{self.horizon_str}'
+        from targets.target_definition import get_target_columns
+        grade_col, excess_col = get_target_columns(self.target_type, self.horizon_str)
             
         # Strict Fail-Closed Target Verification:
         # Zero silent substitution or fallback to standard columns is permitted.

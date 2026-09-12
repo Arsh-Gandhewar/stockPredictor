@@ -1,0 +1,101 @@
+{
+  "status": "PROTOCOL_SEALED",
+  "sealTimestamp": "2026-09-12 08:31:29",
+  "protocolDigest": "04ef180c9e905115f0b4c1f73a1916b215144f2cb4e395c339ae4ede434659e9",
+  "protocolConfiguration": {
+    "protocolVersion": "1.0.0",
+    "primaryHorizon": "20d",
+    "secondaryHorizon": "5d",
+    "candidateTargets": [
+      "std_excess",
+      "raw_excess",
+      "net_excess",
+      "vol_adj_net_excess",
+      "pct_rank",
+      "tail_aware"
+    ],
+    "incumbentAnchorStrategy": "vol_adj_net_excess",
+    "selectionObjective": "95% Newey-West HAC Lower Confidence Bound (LCB) on Net Excess Return",
+    "selectionHurdleBps": 0.1,
+    "developmentFolds": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "holdoutFoldIndex": 8,
+    "holdoutDates": {
+      "startDate": "2025-01-01",
+      "endDate": "2026-02-13"
+    },
+    "decisionRule": "Nested selection is certified if and only if regularized nested selection achieves higher median 20D excess and higher Sharpe than the fixed robust anchor (vol_adj_net_excess) across pre-2025 folds with paired t-test p < 0.05. Otherwise, the fixed robust anchor is certified as the production strategy."
+  },
+  "monitoredCodeHashes": {
+    "models/alpha_ranker.py": "c4bf31abf811e852a47428e9b5c9c71ed6f0f277930b7065dd4f85eafb54283d",
+    "backtest/top3_alpha_evaluator.py": "4ac23fa8ddcc7b1858b3aea85f31fbeb8de49adda4669972f3a3355899c8cc74",
+    "targets/target_definition.py": "58e15fd478e63da4dcc1fcb68a1faa13443301d4f7f3eaf6734de8506d967090",
+    "models/regime_specialist_engine.py": "633fb6583a21bf75fbb22ac4e4ce1c399e4d4e34c0054e0e4eb4a6b96efd9d75",
+    "research/nested_walk_forward_selection.py": "7d567bf0a8d8acf87025bbcc33aa1e34de339db2b848f95ed685ed7c1984388d",
+    "research/loeo_refit_engine.py": "80212675b8897d0eec824ef67eaf306e97847c474bbe5aa9a4e2b3a13a673faf"
+  },
+  "pre2025NestedResults": {
+    "fileSha256": "f9f2a3d5afbd5b4a57395f8c2a1a4955858bbb62a3dbca1eddc8687b9d1b9f4f",
+    "certifiedProductionStrategy": "vol_adj_net_excess",
+    "decisionVerdict": "FIXED ROBUST ANCHOR (vol_adj_net_excess) CERTIFIED: Nested selection did not beat incumbent anchor with statistical significance.",
+    "comparisonSummary": {
+      "fixedAnchor": {
+        "target": "vol_adj_net_excess",
+        "medianExcess20d": 0.4085,
+        "meanExcess20d": 0.48062499999999997,
+        "positiveFoldsCount": "6/8",
+        "positiveFoldsPct": 75.0,
+        "cagr": 9.87,
+        "sharpe": 0.74,
+        "sortino": 0.79,
+        "maxDrawdown": -77.67,
+        "medianTurnover": 2037.1
+      },
+      "naiveNestedSelection": {
+        "medianExcess20d": 0.537,
+        "meanExcess20d": 0.622625,
+        "positiveFoldsCount": "7/8",
+        "positiveFoldsPct": 87.5,
+        "cagr": 9.68,
+        "sharpe": 0.64,
+        "sortino": 0.71,
+        "maxDrawdown": -81.76,
+        "medianTurnover": 1856.25,
+        "deltaVsAnchorTStat": 0.7949743864846676,
+        "deltaVsAnchorPValue": 0.4527354613726451
+      },
+      "regularizedNestedSelection": {
+        "medianExcess20d": 0.537,
+        "meanExcess20d": 0.663625,
+        "positiveFoldsCount": "7/8",
+        "positiveFoldsPct": 87.5,
+        "cagr": 10.05,
+        "sharpe": 0.67,
+        "sortino": 0.76,
+        "maxDrawdown": -81.76,
+        "medianTurnover": 1922.4,
+        "deltaVsAnchorTStat": 1.0920529598362971,
+        "deltaVsAnchorPValue": 0.31096379032462945
+      }
+    }
+  },
+  "pre2025LoeoResults": {
+    "fileSha256": "a61733c59c1762132e3e19c325e5a6dc7cf49edffedb4836d23ae6dcffb15a4c",
+    "targetType": "vol_adj_net_excess",
+    "summary": null
+  },
+  "holdoutGuardContract": {
+    "enforcementMode": "STRICT_CRYPTO_LOCK",
+    "maxHoldoutExecutions": 1,
+    "allowCodeModifications": false,
+    "allowPostHocTuning": false
+  }
+}
