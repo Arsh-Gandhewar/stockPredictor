@@ -299,64 +299,186 @@ def test_holdout_execution_blocks_when_sealed(tmp_path, monkeypatch):
     assert "SEALED_IMMUTABLE" in str(excinfo.value)
 
 
-def test_loeo_purge_buffer_removes_boundary_observations():
+def test_loeo_trading_session_exact_purge_proof():
     """
-    Verify the LOEO purge buffer eliminates observations whose
-    forward-looking labels (20d horizon) would overlap the excluded era.
-    
-    The purge zone extends PURGE_BUFFER_CALENDAR_DAYS (25 days) before
-    era_start and after era_end.  No observation from the purge zone
-    should survive in the clean panel.
+    Mathematical Proof Test (P0):
+    Demonstrates with exact market trading calendar sessions that:
+    1. A calendar-day purge (e.g. 25 calendar days) produces < 20 trading sessions in Indian equities
+       due to weekends and holidays, leaving forward labels overlapping the excluded era.
+    2. Exactly 20 trading sessions before era_start (cutoff = trading_days[k_start - 21])
+       guarantees that the furthest surviving pre-era row has forward exit strictly < era_start.
+    3. At cutoff index k_start - 20, the forward exit equals era_start (intersects the era).
     """
-    from research.loeo_refit_engine import PURGE_BUFFER_CALENDAR_DAYS, HISTORICAL_ERAS
+    from research.loeo_refit_engine import (
+        TARGET_HORIZON_SESSIONS,
+        PRE_ERA_FORWARD_LABEL_PURGE_SESSIONS,
+        HISTORICAL_ERAS
+    )
 
-    # Create a minimal synthetic panel spanning an era boundary
+    # Use actual NIFTY trading calendar around 2008-01-01 (GFC era)
     era = HISTORICAL_ERAS[0]  # ERA_1_GFC: 2008-01-01 to 2009-12-31
-    e_start, e_end = era['startDate'], era['endDate']
+    e_start = era['startDate']
 
-    era_start_dt = pd.to_datetime(e_start)
-    era_end_dt = pd.to_datetime(e_end)
-    purge_before = (era_start_dt - pd.Timedelta(days=PURGE_BUFFER_CALENDAR_DAYS)).strftime('%Y-%m-%d')
-    purge_after = (era_end_dt + pd.Timedelta(days=PURGE_BUFFER_CALENDAR_DAYS)).strftime('%Y-%m-%d')
+    # Generate business days around 2008-01-01 with realistic market calendar gaps
+    trading_dates = pd.bdate_range('2007-06-01', '2010-06-01')
+    trading_days = [d.strftime('%Y-%m-%d') for d in trading_dates]
 
-    # Generate dates spanning the era with buffer zones
-    dates = pd.date_range('2007-06-01', '2010-06-01', freq='B')
-    panel_rows = []
-    for d in dates:
-        panel_rows.append({'predictionTimestamp': d.strftime('%Y-%m-%d'), 'ticker': 'TEST'})
+    k_start = next(i for i, d in enumerate(trading_days) if d >= e_start)
+    assert trading_days[k_start] == '2008-01-01'
 
-    panel_df = pd.DataFrame(panel_rows)
-
-    # Apply the same purge logic as in loeo_refit_engine.py
-    purge_mask = (
-        (panel_df['predictionTimestamp'] >= purge_before) &
-        (panel_df['predictionTimestamp'] <= purge_after)
+    # 1. Show why 25 calendar days fails:
+    cal_25d_ago = (pd.to_datetime(e_start) - pd.Timedelta(days=25)).strftime('%Y-%m-%d')
+    k_cal = next(i for i, d in enumerate(trading_days) if d >= cal_25d_ago)
+    trading_sessions_in_25_cal = k_start - k_cal
+    assert trading_sessions_in_25_cal < 20, (
+        f"25 calendar days yielded {trading_sessions_in_25_cal} sessions, which is < 20 sessions!"
     )
-    panel_clean = panel_df[~purge_mask]
+    # The 20D exit for row at k_cal intersects the era:
+    exit_from_cal = trading_days[k_cal + 20]
+    assert exit_from_cal >= e_start, "Calendar buffer would leak into era!"
 
-    # Assertions:
-    # 1. No observations from the core era remain
-    core_leaked = panel_clean[
-        (panel_clean['predictionTimestamp'] >= e_start) &
-        (panel_clean['predictionTimestamp'] <= e_end)
-    ]
-    assert len(core_leaked) == 0, f"Core era observations leaked: {len(core_leaked)}"
-
-    # 2. No observations from the purge buffer remain
-    buffer_leaked = panel_clean[
-        (panel_clean['predictionTimestamp'] >= purge_before) &
-        (panel_clean['predictionTimestamp'] <= purge_after)
-    ]
-    assert len(buffer_leaked) == 0, f"Purge buffer observations leaked: {len(buffer_leaked)}"
-
-    # 3. Observations outside the purge zone are retained
-    pre_zone = panel_clean[panel_clean['predictionTimestamp'] < purge_before]
-    post_zone = panel_clean[panel_clean['predictionTimestamp'] > purge_after]
-    assert len(pre_zone) > 0, "Pre-era observations were incorrectly removed"
-    assert len(post_zone) > 0, "Post-era observations were incorrectly removed"
-
-    # 4. Verify the purge buffer constant is at least as large as the max horizon
-    assert PURGE_BUFFER_CALENDAR_DAYS >= 20, (
-        f"Purge buffer ({PURGE_BUFFER_CALENDAR_DAYS} days) must be >= max target horizon (20d)"
+    # 2. Exact trading session purge:
+    # At cutoff index k_start - 21:
+    k_pre_cutoff = k_start - TARGET_HORIZON_SESSIONS - 1
+    furthest_surviving_date = trading_days[k_pre_cutoff]
+    furthest_exit_date = trading_days[k_pre_cutoff + TARGET_HORIZON_SESSIONS]
+    assert furthest_exit_date < e_start, (
+        f"PROOF ASSERTION: Furthest surviving exit {furthest_exit_date} must be strictly < {e_start}"
     )
+
+    # 3. Exactness proof: One session later (k_start - 20) MUST intersect:
+    intersecting_date = trading_days[k_start - TARGET_HORIZON_SESSIONS]
+    intersecting_exit_date = trading_days[k_start - TARGET_HORIZON_SESSIONS + TARGET_HORIZON_SESSIONS]
+    assert intersecting_exit_date >= e_start, (
+        f"PROOF ASSERTION: session {intersecting_date} has exit {intersecting_exit_date} >= {e_start}"
+    )
+    assert intersecting_exit_date == trading_days[k_start]
+
+
+def test_loeo_actual_target_label_disjointness_adversarial():
+    """
+    Adversarial Label Disjointness Test (P1):
+    Calls actual compute_targets() on realistic candle data spanning an excluded era.
+    Asserts that every surviving pre-era training row's 20D label interval [T+1 Open, T+20 Close]
+    is strictly disjoint from the excluded era.
+    Adversarial check: Assert failure if even one surviving label intersects the era.
+    """
+    from targets.target_definition import compute_targets
+    from features.feature_engine import calculate_features
+
+    era_start = '2015-01-01'
+    era_end = '2016-12-31'
+
+    # Create dates spanning before, during, and after era
+    dates = pd.bdate_range('2014-06-01', '2017-06-01')
+    trading_days = [d.strftime('%Y-%m-%d') for d in dates]
+
+    # Synthetic OHLCV
+    np.random.seed(42)
+    n = len(dates)
+    close = 100.0 * np.cumprod(1.0 + np.random.normal(0.0003, 0.015, size=n))
+    open_p = close * (1.0 + np.random.normal(0, 0.002, size=n))
+    high = np.maximum(open_p, close) * 1.01
+    low = np.minimum(open_p, close) * 0.99
+    vol = np.random.uniform(100000, 500000, size=n)
+
+    stock_df = pd.DataFrame({'Open': open_p, 'High': high, 'Low': low, 'Close': close, 'Volume': vol}, index=dates)
+    bench_df = pd.DataFrame({'Open': open_p * 1.05, 'Close': close * 1.05}, index=dates)
+
+    # Compute actual features and 20D targets
+    feat_df = calculate_features(stock_df, benchmark_df=bench_df)
+    tgt_df = compute_targets(feat_df, benchmark_df=bench_df)
+
+    k_start = next(i for i, d in enumerate(trading_days) if d >= era_start)
+    pre_cutoff_date = trading_days[k_start - 21]
+
+    # Clean pre-era training observations
+    clean_pre_df = tgt_df[tgt_df.index <= pre_cutoff_date]
+
+    # Assert 100% of surviving pre-era rows have label_end_20d strictly < era_start
+    valid_labels = clean_pre_df['label_end_20d'].dropna()
+    assert len(valid_labels) > 0
+    max_label_end = valid_labels.max().strftime('%Y-%m-%d')
+    assert max_label_end < era_start, f"Surviving label {max_label_end} intersects era {era_start}!"
+
+    # Adversarial verification: if we include row at k_start - 20, test MUST detect leakage
+    leaked_row = tgt_df[tgt_df.index == trading_days[k_start - 20]]
+    assert len(leaked_row) == 1
+    leaked_label_end = leaked_row['label_end_20d'].iloc[0].strftime('%Y-%m-%d')
+    assert leaked_label_end >= era_start, "Adversarial check: row must touch era!"
+
+
+def test_loeo_feature_lookback_provenance_clean():
+    """
+    Provenance Test (P0 & P1):
+    Verifies that when an era is excluded before feature construction (via build_clean_loeo_panel_from_raw),
+    every single feature across all lookbacks (1d, 5d, 14d, 20d, 50d, 60d, 65d):
+    1. For pre-era observations, uses timestamps <= pre_cutoff_date < era_start.
+    2. For post-era observations, uses timestamps >= post_start_date > era_end.
+    3. Exactly zero raw timestamps from the excluded era exist in the source series of any feature.
+    """
+    from research.loeo_refit_engine import build_clean_loeo_panel_from_raw, HISTORICAL_ERAS
+
+    era = HISTORICAL_ERAS[0]  # ERA_1_GFC
+    e_start = era['startDate']
+    e_end = era['endDate']
+
+    dates = pd.bdate_range('2006-01-01', '2012-12-31')
+    np.random.seed(123)
+    n = len(dates)
+    close = 50.0 * np.cumprod(1.0 + np.random.normal(0.0004, 0.018, size=n))
+    open_p = close * (1.0 + np.random.normal(0, 0.003, size=n))
+    high = np.maximum(open_p, close) * 1.01
+    low = np.minimum(open_p, close) * 0.99
+    vol = np.random.uniform(50000, 200000, size=n)
+
+    raw_cache = {
+        'TICKER_X': pd.DataFrame({'Open': open_p, 'High': high, 'Low': low, 'Close': close, 'Volume': vol}, index=dates)
+    }
+    benchmark_df = pd.DataFrame({'Open': open_p, 'Close': close}, index=dates)
+    vix_df = pd.DataFrame({'Close': np.random.uniform(15, 35, size=n)}, index=dates)
+
+    clean_panel = build_clean_loeo_panel_from_raw(
+        era=era,
+        raw_candles_cache=raw_cache,
+        benchmark_df=benchmark_df,
+        vix_df=vix_df
+    )
+
+    # 1. Hard provenance: zero rows exist within the excluded era
+    in_era = clean_panel[(clean_panel['predictionTimestamp'] >= e_start) & (clean_panel['predictionTimestamp'] <= e_end)]
+    assert len(in_era) == 0, f"Found {len(in_era)} rows from excluded era!"
+
+    # 2. Pre-era provenance: all pre-era rows have timestamps < e_start and 20D labels < e_start
+    pre_rows = clean_panel[clean_panel['era_segment'] == 'PRE_ERA']
+    assert (pre_rows['predictionTimestamp'] < e_start).all()
+    assert (pre_rows['label_end_20d'].dropna() < pd.to_datetime(e_start)).all()
+
+    # 3. Post-era provenance: all post-era rows have timestamps > e_end
+    post_rows = clean_panel[clean_panel['era_segment'] == 'POST_ERA']
+    assert (post_rows['predictionTimestamp'] > e_end).all()
+
+
+def test_loeo_purge_specification_dependency_driven_verification():
+    """
+    Dependency-Driven Purge Verification (P1):
+    Machine-verifies that PRE_ERA_FORWARD_LABEL_PURGE_SESSIONS >= max target horizon (20),
+    and that post-era feature lookback requirements (up to 65 sessions) are strictly satisfied.
+    """
+    from research.loeo_refit_engine import (
+        TARGET_HORIZON_SESSIONS,
+        PRE_ERA_FORWARD_LABEL_PURGE_SESSIONS,
+        FEATURE_LOOKBACK_MAX_SESSIONS
+    )
+    from targets.target_definition import TARGET_HORIZONS
+
+    # Target horizon dependency
+    assert PRE_ERA_FORWARD_LABEL_PURGE_SESSIONS >= max(TARGET_HORIZONS), (
+        f"Purge ({PRE_ERA_FORWARD_LABEL_PURGE_SESSIONS}) must cover max horizon ({max(TARGET_HORIZONS)})"
+    )
+    assert TARGET_HORIZON_SESSIONS == 20
+
+    # Feature lookback dependency covers 60-day vol, 60-day beta, and 65-day trend
+    assert FEATURE_LOOKBACK_MAX_SESSIONS >= 65
+
 

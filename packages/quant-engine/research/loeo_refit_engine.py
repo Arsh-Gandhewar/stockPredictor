@@ -18,17 +18,16 @@ For each of the 7 pre-2025 historical eras:
 import sys
 import os
 import json
+import glob
 import numpy as np
 import pandas as pd
 from datetime import datetime
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 
-# Forward-looking label purge buffer (calendar days).
-# Targets use up to 20-day forward returns.  Predictions whose forward-return
-# window overlaps the excluded era carry contaminated labels.  A 25-calendar-day
-# buffer (≈18 trading days, > 20d horizon) on each side of the era guarantees
-# that no training label looks into or out of the excluded period.
-PURGE_BUFFER_CALENDAR_DAYS = 25
+# Exact dependency-driven purge widths in trading sessions:
+TARGET_HORIZON_SESSIONS = 20
+PRE_ERA_FORWARD_LABEL_PURGE_SESSIONS = 20
+FEATURE_LOOKBACK_MAX_SESSIONS = 65  # market_trend_60d lag 5 (65), vol_60d (60), beta (60)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -39,6 +38,10 @@ from backtest.long_history_walk_forward import (
 )
 from models.alpha_ranker import RegimeConditionedAlphaRanker
 from backtest.top3_alpha_evaluator import Top3AlphaEvaluator
+from features.feature_engine import calculate_features, enrich_panel_with_regime_features
+from targets.target_definition import compute_targets, assign_cross_sectional_relevance_grades
+from models.regime_specialist_engine import RegimeSpecialistEngine
+from universe import HISTORICAL_SECURITY_MASTER
 
 HISTORICAL_ERAS = [
     {
@@ -92,24 +95,166 @@ HISTORICAL_ERAS = [
     }
 ]
 
+def build_clean_loeo_panel_from_raw(
+    era: Dict[str, Any],
+    raw_candles_cache: Dict[str, pd.DataFrame],
+    benchmark_df: pd.DataFrame,
+    vix_df: Optional[pd.DataFrame] = None,
+    target_horizon_sessions: int = TARGET_HORIZON_SESSIONS
+) -> pd.DataFrame:
+    """
+    Constructs a 100% clean panel from raw OHLCV data with:
+    1. Zero observations from [e_start, e_end].
+    2. Exact pre-era trading-session purge:
+       Purges exactly `target_horizon_sessions` (20) trading sessions prior to e_start.
+       Proves that for the furthest surviving pre-era observation j = k_start - 21:
+       Exit date j + 20 = k_start - 1 < k_start (strictly disjoint from era).
+    3. Independent post-era lookback warmup starting at session k_end + 1:
+       Zero rolling features ever draw from prices in the excluded era.
+    """
+    e_id = era['eraId']
+    e_start = era['startDate']
+    e_end = era['endDate']
+    
+    trading_days = [d.strftime('%Y-%m-%d') for d in benchmark_df.index]
+    k_start = next(i for i, d in enumerate(trading_days) if d >= e_start)
+    k_end = max(i for i, d in enumerate(trading_days) if d <= e_end)
+    
+    # Mathematical session-count cutoff:
+    k_pre_cutoff = k_start - target_horizon_sessions - 1
+    assert k_pre_cutoff >= 0, f"Insufficient pre-era history for {e_id}!"
+    pre_cutoff_date = trading_days[k_pre_cutoff]
+    
+    # Mathematical proof:
+    furthest_pre_exit = trading_days[k_pre_cutoff + target_horizon_sessions]
+    assert furthest_pre_exit < trading_days[k_start], (
+        f"PROOF FAILURE: Furthest pre-era exit {furthest_pre_exit} intersects era {trading_days[k_start]}!"
+    )
+    
+    k_post_start = k_end + 1
+    post_start_date = trading_days[k_post_start] if k_post_start < len(trading_days) else None
+    
+    # Segment benchmark and VIX
+    bench_pre = benchmark_df[benchmark_df.index <= pre_cutoff_date]
+    bench_post = benchmark_df[benchmark_df.index >= post_start_date] if post_start_date else pd.DataFrame()
+    vix_pre = vix_df[vix_df.index <= pre_cutoff_date] if vix_df is not None else None
+    vix_post = vix_df[vix_df.index >= post_start_date] if (vix_df is not None and post_start_date) else None
+    
+    all_processed = []
+    for ticker, df_valid in raw_candles_cache.items():
+        # Pre-era segment (recomputed strictly from raw prices <= pre_cutoff_date)
+        df_pre = df_valid[df_valid.index <= pre_cutoff_date]
+        if len(df_pre) >= 60:
+            feat_pre = calculate_features(df_pre, benchmark_df=bench_pre)
+            tgt_pre = compute_targets(feat_pre, benchmark_df=bench_pre)
+            tgt_pre['ticker'] = ticker
+            tgt_pre['sector'] = HISTORICAL_SECURITY_MASTER.get(ticker, {}).get('sector', 'UNKNOWN')
+            tgt_pre['era_segment'] = 'PRE_ERA'
+            all_processed.append(tgt_pre)
+            
+        # Post-era segment (recomputed strictly from raw prices >= post_start_date)
+        if post_start_date:
+            df_post = df_valid[df_valid.index >= post_start_date]
+            if len(df_post) >= 60:
+                feat_post = calculate_features(df_post, benchmark_df=bench_post)
+                tgt_post = compute_targets(feat_post, benchmark_df=bench_post)
+                tgt_post['ticker'] = ticker
+                tgt_post['sector'] = HISTORICAL_SECURITY_MASTER.get(ticker, {}).get('sector', 'UNKNOWN')
+                tgt_post['era_segment'] = 'POST_ERA'
+                all_processed.append(tgt_post)
+                
+    panel_clean = pd.concat(all_processed, axis=0).sort_index()
+    panel_clean['predictionTimestamp'] = panel_clean.index.strftime('%Y-%m-%d')
+    panel_clean = assign_cross_sectional_relevance_grades(panel_clean)
+    
+    clean_vix = pd.concat([vix_pre, vix_post], axis=0).sort_index() if vix_post is not None and not vix_post.empty else vix_pre
+    panel_clean = enrich_panel_with_regime_features(panel_clean, vix_df=clean_vix)
+    
+    clean_bench = pd.concat([bench_pre, bench_post], axis=0).sort_index() if not bench_post.empty else bench_pre
+    regime_engine = RegimeSpecialistEngine(benchmark_df=clean_bench)
+    panel_clean = regime_engine.classify_panel(panel_clean)
+    
+    # ── Fail-Closed Provenance Assertions ──────────────────────────────────────────────
+    # 1. Zero rows in panel_clean belong to the excluded era
+    in_era = panel_clean[(panel_clean['predictionTimestamp'] >= e_start) & (panel_clean['predictionTimestamp'] <= e_end)]
+    assert len(in_era) == 0, f"FAIL-CLOSED: {len(in_era)} observations from {e_id} found in clean panel!"
+    
+    # 2. Mathematical disjointness of pre-era 20D forward labels
+    pre_rows = panel_clean[panel_clean['era_segment'] == 'PRE_ERA']
+    if 'label_end_20d' in pre_rows.columns:
+        valid_labels = pre_rows['label_end_20d'].dropna()
+        if len(valid_labels) > 0:
+            max_label_end = valid_labels.max().strftime('%Y-%m-%d') if hasattr(valid_labels.max(), 'strftime') else str(valid_labels.max())
+            assert max_label_end < e_start, (
+                f"FAIL-CLOSED: Pre-era 20D label extends into {e_start}! Max label: {max_label_end}"
+            )
+            
+    # 3. Provenance of post-era features: zero post-era features use timestamps <= e_end
+    post_rows = panel_clean[panel_clean['era_segment'] == 'POST_ERA']
+    if len(post_rows) > 0:
+        min_post_ts = post_rows['predictionTimestamp'].min()
+        assert min_post_ts > e_end, (
+            f"FAIL-CLOSED: Post-era row timestamp {min_post_ts} is not strictly after {e_end}!"
+        )
+        
+    return panel_clean
+
 def run_true_loeo_refit_validation(
     target_type: str = 'vol_adj_net_excess',
     output_path: str = None
 ) -> Dict[str, Any]:
-    print("=" * 105)
-    print("STARTING GENUINE LEAVE-ONE-ERA-OUT (LOEO) REFIT VALIDATION (ZERO TRAINING LEAKAGE)")
-    print("=" * 105)
+    print("=" * 115)
+    print("STARTING AUTHORITATIVE LEAVE-ONE-ERA-OUT (LOEO) REFIT VALIDATION (RAW OHLCV RECOMPUTATION)")
+    print("=" * 115)
     
     engine = LongHistoryResearchEngine()
-    panel_df = engine.load_and_preprocess_panel()
     evaluator = Top3AlphaEvaluator()
     
+    # Load raw candles cache once into memory
+    print("Caching raw OHLCV parquets into memory for high-performance clean panel generation...")
+    files = sorted(glob.glob(f"{engine.data_dir}/*.parquet"))
+    raw_candles_cache: Dict[str, pd.DataFrame] = {}
+    
+    nifty_path = os.path.join(engine.data_dir, "NSEI.parquet")
+    vix_path = os.path.join(engine.data_dir, "INDIAVIX.parquet")
+    bsesn_path = os.path.join(engine.data_dir, "BSESN.parquet")
+    
+    nifty_df = pd.read_parquet(nifty_path)
+    vix_df = pd.read_parquet(vix_path) if os.path.exists(vix_path) else None
+    bsesn_df = pd.read_parquet(bsesn_path) if os.path.exists(bsesn_path) else None
+    
+    if bsesn_df is not None:
+        pre_nifty = bsesn_df[bsesn_df.index < '2007-09-01']
+        benchmark_df = pd.concat([pre_nifty, nifty_df], axis=0).sort_index()
+    else:
+        benchmark_df = nifty_df
+        
+    for f in files:
+        ticker = os.path.basename(f).replace('.parquet', '')
+        if ticker in ['NSEI', 'BSESN', 'NSEBANK', 'INDIAVIX']:
+            continue
+        df = pd.read_parquet(f)
+        if len(df) >= 150:
+            df_valid = df[df.index >= '2002-07-01'][['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+            if len(df_valid) >= 60:
+                raw_candles_cache[ticker] = df_valid
+                engine.historical_candles[ticker] = df[['Open', 'High', 'Low', 'Close', 'Volume']].copy()
+                
+    engine.benchmark_df = benchmark_df
+    engine.vix_df = vix_df
+    print(f"Cached {len(raw_candles_cache)} securities. Benchmark span: {benchmark_df.index.min()} to {benchmark_df.index.max()}")
+    
+    # Pre-compute baseline full panel for OOS testing
+    if engine.panel_df is None:
+        print("Computing baseline panel for OOS test slice evaluation...")
+        engine.load_and_preprocess_panel()
+        
     if output_path is None:
         output_path = os.path.join(os.path.dirname(__file__), "loeo_refit_results.json")
     checkpoint_path = output_path + ".checkpoint.json"
         
     dev_folds = [f for f in WALK_FORWARD_FOLDS if f['foldIndex'] < 8]
-    total_obs = len(panel_df)
+    total_obs = len(engine.panel_df)
     
     print(f"\nEvaluating strategy '{target_type}' across {len(HISTORICAL_ERAS)} genuine LOEO refits...")
     
@@ -135,35 +280,29 @@ def run_true_loeo_refit_validation(
         if e_id in completed_ids:
             print(f"\n>>> SKIPPING ALREADY COMPLETED {e_name} ({e_id}) <<<")
             continue
+            
+        print(f"\n{'='*115}")
+        print(f">>> REBUILDING CLEAN RAW PANEL & REFITTING WITHOUT {e_name} ({e_id}: {e_start} to {e_end}) <<<")
+        print(f"{'='*115}")
         
-        # 1. Excise ALL observations from this era AND purge boundary observations
-        #    whose forward-looking labels (up to 20d) would overlap the excluded era.
-        era_start_dt = pd.to_datetime(e_start)
-        era_end_dt = pd.to_datetime(e_end)
-        purge_before = (era_start_dt - pd.Timedelta(days=PURGE_BUFFER_CALENDAR_DAYS)).strftime('%Y-%m-%d')
-        purge_after = (era_end_dt + pd.Timedelta(days=PURGE_BUFFER_CALENDAR_DAYS)).strftime('%Y-%m-%d')
+        # 1. Rebuild clean panel directly from raw OHLCV
+        panel_clean = build_clean_loeo_panel_from_raw(
+            era=era,
+            raw_candles_cache=raw_candles_cache,
+            benchmark_df=benchmark_df,
+            vix_df=vix_df,
+            target_horizon_sessions=TARGET_HORIZON_SESSIONS
+        )
         
-        # Core era mask: rows within the excluded era itself
-        core_era_mask = (panel_df['predictionTimestamp'] >= e_start) & (panel_df['predictionTimestamp'] <= e_end)
-        # Purge buffer mask: rows whose labels would look into/out of the excluded era
-        purge_mask = (panel_df['predictionTimestamp'] >= purge_before) & (panel_df['predictionTimestamp'] <= purge_after)
-        # Combined: excise both core era AND purge buffer
-        full_excision_mask = purge_mask
+        pre_cutoff_date = panel_clean[panel_clean['era_segment'] == 'PRE_ERA']['predictionTimestamp'].max()
+        post_start_series = panel_clean[panel_clean['era_segment'] == 'POST_ERA']['predictionTimestamp']
+        post_start_date = post_start_series.min() if len(post_start_series) > 0 else 'N/A'
         
-        panel_clean = panel_df[~full_excision_mask].copy()
-        excised_core = int(core_era_mask.sum())
-        excised_buffer = int(full_excision_mask.sum()) - excised_core
-        excised_total = int(full_excision_mask.sum())
-        
-        # Hard assertion: Zero observations from excluded era or purge buffer in clean panel
-        verification_check = panel_clean[
-            (panel_clean['predictionTimestamp'] >= purge_before) & 
-            (panel_clean['predictionTimestamp'] <= purge_after)
-        ]
-        assert len(verification_check) == 0, f"FAIL-CLOSED: {len(verification_check)} leaked observations from {e_id} purge zone in clean panel!"
-        
-        print(f"\n>>> REFITTING WITHOUT {e_name} ({e_id}: {e_start} to {e_end}) <<<")
-        print(f"    Excised {excised_core:,} core + {excised_buffer:,} purge-buffer = {excised_total:,} total ({excised_total / total_obs * 100:.1f}%). Clean panel: {len(panel_clean):,} observations.")
+        print(
+            f"    Clean Panel Built: {len(panel_clean):,} rows | "
+            f"Pre-Era Purge Cutoff: {pre_cutoff_date} (20 sessions purged) | "
+            f"Post-Era Start: {post_start_date}"
+        )
         
         era_oos_preds: List[pd.DataFrame] = []
         surviving_folds = [f for f in dev_folds if f['foldIndex'] not in aff_folds]
@@ -175,22 +314,24 @@ def run_true_loeo_refit_validation(
             te_start = fold['testStart']
             te_end = fold['testEnd']
             
-            # Filter training data from clean panel (absolutely zero observations from excluded era)
+            # Filter training data strictly from clean recomputed panel
             tr_mask = (panel_clean['predictionTimestamp'] >= tr_start) & (panel_clean['predictionTimestamp'] <= tr_end)
-            te_mask = (panel_clean['predictionTimestamp'] >= te_start) & (panel_clean['predictionTimestamp'] <= te_end)
-            
             train_clean = panel_clean[tr_mask]
-            test_data = panel_clean[te_mask]
+            # Require full warmup for training observations
+            if 'featureWarmupComplete' in train_clean.columns:
+                train_clean = train_clean[train_clean['featureWarmupComplete']]
+                
+            # Outer OOS test slice from unperturbed test period
+            te_mask = (engine.panel_df['predictionTimestamp'] >= te_start) & (engine.panel_df['predictionTimestamp'] <= te_end)
+            test_data = engine.panel_df[te_mask]
             
             if len(train_clean) < 400 or len(test_data) < 150:
                 continue
                 
             print(f"      Refitting Fold {f_idx} ({fold['label']}: {len(train_clean):,} train, {len(test_data):,} test)...", flush=True)
-            # Refit ranker from scratch on clean training set
             ranker = RegimeConditionedAlphaRanker(horizon_str='20d', target_type=target_type)
             ranker.fit(train_clean, features=FEATURE_NAMES)
             
-            # Predict on outer test fold
             preds = ranker.predict(test_data, features=FEATURE_NAMES)
             preds['foldIndex'] = f_idx
             preds['excludedEra'] = e_id
@@ -215,11 +356,10 @@ def run_true_loeo_refit_validation(
             'excludedEraId': e_id,
             'excludedEraName': e_name,
             'excludedPeriod': f"{e_start} to {e_end}",
-            'purgeBufferCalendarDays': PURGE_BUFFER_CALENDAR_DAYS,
-            'purgeZone': f"{purge_before} to {purge_after}",
-            'excisedCoreObservations': excised_core,
-            'excisedPurgeBufferObservations': excised_buffer,
-            'excisedTotalObservations': excised_total,
+            'preEraPurgeCutoff': pre_cutoff_date,
+            'preEraTradingSessionsPurged': TARGET_HORIZON_SESSIONS,
+            'postEraStart': post_start_date,
+            'cleanPanelRows': len(panel_clean),
             'survivingFoldsEvaluated': [f['foldIndex'] for f in surviving_folds],
             'survivingOosDays': ev_surviving['evaluationDaysCount'],
             'survivingMeanExcess20d': ev_surviving['hitRates20d']['meanExcessReturnPct'],
@@ -229,17 +369,16 @@ def run_true_loeo_refit_validation(
             'survivingMaxDrawdown': ev_surviving['backtestMetrics']['maxDrawdown'],
             'survivingTurnover': ev_surviving['backtestMetrics']['annualTurnoverEstPct'],
             'survivingTop3HitRate': ev_surviving['hitRates20d']['top3PortfolioHitRateVsNifty'],
-            'refitIntegrity': 'VERIFIED_ZERO_TRAINING_LEAKAGE_WITH_PURGE_BUFFER'
+            'refitIntegrity': 'VERIFIED_ZERO_LEAKAGE_RAW_RECOMPUTED_WITH_EXACT_SESSION_PURGE'
         }
         loeo_era_results.append(res)
         
-        # Save checkpoint to disk so progress is never lost
         try:
             with open(checkpoint_path, 'w') as cf:
                 json.dump(loeo_era_results, cf, indent=2, default=str)
         except Exception as ce:
             print(f"Warning saving checkpoint: {ce}")
-        
+            
         print(
             f"    Surviving Refit Performance: "
             f"Excess={res['survivingMeanExcess20d']:>+6.3f}% | "
@@ -257,18 +396,17 @@ def run_true_loeo_refit_validation(
     all_positive_excess = all(r['survivingMeanExcess20d'] > 0.0 for r in loeo_era_results)
     loeo_gate_passed = all_positive_excess and min_sharpe_res['survivingSharpe'] > 0.30
     
-    print("\n" + "=" * 115)
-    print("GENUINE LOEO REFIT SUMMARY TABLE (ZERO TRAINING DATA FROM EXCLUDED ERA + PURGE BUFFER)")
-    print("=" * 115)
-    header = f"{'Excluded Era':<42} | {'Excised(+buf)':<14} | {'Surv Excess':<11} | {'Sharpe':<7} | {'CAGR':<7} | {'Max DD':<7} | {'Status'}"
+    print("\n" + "=" * 120)
+    print("GENUINE LOEO REFIT SUMMARY TABLE (RAW OHLCV RECOMPUTATION & 20-SESSION DISJOINT LABEL PURGE)")
+    print("=" * 120)
+    header = f"{'Excluded Era':<40} | {'Pre-Cutoff':<11} | {'Surv Excess':<11} | {'Sharpe':<7} | {'CAGR':<7} | {'Max DD':<7} | {'Status'}"
     print(header)
-    print("-" * 115)
+    print("-" * 120)
     for r in loeo_era_results:
         status_str = "PASS (>0)" if r['survivingMeanExcess20d'] > 0.0 else "FAIL"
-        excised_str = f"{r['excisedCoreObservations']:,}+{r['excisedPurgeBufferObservations']:,}"
         line = (
-            f"{r['excludedEraName']:<42} | "
-            f"{excised_str:>14} | "
+            f"{r['excludedEraName']:<40} | "
+            f"{r.get('preEraPurgeCutoff', 'N/A'):<11} | "
             f"{r['survivingMeanExcess20d']:>+9.3f}% | "
             f"{r['survivingSharpe']:>7.2f} | "
             f"{r['survivingCagr']:>6.2f}% | "
@@ -276,31 +414,28 @@ def run_true_loeo_refit_validation(
             f"{status_str}"
         )
         print(line)
-    print("=" * 115)
+    print("=" * 120)
     print(f"Robustness when Single Strongest Era Excluded ({min_excess_res['excludedEraName']}):") 
     print(f"  Surviving Excess: {min_excess_res['survivingMeanExcess20d']:>+6.3f}% (Must be > 0.0%)")
     print(f"  Surviving Sharpe: {min_sharpe_res['survivingSharpe']:>6.2f}")
-    print(f"  Purge Buffer: {PURGE_BUFFER_CALENDAR_DAYS} calendar days per side (eliminates forward-label contamination)")
-    print(f"  True LOEO Refit Gate: {'PASSED (Zero Leakage + Purge Buffer)' if loeo_gate_passed else 'FAILED'}")
-    print("=" * 115)
+    print(f"  Purge Buffer: Exactly 20 trading sessions before era (Mathematical Disjointness Proof)")
+    print(f"  True LOEO Refit Gate: {'PASSED (Zero Training Leakage)' if loeo_gate_passed else 'FAILED'}")
+    print("=" * 120)
     
     def _json_serial(obj):
-        if isinstance(obj, (np.bool_, bool)):
-            return bool(obj)
-        if isinstance(obj, (np.integer, int)):
-            return int(obj)
-        if isinstance(obj, (np.floating, float)):
-            return float(obj)
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
+        if isinstance(obj, (np.bool_, bool)): return bool(obj)
+        if isinstance(obj, (np.integer, int)): return int(obj)
+        if isinstance(obj, (np.floating, float)): return float(obj)
+        if isinstance(obj, np.ndarray): return obj.tolist()
         return str(obj)
 
     final_bundle = {
-        'protocol': 'Genuine Leave-One-Era-Out (LOEO) Refit Validation with Purge Buffer',
+        'protocol': 'Authoritative Leave-One-Era-Out (LOEO) Refit Validation (Raw OHLCV Recomputation)',
         'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         'strategyHorizon': '20d',
         'targetType': target_type,
-        'purgeBufferCalendarDays': PURGE_BUFFER_CALENDAR_DAYS,
+        'targetHorizonSessions': TARGET_HORIZON_SESSIONS,
+        'preEraForwardLabelPurgeSessions': PRE_ERA_FORWARD_LABEL_PURGE_SESSIONS,
         'totalPanelObservations': total_obs,
         'erasTestedCount': len(HISTORICAL_ERAS),
         'allSurvivingExcessPositive': bool(all_positive_excess),
