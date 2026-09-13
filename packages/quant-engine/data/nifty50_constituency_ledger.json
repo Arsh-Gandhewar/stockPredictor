@@ -1,0 +1,1025 @@
+{
+  "version": "v1.0.0-pit-nifty50-constituency",
+  "index": "NIFTY 50",
+  "startDate": "2005-01-01",
+  "initialConstituents": [
+    "ABB.NS",
+    "ACC.NS",
+    "AMBUJACEM.NS",
+    "BAJAJ-AUTO.NS",
+    "BHARTIARTL.NS",
+    "BHEL.NS",
+    "BPCL.NS",
+    "CIPLA.NS",
+    "COLPAL.NS",
+    "DABUR.NS",
+    "DRREDDY.NS",
+    "GAIL.NS",
+    "GLAXO.NS",
+    "GRASIM.NS",
+    "HCLTECH.NS",
+    "HDFC.NS",
+    "HDFCBANK.NS",
+    "HEROMOTOCO.NS",
+    "HINDALCO.NS",
+    "HINDPETRO.NS",
+    "HINDUNILVR.NS",
+    "ICICIBANK.NS",
+    "INDHOTEL.NS",
+    "INFY.NS",
+    "IPCL.NS",
+    "ITC.NS",
+    "LT.NS",
+    "M&M.NS",
+    "MARUTI.NS",
+    "MTNL.NS",
+    "NATIONALUM.NS",
+    "OBC.NS",
+    "ONGC.NS",
+    "PNB.NS",
+    "RANBAXY.NS",
+    "RELIANCE.NS",
+    "RELINFRA.NS",
+    "SAIL.NS",
+    "SATYAM.NS",
+    "SBIN.NS",
+    "SCI.NS",
+    "SUNPHARMA.NS",
+    "TATACHEM.NS",
+    "TATACOMM.NS",
+    "TATACONSUM.NS",
+    "TATAMOTORS.NS",
+    "TATAPOWER.NS",
+    "TATASTEEL.NS",
+    "WIPRO.NS",
+    "ZEEL.NS"
+  ],
+  "events": [
+    {
+      "effectiveDate": "2005-02-25",
+      "action": "REMOVE",
+      "ticker": "INDHOTEL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by TCS.NS"
+    },
+    {
+      "effectiveDate": "2005-02-25",
+      "action": "ADD",
+      "ticker": "TCS.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces INDHOTEL.NS"
+    },
+    {
+      "effectiveDate": "2005-09-26",
+      "action": "REMOVE",
+      "ticker": "COLPAL.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by JETAIRWAYS.NS"
+    },
+    {
+      "effectiveDate": "2005-09-26",
+      "action": "ADD",
+      "ticker": "JETAIRWAYS.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces COLPAL.NS"
+    },
+    {
+      "effectiveDate": "2006-06-27",
+      "action": "REMOVE",
+      "ticker": "SCI.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by SIEMENS.NS"
+    },
+    {
+      "effectiveDate": "2006-06-27",
+      "action": "ADD",
+      "ticker": "SIEMENS.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces SCI.NS"
+    },
+    {
+      "effectiveDate": "2006-06-27",
+      "action": "REMOVE",
+      "ticker": "TATACHEM.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by SUZLON.NS"
+    },
+    {
+      "effectiveDate": "2006-06-27",
+      "action": "ADD",
+      "ticker": "SUZLON.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces TATACHEM.NS"
+    },
+    {
+      "effectiveDate": "2006-09-01",
+      "action": "REMOVE",
+      "ticker": "TATACONSUM.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by RCOM.NS"
+    },
+    {
+      "effectiveDate": "2006-09-01",
+      "action": "ADD",
+      "ticker": "RCOM.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces TATACONSUM.NS"
+    },
+    {
+      "effectiveDate": "2007-04-04",
+      "action": "REMOVE",
+      "ticker": "JETAIRWAYS.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by RPL.NS"
+    },
+    {
+      "effectiveDate": "2007-04-04",
+      "action": "ADD",
+      "ticker": "RPL.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces JETAIRWAYS.NS"
+    },
+    {
+      "effectiveDate": "2007-04-04",
+      "action": "REMOVE",
+      "ticker": "OBC.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by STERLITE.NS"
+    },
+    {
+      "effectiveDate": "2007-04-04",
+      "action": "ADD",
+      "ticker": "STERLITE.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces OBC.NS"
+    },
+    {
+      "effectiveDate": "2007-09-24",
+      "action": "REMOVE",
+      "ticker": "DABUR.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by NTPC.NS"
+    },
+    {
+      "effectiveDate": "2007-09-24",
+      "action": "ADD",
+      "ticker": "NTPC.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces DABUR.NS"
+    },
+    {
+      "effectiveDate": "2007-10-05",
+      "action": "REMOVE",
+      "ticker": "IPCL.NS",
+      "reason": "Merger",
+      "notes": "Replaced by UNITECH.NS"
+    },
+    {
+      "effectiveDate": "2007-10-05",
+      "action": "ADD",
+      "ticker": "UNITECH.NS",
+      "reason": "Merger",
+      "notes": "Replaces IPCL.NS"
+    },
+    {
+      "effectiveDate": "2007-12-12",
+      "action": "REMOVE",
+      "ticker": "HINDPETRO.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by CAIRN.NS"
+    },
+    {
+      "effectiveDate": "2007-12-12",
+      "action": "ADD",
+      "ticker": "CAIRN.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces HINDPETRO.NS"
+    },
+    {
+      "effectiveDate": "2007-12-12",
+      "action": "REMOVE",
+      "ticker": "MTNL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by IDEA.NS"
+    },
+    {
+      "effectiveDate": "2007-12-12",
+      "action": "ADD",
+      "ticker": "IDEA.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces MTNL.NS"
+    },
+    {
+      "effectiveDate": "2008-03-14",
+      "action": "REMOVE",
+      "ticker": "BAJAJ-AUTO.NS",
+      "reason": "Demerger",
+      "notes": "Replaced by DLF.NS"
+    },
+    {
+      "effectiveDate": "2008-03-14",
+      "action": "ADD",
+      "ticker": "DLF.NS",
+      "reason": "Demerger",
+      "notes": "Replaces BAJAJ-AUTO.NS"
+    },
+    {
+      "effectiveDate": "2008-03-14",
+      "action": "REMOVE",
+      "ticker": "GLAXO.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by POWERGRID.NS"
+    },
+    {
+      "effectiveDate": "2008-03-14",
+      "action": "ADD",
+      "ticker": "POWERGRID.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces GLAXO.NS"
+    },
+    {
+      "effectiveDate": "2008-09-10",
+      "action": "REMOVE",
+      "ticker": "DRREDDY.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by RPOWER.NS"
+    },
+    {
+      "effectiveDate": "2008-09-10",
+      "action": "ADD",
+      "ticker": "RPOWER.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces DRREDDY.NS"
+    },
+    {
+      "effectiveDate": "2009-01-12",
+      "action": "REMOVE",
+      "ticker": "SATYAM.NS",
+      "reason": "Corporate scandal",
+      "notes": "Replaced by RELCAPITAL.NS"
+    },
+    {
+      "effectiveDate": "2009-01-12",
+      "action": "ADD",
+      "ticker": "RELCAPITAL.NS",
+      "reason": "Corporate scandal",
+      "notes": "Replaces SATYAM.NS"
+    },
+    {
+      "effectiveDate": "2009-03-27",
+      "action": "REMOVE",
+      "ticker": "ZEEL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by AXISBANK.NS"
+    },
+    {
+      "effectiveDate": "2009-03-27",
+      "action": "ADD",
+      "ticker": "AXISBANK.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces ZEEL.NS"
+    },
+    {
+      "effectiveDate": "2009-06-17",
+      "action": "REMOVE",
+      "ticker": "RPL.NS",
+      "reason": "Merger",
+      "notes": "Replaced by JINDALSTEL.NS"
+    },
+    {
+      "effectiveDate": "2009-06-17",
+      "action": "ADD",
+      "ticker": "JINDALSTEL.NS",
+      "reason": "Merger",
+      "notes": "Replaces RPL.NS"
+    },
+    {
+      "effectiveDate": "2009-10-20",
+      "action": "REMOVE",
+      "ticker": "NATIONALUM.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by IDFC.NS"
+    },
+    {
+      "effectiveDate": "2009-10-20",
+      "action": "ADD",
+      "ticker": "IDFC.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces NATIONALUM.NS"
+    },
+    {
+      "effectiveDate": "2009-10-20",
+      "action": "REMOVE",
+      "ticker": "TATACOMM.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by JPASSOCIAT.NS"
+    },
+    {
+      "effectiveDate": "2009-10-20",
+      "action": "ADD",
+      "ticker": "JPASSOCIAT.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces TATACOMM.NS"
+    },
+    {
+      "effectiveDate": "2010-04-08",
+      "action": "REMOVE",
+      "ticker": "GRASIM.NS",
+      "reason": "Demerger",
+      "notes": "Replaced by KOTAKBANK.NS"
+    },
+    {
+      "effectiveDate": "2010-04-08",
+      "action": "ADD",
+      "ticker": "KOTAKBANK.NS",
+      "reason": "Demerger",
+      "notes": "Replaces GRASIM.NS"
+    },
+    {
+      "effectiveDate": "2010-10-01",
+      "action": "REMOVE",
+      "ticker": "ABB.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by BAJAJ-AUTO.NS"
+    },
+    {
+      "effectiveDate": "2010-10-01",
+      "action": "ADD",
+      "ticker": "BAJAJ-AUTO.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces ABB.NS"
+    },
+    {
+      "effectiveDate": "2010-10-01",
+      "action": "REMOVE",
+      "ticker": "IDEA.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by DRREDDY.NS"
+    },
+    {
+      "effectiveDate": "2010-10-01",
+      "action": "ADD",
+      "ticker": "DRREDDY.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces IDEA.NS"
+    },
+    {
+      "effectiveDate": "2010-10-01",
+      "action": "REMOVE",
+      "ticker": "UNITECH.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by VEDL.NS"
+    },
+    {
+      "effectiveDate": "2010-10-01",
+      "action": "ADD",
+      "ticker": "VEDL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces UNITECH.NS"
+    },
+    {
+      "effectiveDate": "2011-03-25",
+      "action": "REMOVE",
+      "ticker": "SUZLON.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by GRASIM.NS"
+    },
+    {
+      "effectiveDate": "2011-03-25",
+      "action": "ADD",
+      "ticker": "GRASIM.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces SUZLON.NS"
+    },
+    {
+      "effectiveDate": "2011-10-10",
+      "action": "REMOVE",
+      "ticker": "RELCAPITAL.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by COALINDIA.NS"
+    },
+    {
+      "effectiveDate": "2011-10-10",
+      "action": "ADD",
+      "ticker": "COALINDIA.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces RELCAPITAL.NS"
+    },
+    {
+      "effectiveDate": "2012-04-27",
+      "action": "REMOVE",
+      "ticker": "RCOM.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by ASIANPAINT.NS"
+    },
+    {
+      "effectiveDate": "2012-04-27",
+      "action": "ADD",
+      "ticker": "ASIANPAINT.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces RCOM.NS"
+    },
+    {
+      "effectiveDate": "2012-04-27",
+      "action": "REMOVE",
+      "ticker": "RPOWER.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by BANKBARODA.NS"
+    },
+    {
+      "effectiveDate": "2012-04-27",
+      "action": "ADD",
+      "ticker": "BANKBARODA.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces RPOWER.NS"
+    },
+    {
+      "effectiveDate": "2012-09-28",
+      "action": "REMOVE",
+      "ticker": "SAIL.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by LUPIN.NS"
+    },
+    {
+      "effectiveDate": "2012-09-28",
+      "action": "ADD",
+      "ticker": "LUPIN.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces SAIL.NS"
+    },
+    {
+      "effectiveDate": "2012-09-28",
+      "action": "REMOVE",
+      "ticker": "STERLITE.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by ULTRACEMCO.NS"
+    },
+    {
+      "effectiveDate": "2012-09-28",
+      "action": "ADD",
+      "ticker": "ULTRACEMCO.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces STERLITE.NS"
+    },
+    {
+      "effectiveDate": "2013-04-01",
+      "action": "REMOVE",
+      "ticker": "SIEMENS.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by INDUSINDBK.NS"
+    },
+    {
+      "effectiveDate": "2013-04-01",
+      "action": "ADD",
+      "ticker": "INDUSINDBK.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces SIEMENS.NS"
+    },
+    {
+      "effectiveDate": "2013-04-01",
+      "action": "REMOVE",
+      "ticker": "WIPRO.NS",
+      "reason": "Demerger",
+      "notes": "Replaced by NMDC.NS"
+    },
+    {
+      "effectiveDate": "2013-04-01",
+      "action": "ADD",
+      "ticker": "NMDC.NS",
+      "reason": "Demerger",
+      "notes": "Replaces WIPRO.NS"
+    },
+    {
+      "effectiveDate": "2013-09-27",
+      "action": "REMOVE",
+      "ticker": "RELINFRA.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by WIPRO.NS"
+    },
+    {
+      "effectiveDate": "2013-09-27",
+      "action": "ADD",
+      "ticker": "WIPRO.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces RELINFRA.NS"
+    },
+    {
+      "effectiveDate": "2014-03-28",
+      "action": "REMOVE",
+      "ticker": "JPASSOCIAT.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by TECHM.NS"
+    },
+    {
+      "effectiveDate": "2014-03-28",
+      "action": "ADD",
+      "ticker": "TECHM.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces JPASSOCIAT.NS"
+    },
+    {
+      "effectiveDate": "2014-03-28",
+      "action": "REMOVE",
+      "ticker": "RANBAXY.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by UNITDSPR.NS"
+    },
+    {
+      "effectiveDate": "2014-03-28",
+      "action": "ADD",
+      "ticker": "UNITDSPR.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces RANBAXY.NS"
+    },
+    {
+      "effectiveDate": "2014-09-19",
+      "action": "REMOVE",
+      "ticker": "UNITDSPR.NS",
+      "reason": "Exclusion from F&O segment",
+      "notes": "Replaced by ZEEL.NS"
+    },
+    {
+      "effectiveDate": "2014-09-19",
+      "action": "ADD",
+      "ticker": "ZEEL.NS",
+      "reason": "Exclusion from F&O segment",
+      "notes": "Replaces UNITDSPR.NS"
+    },
+    {
+      "effectiveDate": "2015-03-27",
+      "action": "REMOVE",
+      "ticker": "DLF.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by IDEA.NS"
+    },
+    {
+      "effectiveDate": "2015-03-27",
+      "action": "ADD",
+      "ticker": "IDEA.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces DLF.NS"
+    },
+    {
+      "effectiveDate": "2015-03-27",
+      "action": "REMOVE",
+      "ticker": "JINDALSTEL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by YESBANK.NS"
+    },
+    {
+      "effectiveDate": "2015-03-27",
+      "action": "ADD",
+      "ticker": "YESBANK.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces JINDALSTEL.NS"
+    },
+    {
+      "effectiveDate": "2015-05-29",
+      "action": "REMOVE",
+      "ticker": "IDFC.NS",
+      "reason": "Demerger",
+      "notes": "Replaced by BOSCHLTD.NS"
+    },
+    {
+      "effectiveDate": "2015-05-29",
+      "action": "ADD",
+      "ticker": "BOSCHLTD.NS",
+      "reason": "Demerger",
+      "notes": "Replaces IDFC.NS"
+    },
+    {
+      "effectiveDate": "2015-09-28",
+      "action": "REMOVE",
+      "ticker": "NMDC.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by ADANIPORTS.NS"
+    },
+    {
+      "effectiveDate": "2015-09-28",
+      "action": "ADD",
+      "ticker": "ADANIPORTS.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces NMDC.NS"
+    },
+    {
+      "effectiveDate": "2016-04-01",
+      "action": "REMOVE",
+      "ticker": "CAIRN.NS",
+      "reason": "Merger",
+      "notes": "Replaced by AUROPHARMA.NS"
+    },
+    {
+      "effectiveDate": "2016-04-01",
+      "action": "ADD",
+      "ticker": "AUROPHARMA.NS",
+      "reason": "Merger",
+      "notes": "Replaces CAIRN.NS"
+    },
+    {
+      "effectiveDate": "2016-04-01",
+      "action": "REMOVE",
+      "ticker": "PNB.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by INFRATEL.NS"
+    },
+    {
+      "effectiveDate": "2016-04-01",
+      "action": "ADD",
+      "ticker": "INFRATEL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces PNB.NS"
+    },
+    {
+      "effectiveDate": "2016-04-01",
+      "action": "REMOVE",
+      "ticker": "VEDL.NS",
+      "reason": "Merger",
+      "notes": "Replaced by EICHERMOT.NS"
+    },
+    {
+      "effectiveDate": "2016-04-01",
+      "action": "ADD",
+      "ticker": "EICHERMOT.NS",
+      "reason": "Merger",
+      "notes": "Replaces VEDL.NS"
+    },
+    {
+      "effectiveDate": "2017-03-31",
+      "action": "REMOVE",
+      "ticker": "BHEL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by IBULHSGFIN.NS"
+    },
+    {
+      "effectiveDate": "2017-03-31",
+      "action": "ADD",
+      "ticker": "IBULHSGFIN.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces BHEL.NS"
+    },
+    {
+      "effectiveDate": "2017-03-31",
+      "action": "REMOVE",
+      "ticker": "IDEA.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by IOC.NS"
+    },
+    {
+      "effectiveDate": "2017-03-31",
+      "action": "ADD",
+      "ticker": "IOC.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces IDEA.NS"
+    },
+    {
+      "effectiveDate": "2017-05-26",
+      "action": "REMOVE",
+      "ticker": "GRASIM.NS",
+      "reason": "Demerger",
+      "notes": "Replaced by VEDL.NS"
+    },
+    {
+      "effectiveDate": "2017-05-26",
+      "action": "ADD",
+      "ticker": "VEDL.NS",
+      "reason": "Demerger",
+      "notes": "Replaces GRASIM.NS"
+    },
+    {
+      "effectiveDate": "2017-09-29",
+      "action": "REMOVE",
+      "ticker": "ACC.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by BAJFINANCE.NS"
+    },
+    {
+      "effectiveDate": "2017-09-29",
+      "action": "ADD",
+      "ticker": "BAJFINANCE.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces ACC.NS"
+    },
+    {
+      "effectiveDate": "2017-09-29",
+      "action": "REMOVE",
+      "ticker": "BANKBARODA.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by HINDPETRO.NS"
+    },
+    {
+      "effectiveDate": "2017-09-29",
+      "action": "ADD",
+      "ticker": "HINDPETRO.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces BANKBARODA.NS"
+    },
+    {
+      "effectiveDate": "2017-09-29",
+      "action": "REMOVE",
+      "ticker": "TATAPOWER.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by UPL.NS"
+    },
+    {
+      "effectiveDate": "2017-09-29",
+      "action": "ADD",
+      "ticker": "UPL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces TATAPOWER.NS"
+    },
+    {
+      "effectiveDate": "2018-04-02",
+      "action": "REMOVE",
+      "ticker": "AMBUJACEM.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by BAJAJFINSV.NS"
+    },
+    {
+      "effectiveDate": "2018-04-02",
+      "action": "ADD",
+      "ticker": "BAJAJFINSV.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces AMBUJACEM.NS"
+    },
+    {
+      "effectiveDate": "2018-04-02",
+      "action": "REMOVE",
+      "ticker": "AUROPHARMA.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by GRASIM.NS"
+    },
+    {
+      "effectiveDate": "2018-04-02",
+      "action": "ADD",
+      "ticker": "GRASIM.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces AUROPHARMA.NS"
+    },
+    {
+      "effectiveDate": "2018-04-02",
+      "action": "REMOVE",
+      "ticker": "BOSCHLTD.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by TITAN.NS"
+    },
+    {
+      "effectiveDate": "2018-04-02",
+      "action": "ADD",
+      "ticker": "TITAN.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces BOSCHLTD.NS"
+    },
+    {
+      "effectiveDate": "2018-09-28",
+      "action": "REMOVE",
+      "ticker": "LUPIN.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by JSWSTEEL.NS"
+    },
+    {
+      "effectiveDate": "2018-09-28",
+      "action": "ADD",
+      "ticker": "JSWSTEEL.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces LUPIN.NS"
+    },
+    {
+      "effectiveDate": "2019-03-29",
+      "action": "REMOVE",
+      "ticker": "HINDPETRO.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by BRITANNIA.NS"
+    },
+    {
+      "effectiveDate": "2019-03-29",
+      "action": "ADD",
+      "ticker": "BRITANNIA.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces HINDPETRO.NS"
+    },
+    {
+      "effectiveDate": "2019-09-27",
+      "action": "REMOVE",
+      "ticker": "IBULHSGFIN.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by NESTLEIND.NS"
+    },
+    {
+      "effectiveDate": "2019-09-27",
+      "action": "ADD",
+      "ticker": "NESTLEIND.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces IBULHSGFIN.NS"
+    },
+    {
+      "effectiveDate": "2020-03-19",
+      "action": "REMOVE",
+      "ticker": "YESBANK.NS",
+      "reason": "Reconstruction scheme",
+      "notes": "Replaced by SHREECEM.NS"
+    },
+    {
+      "effectiveDate": "2020-03-19",
+      "action": "ADD",
+      "ticker": "SHREECEM.NS",
+      "reason": "Reconstruction scheme",
+      "notes": "Replaces YESBANK.NS"
+    },
+    {
+      "effectiveDate": "2020-07-31",
+      "action": "REMOVE",
+      "ticker": "VEDL.NS",
+      "reason": "Proposed delisting",
+      "notes": "Replaced by HDFCLIFE.NS"
+    },
+    {
+      "effectiveDate": "2020-07-31",
+      "action": "ADD",
+      "ticker": "HDFCLIFE.NS",
+      "reason": "Proposed delisting",
+      "notes": "Replaces VEDL.NS"
+    },
+    {
+      "effectiveDate": "2020-09-25",
+      "action": "REMOVE",
+      "ticker": "ZEEL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by SBILIFE.NS"
+    },
+    {
+      "effectiveDate": "2020-09-25",
+      "action": "ADD",
+      "ticker": "SBILIFE.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces ZEEL.NS"
+    },
+    {
+      "effectiveDate": "2020-09-25",
+      "action": "REMOVE",
+      "ticker": "INFRATEL.NS",
+      "reason": "Merger",
+      "notes": "Replaced by DIVISLAB.NS"
+    },
+    {
+      "effectiveDate": "2020-09-25",
+      "action": "ADD",
+      "ticker": "DIVISLAB.NS",
+      "reason": "Merger",
+      "notes": "Replaces INFRATEL.NS"
+    },
+    {
+      "effectiveDate": "2021-03-31",
+      "action": "REMOVE",
+      "ticker": "GAIL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by TATACONSUM.NS"
+    },
+    {
+      "effectiveDate": "2021-03-31",
+      "action": "ADD",
+      "ticker": "TATACONSUM.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces GAIL.NS"
+    },
+    {
+      "effectiveDate": "2022-03-31",
+      "action": "REMOVE",
+      "ticker": "IOC.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by APOLLOHOSP.NS"
+    },
+    {
+      "effectiveDate": "2022-03-31",
+      "action": "ADD",
+      "ticker": "APOLLOHOSP.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces IOC.NS"
+    },
+    {
+      "effectiveDate": "2022-09-30",
+      "action": "REMOVE",
+      "ticker": "SHREECEM.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by ADANIENT.NS"
+    },
+    {
+      "effectiveDate": "2022-09-30",
+      "action": "ADD",
+      "ticker": "ADANIENT.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces SHREECEM.NS"
+    },
+    {
+      "effectiveDate": "2023-07-13",
+      "action": "REMOVE",
+      "ticker": "HDFC.NS",
+      "reason": "Merger",
+      "notes": "Replaced by LTIM.NS"
+    },
+    {
+      "effectiveDate": "2023-07-13",
+      "action": "ADD",
+      "ticker": "LTIM.NS",
+      "reason": "Merger",
+      "notes": "Replaces HDFC.NS"
+    },
+    {
+      "effectiveDate": "2024-03-28",
+      "action": "REMOVE",
+      "ticker": "UPL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by SHRIRAMFIN.NS"
+    },
+    {
+      "effectiveDate": "2024-03-28",
+      "action": "ADD",
+      "ticker": "SHRIRAMFIN.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces UPL.NS"
+    },
+    {
+      "effectiveDate": "2024-09-30",
+      "action": "REMOVE",
+      "ticker": "DIVISLAB.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by BEL.NS"
+    },
+    {
+      "effectiveDate": "2024-09-30",
+      "action": "ADD",
+      "ticker": "BEL.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces DIVISLAB.NS"
+    },
+    {
+      "effectiveDate": "2024-09-30",
+      "action": "REMOVE",
+      "ticker": "LTIM.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by TRENT.NS"
+    },
+    {
+      "effectiveDate": "2024-09-30",
+      "action": "ADD",
+      "ticker": "TRENT.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces LTIM.NS"
+    },
+    {
+      "effectiveDate": "2025-03-28",
+      "action": "REMOVE",
+      "ticker": "BPCL.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by JIOFIN.NS"
+    },
+    {
+      "effectiveDate": "2025-03-28",
+      "action": "ADD",
+      "ticker": "JIOFIN.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces BPCL.NS"
+    },
+    {
+      "effectiveDate": "2025-03-28",
+      "action": "REMOVE",
+      "ticker": "BRITANNIA.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by ETERNAL.NS"
+    },
+    {
+      "effectiveDate": "2025-03-28",
+      "action": "ADD",
+      "ticker": "ETERNAL.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces BRITANNIA.NS"
+    },
+    {
+      "effectiveDate": "2025-09-30",
+      "action": "REMOVE",
+      "ticker": "HEROMOTOCO.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaced by INDIGO.NS"
+    },
+    {
+      "effectiveDate": "2025-09-30",
+      "action": "ADD",
+      "ticker": "INDIGO.NS",
+      "reason": "RECONSTITUTION",
+      "notes": "Replaces HEROMOTOCO.NS"
+    },
+    {
+      "effectiveDate": "2025-09-30",
+      "action": "REMOVE",
+      "ticker": "INDUSINDBK.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaced by MAXHEALTH.NS"
+    },
+    {
+      "effectiveDate": "2025-09-30",
+      "action": "ADD",
+      "ticker": "MAXHEALTH.NS",
+      "reason": "Inadequate market capitalization",
+      "notes": "Replaces INDUSINDBK.NS"
+    }
+  ]
+}

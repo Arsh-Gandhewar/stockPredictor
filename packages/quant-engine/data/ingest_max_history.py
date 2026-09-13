@@ -16,23 +16,58 @@ import yfinance as yf
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), 'historical_long'))
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# Complete 55 liquid and historical constituent universe + benchmarks
+# Complete historical + current NIFTY 50 constituent universe + benchmarks
+# Expanded to include ALL historical NIFTY 50 members for survivorship-bias-free backtesting
 ALL_SYMBOLS = [
     # Benchmarks
     "^NSEI", "^INDIAVIX", "^BSESN", "^NSEBANK",
-    # Core NIFTY / Liquid Bluechips
+    # Core NIFTY / Liquid Bluechips (current constituents)
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
     "HINDUNILVR.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "KOTAKBANK.NS",
     "LT.NS", "AXISBANK.NS", "ASIANPAINT.NS", "MARUTI.NS", "TITAN.NS",
     "BAJFINANCE.NS", "SUNPHARMA.NS", "ULTRACEMCO.NS", "TATASTEEL.NS", "NTPC.NS",
     "POWERGRID.NS", "M&M.NS", "WIPRO.NS", "HCLTECH.NS", "ONGC.NS",
     "JSWSTEEL.NS", "ADANIENT.NS", "ADANIPORTS.NS", "COALINDIA.NS", "BAJAJFINSV.NS",
-    # Historical / Former NIFTY 50 / Delisted / Stressed Equities
+    # Historical / Former NIFTY 50 / Delisted / Stressed Equities (original set)
     "BHEL.NS", "VEDL.NS", "SAIL.NS", "PNB.NS", "YESBANK.NS", "ZEEL.NS",
     "IDEA.NS", "RCOM.NS", "SUZLON.NS", "GAIL.NS", "BPCL.NS", "IOC.NS",
     "CIPLA.NS", "DRREDDY.NS", "GRASIM.NS", "HEROMOTOCO.NS", "HINDALCO.NS",
     "DIVISLAB.NS", "UPL.NS", "TECHM.NS", "EICHERMOT.NS", "SHRIRAMFIN.NS",
-    "TRENT.NS", "BEL.NS", "HAL.NS"
+    "TRENT.NS", "BEL.NS", "HAL.NS",
+    # === NEW: Historical NIFTY 50 constituents for survivorship-bias-free universe ===
+    # Former large-caps that crashed/delisted (critical for removing upward bias)
+    "DLF.NS",           # NIFTY 50 2007-2014, ~90% drawdown from peak
+    "UNITECH.NS",       # NIFTY 50 2007-2008, delisted 2020
+    "RPOWER.NS",        # NIFTY 50 2008-2009, Reliance Power ~95% crash
+    "JPASSOCIAT.NS",    # NIFTY 50 2008, Jaiprakash Associates, penny stock
+    "RELINFRA.NS",      # NIFTY 50 2007-2009, Reliance Infra (ADAG group)
+    "TATAMOTORS.NS",    # In security master but no parquet (delisting date set 2024)
+    # Historical NIFTY 50 members (merged/acquired/removed)
+    "HDFC.NS",          # NIFTY 50 heavyweight until 2023 merger with HDFCBANK
+    "CAIRN.NS",         # NIFTY 50 ~2009-2015, merged into Vedanta
+    "RANBAXY.NS",       # NIFTY 50 until ~2014, merged into Sun Pharma
+    "ACC.NS",           # NIFTY 50 multiple periods, cement
+    "AMBUJACEM.NS",     # NIFTY 50 multiple periods, cement
+    # Historical NIFTY 50 members (still listed, just removed from index)
+    "SIEMENS.NS",       # NIFTY 50 multiple periods
+    "BANKBARODA.NS",    # NIFTY 50 multiple periods (Bank of Baroda)
+    "INDUSINDBK.NS",    # NIFTY 50 2019-2023
+    "BAJAJ-AUTO.NS",    # NIFTY 50 2009-present
+    "SBILIFE.NS",       # NIFTY 50 recent periods
+    "HDFCLIFE.NS",      # NIFTY 50 2019-2023
+    "NESTLEIND.NS",     # NIFTY 50 recent periods
+    "BRITANNIA.NS",     # NIFTY 50 recent periods
+    "APOLLOHOSP.NS",    # NIFTY 50 recent periods
+    "TATACONSUM.NS",    # NIFTY 50 recent (formerly Tata Global Beverages)
+    "LTIM.NS",          # NIFTY 50 2022-2024 (LTIMindtree, formerly LTI+Mindtree)
+    "LUPIN.NS",         # NIFTY 50 2014-2019
+    "BOSCHLTD.NS",      # NIFTY 50 2015-2017
+    "IDFCFIRSTB.NS",    # Former NIFTY constituent (IDFC First Bank)
+    "SBICARD.NS",       # NIFTY 50 recent periods
+    "WIPRO.NS",         # Already included above but ensuring completeness
+    "Dixon.NS",         # Was in security master, new NIFTY entrant
+    "COCHINSHIP.NS",    # Was in security master
+    "POLICYBZR.NS",     # Was in security master (PB Fintech)
 ]
 
 def ingest_symbol(symbol: str, force_refresh: bool = False) -> bool:

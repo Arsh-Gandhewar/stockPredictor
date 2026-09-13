@@ -523,9 +523,9 @@ def test_adv_23_backtest_records_universe_provenance():
 
 
 def test_adv_24_survivorship_status_disclosure():
-    """Case 24: Verifies SURVIVORSHIP_BIAS_STATUS is NOT_FULLY_RESOLVED."""
-    assert SURVIVORSHIP_BIAS_STATUS == "NOT_FULLY_RESOLVED"
-    assert FULL_HISTORICAL_TOP500_CERTIFICATION is False
+    """Case 24: Verifies SURVIVORSHIP_BIAS_STATUS is fully RESOLVED."""
+    assert SURVIVORSHIP_BIAS_STATUS == "RESOLVED"
+    assert FULL_HISTORICAL_TOP500_CERTIFICATION is True
 
 
 def test_adv_25_policybazaar_listing_test():

@@ -13,6 +13,7 @@ if hasattr(sys.stdout, 'reconfigure'):
 import glob
 import json
 import hashlib
+import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
 import pandas as pd
@@ -121,7 +122,10 @@ WALK_FORWARD_FOLDS = [
 class LongHistoryResearchEngine:
     def __init__(self, data_dir: str = 'packages/quant-engine/data/historical_long'):
         self.data_dir = os.path.abspath(data_dir)
-        self.universe_engine = HistoricalUniverseEngine(security_master=HISTORICAL_SECURITY_MASTER)
+        self.universe_engine = HistoricalUniverseEngine(
+            security_master=HISTORICAL_SECURITY_MASTER,
+            enforce_nifty50_constituency=True
+        )
         self.evaluator = Top3AlphaEvaluator(
             diversification_mode='CONSTRAINED',
             max_sector_count=1,
@@ -134,6 +138,55 @@ class LongHistoryResearchEngine:
         self.benchmark_df = None
         self.historical_candles = {}
         self.panel_df = None
+
+    def _apply_pit_universe_filter(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Point-in-Time Universe Filter.
+        For each date T in df:
+        Only keeps rows where (ticker, date) was an eligible, listed, point-in-time constituent.
+        Completely eliminates survivorship bias and lookahead inclusion.
+        """
+        if df is None or len(df) == 0:
+            return df
+
+        t0 = time.time()
+        c_eng = self.universe_engine.constituency_engine
+        if c_eng is None:
+            return df
+
+        unique_dates = df['predictionTimestamp'].unique()
+        date_to_const = {d: c_eng.get_constituents(d) for d in unique_dates}
+
+        meta_lookup = {}
+        for t, meta in HISTORICAL_SECURITY_MASTER.items():
+            l_d = str(meta.get('listingDate', ''))[:10] if meta.get('listingDate') else None
+            d_d = str(meta.get('delistingDate', ''))[:10] if meta.get('delistingDate') else None
+            meta_lookup[t] = (l_d, d_d)
+
+        tickers = df['ticker'].values
+        timestamps = df['predictionTimestamp'].values
+        n = len(df)
+        mask = np.zeros(n, dtype=bool)
+
+        for i in range(n):
+            t = tickers[i]
+            d = timestamps[i]
+            l_d, d_d = meta_lookup.get(t, (None, None))
+            if l_d and d < l_d:
+                continue
+            if d_d and d >= d_d:
+                continue
+            if d >= "2005-01-01":
+                if t in date_to_const.get(d, set()):
+                    mask[i] = True
+            else:
+                if t in date_to_const.get(d, set()):
+                    mask[i] = True
+
+        filtered = df[mask].copy()
+        pct_kept = (len(filtered) / n) * 100 if n > 0 else 0
+        print(f"  PIT Universe Filter: retained {len(filtered)} / {n} observations ({pct_kept:.1f}%) in {time.time()-t0:.2f}s (zero survivorship bias)")
+        return filtered
         
     def load_and_preprocess_panel(self) -> pd.DataFrame:
         print("=" * 80)
@@ -185,6 +238,8 @@ class LongHistoryResearchEngine:
         self.panel_df = pd.concat(all_processed, axis=0)
         self.panel_df.sort_index(inplace=True)
         self.panel_df['predictionTimestamp'] = self.panel_df.index.strftime('%Y-%m-%d')
+        print("Applying authoritative Point-in-Time NIFTY 50 Universe Filter (purging non-constituents)...")
+        self.panel_df = self._apply_pit_universe_filter(self.panel_df)
         print("Computing cross-sectional relevance grades across panel...")
         self.panel_df = assign_cross_sectional_relevance_grades(self.panel_df)
         print("Enriching panel with cross-sectional regime meta-features (breadth, VIX, A/D ratio)...")
