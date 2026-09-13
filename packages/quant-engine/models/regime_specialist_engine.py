@@ -7,6 +7,7 @@ with strict causal point-in-time verification and 3-day persistence hysteresis.
 """
 import pandas as pd
 import numpy as np
+from dataclasses import dataclass, field
 from typing import Dict, Any, Optional, Union, List
 
 # Canonical 8 regime states
@@ -21,7 +22,87 @@ CANONICAL_REGIME_STATES = [
     'BEAR_HIGHVOL_CHOPPY',
 ]
 
+MACRO_REGIME_STATES = [
+    'BULL_TREND',
+    'BULL_CHOPPY',
+    'BEAR_TREND',
+    'HIGH_VOLATILITY',
+    'CRISIS_PANIC',
+]
+
 DEFAULT_FALLBACK_REGIME = 'BULL_LOWVOL_CHOPPY'
+DEFAULT_FALLBACK_MACRO = 'BULL_CHOPPY'
+
+
+@dataclass(frozen=True)
+class RegimeSignalPolicy:
+    """
+    Point-in-time regime policy dictating gross exposure, tradeability hurdles,
+    minimum holding durations, and multi-factor sleeve allocations.
+    """
+    regime: str
+    macro_regime: str
+    max_gross_exposure: float
+    hurdle_multiplier: float
+    min_holding_days: int
+    sleeve_weights: Dict[str, float]
+    allow_new_entries: bool = True
+    stop_loss_multiplier: float = 1.0
+
+
+# Standard Institutional Regime Policies
+REGIME_POLICY_REGISTRY: Dict[str, RegimeSignalPolicy] = {
+    'BULL_TREND': RegimeSignalPolicy(
+        regime='BULL_TREND',
+        macro_regime='BULL_TREND',
+        max_gross_exposure=1.00,
+        hurdle_multiplier=1.00,
+        min_holding_days=20,
+        sleeve_weights={'momentum': 0.45, 'pullback': 0.15, 'low_vol': 0.15, 'liquidity': 0.15, 'value_cycle': 0.10},
+        allow_new_entries=True,
+        stop_loss_multiplier=1.0
+    ),
+    'BULL_CHOPPY': RegimeSignalPolicy(
+        regime='BULL_CHOPPY',
+        macro_regime='BULL_CHOPPY',
+        max_gross_exposure=0.80,
+        hurdle_multiplier=1.20,
+        min_holding_days=15,
+        sleeve_weights={'momentum': 0.15, 'pullback': 0.40, 'low_vol': 0.25, 'liquidity': 0.10, 'value_cycle': 0.10},
+        allow_new_entries=True,
+        stop_loss_multiplier=0.9
+    ),
+    'BEAR_TREND': RegimeSignalPolicy(
+        regime='BEAR_TREND',
+        macro_regime='BEAR_TREND',
+        max_gross_exposure=0.40,
+        hurdle_multiplier=1.75,
+        min_holding_days=15,
+        sleeve_weights={'momentum': 0.00, 'pullback': 0.20, 'low_vol': 0.50, 'liquidity': 0.20, 'value_cycle': 0.10},
+        allow_new_entries=True,
+        stop_loss_multiplier=0.75
+    ),
+    'HIGH_VOLATILITY': RegimeSignalPolicy(
+        regime='HIGH_VOLATILITY',
+        macro_regime='HIGH_VOLATILITY',
+        max_gross_exposure=0.50,
+        hurdle_multiplier=2.00,
+        min_holding_days=10,
+        sleeve_weights={'momentum': 0.05, 'pullback': 0.20, 'low_vol': 0.55, 'liquidity': 0.15, 'value_cycle': 0.05},
+        allow_new_entries=True,
+        stop_loss_multiplier=0.70
+    ),
+    'CRISIS_PANIC': RegimeSignalPolicy(
+        regime='CRISIS_PANIC',
+        macro_regime='CRISIS_PANIC',
+        max_gross_exposure=0.20,
+        hurdle_multiplier=3.00,
+        min_holding_days=5,
+        sleeve_weights={'momentum': 0.00, 'pullback': 0.10, 'low_vol': 0.60, 'liquidity': 0.30, 'value_cycle': 0.00},
+        allow_new_entries=False,
+        stop_loss_multiplier=0.50
+    ),
+}
 
 
 class RegimeSpecialistEngine:
@@ -108,24 +189,73 @@ class RegimeSpecialistEngine:
                         pending_count = 1
                 filtered_states.append(curr_state)
 
+        # Macro regime computation
+        rolling_252_high = close.rolling(252, min_periods=20).max()
+        dd_252 = (close - rolling_252_high) / rolling_252_high.replace(0, np.nan)
+        dd_252 = dd_252.fillna(0.0)
+
+        raw_macros = []
+        for c, s200, v, er, dd in zip(close, sma200, vol20, er_20, dd_252):
+            if dd <= -0.22 or (v >= 0.35 and c < s200):
+                raw_macros.append('CRISIS_PANIC')
+            elif v >= 0.24:
+                raw_macros.append('HIGH_VOLATILITY')
+            elif c > s200 and er >= self.er_threshold:
+                raw_macros.append('BULL_TREND')
+            elif c > s200:
+                raw_macros.append('BULL_CHOPPY')
+            else:
+                raw_macros.append('BEAR_TREND')
+
+        filtered_macros = []
+        if len(raw_macros) > 0:
+            curr_macro = raw_macros[0]
+            pending_macro = None
+            pending_m_count = 0
+            for m in raw_macros:
+                # Fast fail-closed entry into CRISIS_PANIC for capital protection
+                if m == 'CRISIS_PANIC' and curr_macro != 'CRISIS_PANIC':
+                    curr_macro = 'CRISIS_PANIC'
+                    pending_macro = None
+                    pending_m_count = 0
+                elif m == curr_macro:
+                    pending_macro = None
+                    pending_m_count = 0
+                else:
+                    if m == pending_macro:
+                        pending_m_count += 1
+                        if pending_m_count >= self.confirmation_days:
+                            curr_macro = m
+                            pending_macro = None
+                            pending_m_count = 0
+                    else:
+                        pending_macro = m
+                        pending_m_count = 1
+                filtered_macros.append(curr_macro)
+        else:
+            filtered_macros = raw_macros
+
         date_strs = self.benchmark_df.index.strftime('%Y-%m-%d')
         self._precomputed_regimes = pd.DataFrame({
             'close': close,
             'sma200': sma200,
             'vol20': vol20,
             'er20': er_20,
+            'dd_252': dd_252,
             'is_bull': is_bull,
             'is_low_vol': is_low_vol,
             'is_trending': is_trending,
             'raw_regime': raw_states,
             'regime_state': filtered_states,
+            'macro_regime': filtered_macros,
             'date_str': date_strs
         }, index=self.benchmark_df.index)
 
         self._date_to_regime = dict(zip(date_strs, filtered_states))
+        self._date_to_macro = dict(zip(date_strs, filtered_macros))
 
     def get_regime_for_date(self, date_str: str) -> str:
-        """Returns the confirmed point-in-time regime state for a given date."""
+        """Returns the confirmed point-in-time canonical 8-state regime for a given date."""
         if date_str in self._date_to_regime:
             return self._date_to_regime[date_str]
 
@@ -136,6 +266,25 @@ class RegimeSpecialistEngine:
                 return prior['regime_state'].iloc[-1]
 
         return DEFAULT_FALLBACK_REGIME
+
+    def get_macro_regime(self, date_str: str) -> str:
+        """Returns the confirmed point-in-time macro regime (BULL_TREND, BULL_CHOPPY, BEAR_TREND, HIGH_VOL, CRISIS)."""
+        if date_str in self._date_to_macro:
+            return self._date_to_macro[date_str]
+
+        if self._precomputed_regimes is not None and not self._precomputed_regimes.empty:
+            prior = self._precomputed_regimes[self._precomputed_regimes['date_str'] <= date_str]
+            if not prior.empty:
+                return prior['macro_regime'].iloc[-1]
+
+        return DEFAULT_FALLBACK_MACRO
+
+    def get_regime_policy(self, date_str: str) -> RegimeSignalPolicy:
+        """Returns the active RegimeSignalPolicy governing exposure, hurdle multiplier, and sleeve weights."""
+        macro = self.get_macro_regime(date_str)
+        if macro in REGIME_POLICY_REGISTRY:
+            return REGIME_POLICY_REGISTRY[macro]
+        return REGIME_POLICY_REGISTRY[DEFAULT_FALLBACK_MACRO]
 
     def classify_panel(self, panel_df: pd.DataFrame) -> pd.DataFrame:
         """

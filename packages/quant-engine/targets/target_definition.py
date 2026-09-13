@@ -84,10 +84,11 @@ def get_target_columns(target_type: str, horizon: int | str) -> tuple[str, str]:
 def compute_targets(
     df: pd.DataFrame, 
     cost_engine: Optional[TransactionCostEngine] = None,
-    benchmark_df: Optional[pd.DataFrame] = None
+    benchmark_df: Optional[pd.DataFrame] = None,
+    horizons: Optional[List[int]] = None
 ) -> pd.DataFrame:
     """
-    Computes forward return targets across horizons [1d, 5d, 20d] with realistic transaction
+    Computes forward return targets across horizons (default [1d, 5d, 20d]) with realistic transaction
     costs and volatility-conditioned expected slippage.
     """
     df = df.copy()
@@ -95,6 +96,7 @@ def compute_targets(
         cost_engine = TransactionCostEngine('BASE_COST')
         
     friction_rate = cost_engine.calculate_round_trip_cost_rate()  # 13 bps (0.0013)
+    target_horizons = horizons if horizons is not None else TARGET_HORIZONS
     
     # Executable entry price is the Open of the next session T+1
     entry_price = df['Open'].shift(-1) if 'Open' in df.columns else df['Close'].shift(-1)
@@ -117,7 +119,7 @@ def compute_targets(
     expected_slippage = expected_slippage.fillna(0.0010)
     total_cost = friction_rate + expected_slippage
         
-    for h in TARGET_HORIZONS:
+    for h in target_horizons:
         # Exit price is the Close at horizon T+h
         exit_price = df['Close'].shift(-h)
         

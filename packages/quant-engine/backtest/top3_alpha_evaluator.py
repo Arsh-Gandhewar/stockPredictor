@@ -23,6 +23,8 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from costs import TransactionCostEngine
 from universe import TICKER_SECTOR_MAP, NSE_UNIVERSE
 from models.universe_engine import HistoricalUniverseEngine
+from models.tradeability_engine import TradeabilityGatingEngine, TradeabilityAssessment
+from models.regime_specialist_engine import RegimeSpecialistEngine, RegimeSignalPolicy
 from stats.inference import compute_newey_west_hac, compute_block_bootstrap_ci, compute_effective_sample_size
 
 
@@ -81,6 +83,9 @@ class Top3DailyPortfolioRecord:
     top1BeatNifty20d: bool
     stocksBeatingNiftyCount5d: int
     stocksBeatingNiftyCount20d: int
+    cashWeight: float = 0.0
+    macroRegime: str = 'BULL_TREND'
+    grossExposure: float = 1.0
 
 
 @dataclass
@@ -119,7 +124,12 @@ class Top3AlphaEvaluator:
         correlation_lookback_days: int = 60,
         use_hysteresis: bool = True,
         exit_rank_limit: int = 6,
-        cost_multiplier: float = 1.0
+        cost_multiplier: float = 1.0,
+        enforce_tradeability_gate: bool = False,
+        enforce_regime_policy: bool = False,
+        use_tactical_entry_filter: bool = False,
+        regime_engine: Optional[RegimeSpecialistEngine] = None,
+        tradeability_engine: Optional[TradeabilityGatingEngine] = None
     ):
         self.cost_engine = TransactionCostEngine(regime=cost_regime)
         self.cost_multiplier = cost_multiplier
@@ -131,6 +141,13 @@ class Top3AlphaEvaluator:
         self.corr_lookback = correlation_lookback_days
         self.use_hysteresis = use_hysteresis
         self.exit_rank_limit = exit_rank_limit
+        self.enforce_tradeability_gate = enforce_tradeability_gate
+        self.enforce_regime_policy = enforce_regime_policy
+        self.use_tactical_entry_filter = use_tactical_entry_filter
+        self._regime_engine = regime_engine
+        self.tradeability_engine = tradeability_engine or TradeabilityGatingEngine(
+            base_friction_rate=self.cost_engine.calculate_round_trip_cost_rate()
+        )
         self._corr_cache: Dict[Tuple[str, str, str], Optional[float]] = {}
         self._returns_cache: Dict[str, pd.Series] = {}
         self._candles_by_ticker_date: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None
@@ -215,6 +232,9 @@ class Top3AlphaEvaluator:
 
         current_holdings: Dict[str, Dict[str, Any]] = {}
         total_turnover_trades: float = 0.0
+
+        if self.enforce_regime_policy and self._regime_engine is None and nifty_candles is not None:
+            self._regime_engine = RegimeSpecialistEngine(benchmark_df=nifty_candles)
 
         # -------------------------------------------------------------------------
         # 1. Daily Decision Date Simulation Loop
@@ -384,18 +404,57 @@ class Top3AlphaEvaluator:
                         'grossRet': fwd_gross_20d, 'netRet': fwd_net_20d, 'niftyRet': nifty_ret_20d
                     })
 
-            if len(eligible_candidates) < 3:
+            # Dynamic Regime Policy & Exposure Control (Pillar 1)
+            if self.enforce_regime_policy and self._regime_engine is not None:
+                reg_policy = self._regime_engine.get_regime_policy(t_date)
+                regime_max_exposure = reg_policy.max_gross_exposure
+                regime_hurdle_mult = reg_policy.hurdle_multiplier
+                macro_regime_str = reg_policy.macro_regime
+                min_holding_days = reg_policy.min_holding_days
+                allow_new_entries = reg_policy.allow_new_entries
+            else:
+                regime_max_exposure = 1.0
+                regime_hurdle_mult = 1.0
+                macro_regime_str = 'BULL_TREND'
+                min_holding_days = 15 if horizon in ('20d', '60d') else 5
+                allow_new_entries = True
+
+            # Tactical Entry Timing Refinement (Pillar 5)
+            if self.use_tactical_entry_filter:
+                for cand in eligible_candidates:
+                    if cand.get('sleeve_raw_tactical_pullback', 0.0) > 0.0 or cand.get('stoch_k', 50.0) < 70.0:
+                        cand['score'] = cand['score'] + 0.05
+
+            # Tradeability Gating (Pillar 2)
+            if self.enforce_tradeability_gate:
+                tradeable_candidates = []
+                for cand in eligible_candidates:
+                    assessment = self.tradeability_engine.evaluate_candidate(
+                        ticker=cand['ticker'],
+                        date_str=t_date,
+                        expected_excess_return=cand.get('expectedReturn', 0.0),
+                        horizon_volatility=cand.get('expectedRisk', 0.02),
+                        calibrated_prob=cand.get('calibratedProbability', 0.50),
+                        annualized_vol=cand.get('vol_20d', None),
+                        regime_hurdle_multiplier=regime_hurdle_mult,
+                        adv20=cand.get('adv20', None)
+                    )
+                    if assessment.is_tradeable:
+                        cand_c = dict(cand)
+                        cand_c['tradeability'] = assessment.to_dict()
+                        tradeable_candidates.append(cand_c)
+                eligible_candidates = tradeable_candidates
+
+            if len(eligible_candidates) < 3 and not self.enforce_tradeability_gate:
                 continue
 
             # P0-2 & P1 Turnover Control: Horizon-aware holding horizon and retention policy.
             # 20D strategy targets a ~3-4 week holding period (15 days minimum); 5D targets ~1 week (5 days).
-            if horizon == '20d':
-                min_holding_days = 15
+            if horizon in ('20d', '60d'):
                 continuity_bonus = 0.25
                 persistence_bonus = 0.10
                 eff_exit_rank = 8
             else:  # 5d
-                min_holding_days = 5
                 continuity_bonus = 0.20
                 persistence_bonus = 0.08
                 eff_exit_rank = self.exit_rank_limit  # default 6
@@ -456,7 +515,7 @@ class Top3AlphaEvaluator:
                         selected_top3.append(candidate)
                         sector_counts[cand_sec] = sector_counts.get(cand_sec, 0) + 1
 
-            if len(selected_top3) < 3:
+            if len(selected_top3) < 3 and not self.enforce_tradeability_gate:
                 continue
 
             # Update turnover tracking and days_held counter
@@ -481,32 +540,44 @@ class Top3AlphaEvaluator:
             selected_sectors = [x['sector'] for x in selected_top3]
 
             corrs = []
-            for i in range(3):
-                for j in range(i + 1, 3):
+            for i in range(len(selected_tickers)):
+                for j in range(i + 1, len(selected_tickers)):
                     c = self._compute_historical_corr(selected_tickers[i], selected_tickers[j], historical_candles, t_date)
                     corrs.append(c if c is not None else 0.0)
             mean_corr = float(np.mean(corrs)) if corrs else 0.0
 
-            is_clustered = len(set(selected_sectors)) < 3
+            is_clustered = len(set(selected_sectors)) < len(selected_sectors) if len(selected_sectors) > 1 else False
             port_beta = float(np.nanmean([x['beta'] for x in selected_top3 if x['beta'] is not None])) if any(x['beta'] is not None for x in selected_top3) else float('nan')
 
-            # Equal-weight portfolio position weighting.
-            # Inverse-vol weighting was removed after holdout analysis showed it
-            # double-penalized volatile names alongside the vol_penalty, creating
-            # compounding defensive bias.  With only 3 positions the diversification
-            # benefit of inv-vol is negligible.
+            # Portfolio position weighting with regime scaling and cash allocation
             n_pos = len(selected_top3)
-            port_weights = [1.0 / n_pos] * n_pos
+            if self.enforce_tradeability_gate or self.enforce_regime_policy:
+                effective_equity_weight = min(1.0, regime_max_exposure) * (n_pos / 3.0)
+                cash_weight = max(0.0, 1.0 - effective_equity_weight)
+                port_weights = [effective_equity_weight / n_pos] * n_pos if n_pos > 0 else []
+            else:
+                effective_equity_weight = 1.0
+                cash_weight = 0.0
+                port_weights = [1.0 / n_pos] * n_pos if n_pos > 0 else []
 
-            port_gross_5d = float(sum(w * x['realizedGrossReturn5d'] for w, x in zip(port_weights, selected_top3)))
-            rets_20d = [(w, x['realizedGrossReturn20d']) for w, x in zip(port_weights, selected_top3) if not np.isnan(x['realizedGrossReturn20d'])]
-            sum_w20 = sum(w for w, _ in rets_20d)
-            port_gross_20d = float(sum(w * r for w, r in rets_20d) / sum_w20) if sum_w20 > 0 else float('nan')
+            cash_ret_5d = cash_weight * (self.rf_annual * (5.0 / 252.0))
+            cash_ret_20d = cash_weight * (self.rf_annual * (20.0 / 252.0))
 
-            port_net_5d = float(sum(w * x['realizedNetReturn5d'] for w, x in zip(port_weights, selected_top3)))
-            net_rets_20d = [(w, x['realizedNetReturn20d']) for w, x in zip(port_weights, selected_top3) if not np.isnan(x['realizedNetReturn20d'])]
-            sum_wnet20 = sum(w for w, _ in net_rets_20d)
-            port_net_20d = float(sum(w * r for w, r in net_rets_20d) / sum_wnet20) if sum_wnet20 > 0 else float('nan')
+            if n_pos > 0:
+                port_gross_5d = float(sum(w * x['realizedGrossReturn5d'] for w, x in zip(port_weights, selected_top3))) + cash_ret_5d
+                rets_20d = [(w, x['realizedGrossReturn20d']) for w, x in zip(port_weights, selected_top3) if not np.isnan(x['realizedGrossReturn20d'])]
+                sum_w20 = sum(w for w, _ in rets_20d)
+                port_gross_20d = float(sum(w * r for w, r in rets_20d) + cash_ret_20d) if sum_w20 > 0 else float('nan')
+
+                port_net_5d = float(sum(w * x['realizedNetReturn5d'] for w, x in zip(port_weights, selected_top3))) + cash_ret_5d
+                net_rets_20d = [(w, x['realizedNetReturn20d']) for w, x in zip(port_weights, selected_top3) if not np.isnan(x['realizedNetReturn20d'])]
+                sum_wnet20 = sum(w for w, _ in net_rets_20d)
+                port_net_20d = float(sum(w * r for w, r in net_rets_20d) + cash_ret_20d) if sum_wnet20 > 0 else float('nan')
+            else:
+                port_gross_5d = cash_ret_5d
+                port_net_5d = cash_ret_5d
+                port_gross_20d = cash_ret_20d
+                port_net_20d = cash_ret_20d
 
             port_excess_5d = port_net_5d - nifty_ret_5d
             port_excess_20d = (port_net_20d - nifty_ret_20d) if not np.isnan(port_net_20d) and not np.isnan(nifty_ret_20d) else float('nan')
@@ -546,7 +617,7 @@ class Top3AlphaEvaluator:
                 )
                 stock_eval_records.append(rec)
 
-            top1 = selected_top3[0]
+            top1 = selected_top3[0] if selected_top3 else None
             port_rec = Top3DailyPortfolioRecord(
                 date=t_date,
                 selectedTickers=selected_tickers,
@@ -564,10 +635,13 @@ class Top3AlphaEvaluator:
                 portfolioExcessReturn20d=port_excess_20d,
                 portfolioBeatNifty5d=port_excess_5d > 0,
                 portfolioBeatNifty20d=port_excess_20d > 0 if not np.isnan(port_excess_20d) else False,
-                top1BeatNifty5d=top1['realizedNetReturn5d'] > nifty_ret_5d,
-                top1BeatNifty20d=(top1['realizedNetReturn20d'] > nifty_ret_20d) if not np.isnan(top1['realizedNetReturn20d']) and not np.isnan(nifty_ret_20d) else False,
+                top1BeatNifty5d=top1['realizedNetReturn5d'] > nifty_ret_5d if top1 else False,
+                top1BeatNifty20d=(top1['realizedNetReturn20d'] > nifty_ret_20d) if (top1 and not np.isnan(top1['realizedNetReturn20d']) and not np.isnan(nifty_ret_20d)) else False,
                 stocksBeatingNiftyCount5d=stocks_beat_5d,
                 stocksBeatingNiftyCount20d=stocks_beat_20d,
+                cashWeight=cash_weight,
+                macroRegime=macro_regime_str,
+                grossExposure=effective_equity_weight
             )
             portfolio_daily_records.append(port_rec)
 
@@ -682,6 +756,11 @@ class Top3AlphaEvaluator:
                 'meanPortfolioBeta': round(mean_port_beta, 2),
             },
             'fractileSpreadAnalysis': fractile_analysis,
+            'portfolioDailyRecords': portfolio_daily_records,
+            'stockEvaluationRecords': stock_eval_records,
+            'annualizedCagr': round(cagr, 2),
+            'sharpeRatio': round(sharpe, 2) if isinstance(sharpe, (float, int)) else sharpe,
+            'tradeCount': n_stock_evals,
         }
 
     def _compute_historical_corr(
@@ -826,7 +905,12 @@ class Top3AlphaEvaluator:
             return {}
 
         df5['rank_pct'] = df5.groupby('date')['score'].rank(pct=True, ascending=False)
-        df20['rank_pct'] = df20.groupby('date')['score'].rank(pct=True, ascending=False)
+        has_20d = not df20.empty and 'date' in df20.columns
+        if has_20d:
+            df20['rank_pct'] = df20.groupby('date')['score'].rank(pct=True, ascending=False)
+            univ_mean_net_20d = df20['netRet'].mean() * 100.0
+        else:
+            univ_mean_net_20d = 0.0
 
         slices = [
             ('Top 1%', 0.01),
@@ -839,12 +923,11 @@ class Top3AlphaEvaluator:
         ]
 
         univ_mean_net_5d = df5['netRet'].mean() * 100.0
-        univ_mean_net_20d = df20['netRet'].mean() * 100.0
 
         records = []
         for label, thresh in slices:
             sub5 = df5[df5['rank_pct'] <= thresh]
-            sub20 = df20[df20['rank_pct'] <= thresh]
+            sub20 = df20[df20['rank_pct'] <= thresh] if has_20d else pd.DataFrame()
 
             m_net_5 = float(sub5['netRet'].mean() * 100.0) if not sub5.empty else 0.0
             m_net_20 = float(sub20['netRet'].mean() * 100.0) if not sub20.empty else 0.0
@@ -859,7 +942,7 @@ class Top3AlphaEvaluator:
                 'excessVsUniverse5d': round(m_net_5 - univ_mean_net_5d, 3),
                 'hitRateVsNifty5d': round(hit_nifty_5, 2),
                 'meanNet20d': round(m_net_20, 3),
-                'excessVsUniverse20d': round(m_net_20 - univ_mean_net_20d, 3),
+                'excessVsUniverse20d': round(m_net_20 - univ_mean_net_20d, 3) if has_20d else 0.0,
                 'hitRateVsNifty20d': round(hit_nifty_20, 2),
             })
 
@@ -869,7 +952,7 @@ class Top3AlphaEvaluator:
         base_20d = next((r['meanNet20d'] for r in records if 'Full Universe' in r['fractile']), 0.0)
 
         is_monotonic_5d = d1_5d > base_5d
-        is_monotonic_20d = d1_20d > base_20d
+        is_monotonic_20d = (d1_20d > base_20d) if has_20d else False
 
         return {
             'fractileSlices': records,
