@@ -86,6 +86,69 @@ class Top3DailyPortfolioRecord:
     cashWeight: float = 0.0
     macroRegime: str = 'BULL_TREND'
     grossExposure: float = 1.0
+    newPositionsOpened: int = 0
+    portfolioUtility: float = 0.0
+
+
+class TacticalOverlayCalibrator:
+    """
+    Calibrates tactical pullback / entry timing overlay strictly using OLS regression
+    on training data, controlling for core alpha score.
+    If the incremental t-statistic < 2.0 (p > 0.05), the weight drops to exactly 0.0.
+    """
+    @staticmethod
+    def calibrate(
+        train_df: pd.DataFrame,
+        core_alpha_col: str = 'canonicalAlphaScore',
+        tactical_signal_col: str = 'sleeve_raw_tactical_pullback',
+        target_col: str = 'fwd_excess_return_5d'
+    ) -> Tuple[float, float, float]:
+        """
+        Fits r_{fwd} = beta_0 + beta_core * alpha_core + beta_tactical * tactical + eps.
+        Returns:
+            (calibrated_weight, t_stat, p_val)
+        """
+        cols = [core_alpha_col, tactical_signal_col, target_col]
+        if not all(c in train_df.columns for c in cols):
+            return 0.0, 0.0, 1.0
+
+        sub = train_df.dropna(subset=cols).copy()
+        if len(sub) < 30:
+            return 0.0, 0.0, 1.0
+
+        y = sub[target_col].values
+        x_core = sub[core_alpha_col].values
+        x_tact = sub[tactical_signal_col].values
+
+        std_core = np.std(x_core)
+        std_tact = np.std(x_tact)
+        if std_core < 1e-6 or std_tact < 1e-6:
+            return 0.0, 0.0, 1.0
+
+        z_core = (x_core - np.mean(x_core)) / std_core
+        z_tact = (x_tact - np.mean(x_tact)) / std_tact
+
+        X = np.column_stack([np.ones(len(y)), z_core, z_tact])
+        try:
+            beta, residuals, rank, s = np.linalg.lstsq(X, y, rcond=None)
+            res = y - X @ beta
+            dof = max(1, len(y) - 3)
+            mse = np.sum(res ** 2) / dof
+            cov_beta = mse * np.linalg.inv(X.T @ X)
+            se_tact = np.sqrt(max(1e-8, cov_beta[2, 2]))
+            t_stat = float(beta[2] / se_tact)
+
+            from scipy.stats import norm
+            p_val = float(2.0 * (1.0 - norm.cdf(abs(t_stat))))
+
+            if t_stat >= 2.0 and p_val <= 0.05:
+                calibrated_weight = float(beta[2])
+            else:
+                calibrated_weight = 0.0
+
+            return calibrated_weight, t_stat, p_val
+        except Exception:
+            return 0.0, 0.0, 1.0
 
 
 @dataclass
@@ -129,7 +192,10 @@ class Top3AlphaEvaluator:
         enforce_regime_policy: bool = False,
         use_tactical_entry_filter: bool = False,
         regime_engine: Optional[RegimeSpecialistEngine] = None,
-        tradeability_engine: Optional[TradeabilityGatingEngine] = None
+        tradeability_engine: Optional[TradeabilityGatingEngine] = None,
+        portfolio_allocation_mode: str = 'OPTIMIZED',  # 'OPTIMIZED' or 'EQUAL_WEIGHT'
+        tactical_overlay_weight: float = 0.0,
+        forecast_error_table: Optional[Dict[Tuple[str, str], float]] = None
     ):
         self.cost_engine = TransactionCostEngine(regime=cost_regime)
         self.cost_multiplier = cost_multiplier
@@ -144,10 +210,15 @@ class Top3AlphaEvaluator:
         self.enforce_tradeability_gate = enforce_tradeability_gate
         self.enforce_regime_policy = enforce_regime_policy
         self.use_tactical_entry_filter = use_tactical_entry_filter
+        self.portfolio_allocation_mode = portfolio_allocation_mode
+        self.tactical_overlay_weight = tactical_overlay_weight
         self._regime_engine = regime_engine
         self.tradeability_engine = tradeability_engine or TradeabilityGatingEngine(
             base_friction_rate=self.cost_engine.calculate_round_trip_cost_rate()
         )
+        if forecast_error_table and not self.tradeability_engine.forecast_error_table:
+            self.tradeability_engine.forecast_error_table = forecast_error_table
+
         self._corr_cache: Dict[Tuple[str, str, str], Optional[float]] = {}
         self._returns_cache: Dict[str, pd.Series] = {}
         self._candles_by_ticker_date: Optional[Dict[str, Dict[str, Dict[str, float]]]] = None
@@ -157,6 +228,118 @@ class Top3AlphaEvaluator:
         self._returns_matrix: Optional[np.ndarray] = None
         self._returns_date_to_idx: Optional[Dict[str, int]] = None
         self._ticker_to_col_idx: Optional[Dict[str, int]] = None
+
+    def _optimize_portfolio_weights(
+        self,
+        selected_candidates: List[Dict[str, Any]],
+        historical_candles: Dict[str, pd.DataFrame],
+        t_date: str,
+        current_holdings: Dict[str, Dict[str, Any]],
+        regime_max_exposure: float,
+        risk_aversion: float = 2.5,
+        turnover_penalty_rate: float = 0.50
+    ) -> Tuple[List[float], float, float]:
+        """
+        Solves constrained portfolio quadratic optimization (P0-3):
+            max_w  w^T alpha_{net} - (gamma / 2) w^T Sigma w - lambda_{to} sum |w_i - w_{prev, i}| c_i + w_{cash} r_f
+        subject to:
+            0 <= w_i <= min(0.40, regime_max_exposure)
+            sum_{i in sector} w_i <= 0.45
+            sum w_i <= regime_max_exposure
+            w_{cash} = 1 - sum w_i >= 0
+        """
+        n_pos = len(selected_candidates)
+        if n_pos == 0:
+            return [], 1.0, 0.0
+
+        tickers = [c['ticker'] for c in selected_candidates]
+        sectors = [c['sector'] for c in selected_candidates]
+
+        # Target net alpha vector
+        alpha_net = np.array([
+            float(c.get('expected_net_alpha', c.get('expectedReturn', 0.02) - c.get('costRate5d', 0.0013)))
+            for c in selected_candidates
+        ], dtype=float)
+
+        prev_weights = np.array([
+            float(current_holdings.get(t, {}).get('weight', 0.0)) for t in tickers
+        ], dtype=float)
+
+        cost_rates = np.array([
+            float(c.get('costRate5d', 0.0013)) for c in selected_candidates
+        ], dtype=float)
+
+        # Estimate Covariance Matrix with Ledoit-Wolf diagonal shrinkage
+        cov_matrix = np.eye(n_pos) * 0.04
+        try:
+            return_series = []
+            for tkr in tickers:
+                cdf = historical_candles.get(tkr)
+                if cdf is not None and not cdf.empty and 'Close' in cdf.columns:
+                    s = cdf[cdf.index <= t_date]['Close'].pct_change().dropna().tail(60)
+                    return_series.append(s)
+            if len(return_series) == n_pos and all(len(s) >= 15 for s in return_series):
+                comb_df = pd.concat(return_series, axis=1).dropna()
+                if len(comb_df) >= 10:
+                    sample_cov = comb_df.cov().values * 252.0
+                    shrinkage = 0.20
+                    cov_matrix = (1.0 - shrinkage) * sample_cov + shrinkage * np.diag(np.diag(sample_cov))
+        except Exception:
+            pass
+
+        max_pos = min(0.40, max(0.05, regime_max_exposure))
+        bounds = [(0.0, max_pos) for _ in range(n_pos)]
+
+        constraints = [
+            {'type': 'ineq', 'fun': lambda w: regime_max_exposure - np.sum(w)}
+        ]
+
+        unique_sectors = set(sectors)
+        for sec in unique_sectors:
+            sec_indices = [idx for idx, s in enumerate(sectors) if s == sec]
+            if len(sec_indices) > 1:
+                constraints.append({
+                    'type': 'ineq',
+                    'fun': lambda w, idxs=sec_indices: 0.45 - np.sum(w[idxs])
+                })
+
+        rf_d = self.rf_annual
+        def objective(w):
+            exp_ret = float(np.dot(w, alpha_net))
+            cash_w = max(0.0, 1.0 - float(np.sum(w)))
+            cash_ret = cash_w * rf_d
+            port_risk = 0.5 * risk_aversion * float(w.T @ cov_matrix @ w)
+            turnover_cost = float(np.sum(np.abs(w - prev_weights) * cost_rates)) * turnover_penalty_rate
+            utility = exp_ret + cash_ret - port_risk - turnover_cost
+            return -utility
+
+        w0 = np.full(n_pos, min(regime_max_exposure / n_pos, max_pos))
+
+        try:
+            from scipy.optimize import minimize
+            res = minimize(
+                objective,
+                w0,
+                method='SLSQP',
+                bounds=bounds,
+                constraints=constraints,
+                options={'maxiter': 100, 'ftol': 1e-6}
+            )
+            if res.success and np.all(res.x >= -1e-5):
+                opt_w = np.clip(res.x, 0.0, max_pos)
+                tot_w = float(np.sum(opt_w))
+                if tot_w > regime_max_exposure and tot_w > 0:
+                    opt_w = opt_w * (regime_max_exposure / tot_w)
+                cash_w = max(0.0, 1.0 - float(np.sum(opt_w)))
+                opt_util = float(-res.fun)
+                return [float(x) for x in opt_w], cash_w, opt_util
+        except Exception:
+            pass
+
+        eq_w = min(1.0, regime_max_exposure) / n_pos
+        weights = [float(eq_w)] * n_pos
+        cash_w = max(0.0, 1.0 - sum(weights))
+        return weights, cash_w, 0.0
 
     def evaluate_top3_alpha(
         self,
@@ -419,13 +602,17 @@ class Top3AlphaEvaluator:
                 min_holding_days = 15 if horizon in ('20d', '60d') else 5
                 allow_new_entries = True
 
-            # Tactical Entry Timing Refinement (Pillar 5)
-            if self.use_tactical_entry_filter:
+            # Tactical Entry Timing Refinement (Pillar 5 / P1-1: Calibrated Return Overlay)
+            if self.use_tactical_entry_filter and self.tactical_overlay_weight > 0.0:
                 for cand in eligible_candidates:
-                    if cand.get('sleeve_raw_tactical_pullback', 0.0) > 0.0 or cand.get('stoch_k', 50.0) < 70.0:
-                        cand['score'] = cand['score'] + 0.05
+                    tact_signal = cand.get('sleeve_raw_tactical_pullback', 0.0)
+                    if tact_signal > 0.0:
+                        ret_overlay = self.tactical_overlay_weight * float(tact_signal)
+                        cand['expectedReturn'] = cand.get('expectedReturn', 0.0) + ret_overlay
+                        if 'expected_net_alpha' in cand:
+                            cand['expected_net_alpha'] = cand['expected_net_alpha'] + ret_overlay
 
-            # Tradeability Gating (Pillar 2)
+            # Tradeability Gating (Pillar 2 / P0-2: Statistical Forecast Error Gating)
             if self.enforce_tradeability_gate:
                 tradeable_candidates = []
                 for cand in eligible_candidates:
@@ -437,6 +624,8 @@ class Top3AlphaEvaluator:
                         calibrated_prob=cand.get('calibratedProbability', 0.50),
                         annualized_vol=cand.get('vol_20d', None),
                         regime_hurdle_multiplier=regime_hurdle_mult,
+                        horizon=horizon,
+                        macro_regime=macro_regime_str,
                         adv20=cand.get('adv20', None)
                     )
                     if assessment.is_tradeable:
@@ -482,59 +671,57 @@ class Top3AlphaEvaluator:
                     if tkr in cand_map and rank_map.get(tkr, 999) <= eff_exit_rank:
                         selected_top3.append(cand_map[tkr])
 
-            # 2. Fill remaining slots up to 3
-            if self.diversification_mode == 'UNCONSTRAINED':
-                for c in eligible_candidates:
-                    if len(selected_top3) >= 3:
-                        break
-                    if not any(s['ticker'] == c['ticker'] for s in selected_top3):
-                        selected_top3.append(c)
-            else:
-                sector_counts: Dict[str, int] = {}
-                for s in selected_top3:
-                    sector_counts[s['sector']] = sector_counts.get(s['sector'], 0) + 1
+            # 2. Fill remaining slots up to 3 (P1-2: strictly blocked if allow_new_entries is False)
+            if allow_new_entries:
+                if self.diversification_mode == 'UNCONSTRAINED':
+                    for c in eligible_candidates:
+                        if len(selected_top3) >= 3:
+                            break
+                        if not any(s['ticker'] == c['ticker'] for s in selected_top3):
+                            selected_top3.append(c)
+                else:
+                    sector_counts: Dict[str, int] = {}
+                    for s in selected_top3:
+                        sector_counts[s['sector']] = sector_counts.get(s['sector'], 0) + 1
 
-                pool = [c for c in eligible_candidates if not any(s['ticker'] == c['ticker'] for s in selected_top3)]
+                    pool = [c for c in eligible_candidates if not any(s['ticker'] == c['ticker'] for s in selected_top3)]
 
-                while len(selected_top3) < 3 and pool:
-                    if selected_top3:
-                        for item in pool:
-                            max_c = 0.0
-                            for sel in selected_top3:
-                                c = self._compute_historical_corr(item['ticker'], sel['ticker'], historical_candles, t_date)
-                                if c is not None and c > max_c:
-                                    max_c = c
-                            penalty = 1.0 - (self.corr_penalty_weight * max(0.0, max_c))
-                            item['effective_score'] = item['score'] * penalty
-                        pool.sort(key=lambda x: (-x.get('effective_score', x['score']), x['ticker']))
+                    while len(selected_top3) < 3 and pool:
+                        if selected_top3:
+                            for item in pool:
+                                max_c = 0.0
+                                for sel in selected_top3:
+                                    c = self._compute_historical_corr(item['ticker'], sel['ticker'], historical_candles, t_date)
+                                    if c is not None and c > max_c:
+                                        max_c = c
+                                penalty = 1.0 - (self.corr_penalty_weight * max(0.0, max_c))
+                                item['effective_score'] = item['score'] * penalty
+                            pool.sort(key=lambda x: (-x.get('effective_score', x['score']), x['ticker']))
 
-                    candidate = pool.pop(0)
-                    cand_sec = candidate['sector']
+                        candidate = pool.pop(0)
+                        cand_sec = candidate['sector']
 
-                    if sector_counts.get(cand_sec, 0) < self.max_sector_count:
-                        selected_top3.append(candidate)
-                        sector_counts[cand_sec] = sector_counts.get(cand_sec, 0) + 1
+                        if sector_counts.get(cand_sec, 0) < self.max_sector_count:
+                            selected_top3.append(candidate)
+                            sector_counts[cand_sec] = sector_counts.get(cand_sec, 0) + 1
 
-            if len(selected_top3) < 3 and not self.enforce_tradeability_gate:
+            if len(selected_top3) < 3 and not self.enforce_tradeability_gate and allow_new_entries:
                 continue
 
-            # Update turnover tracking and days_held counter
+            # Update turnover tracking, days_held counter, and new positions count
             new_ticker_set = set(x['ticker'] for x in selected_top3)
-            old_ticker_set = set(current_holdings.keys()) if current_holdings else new_ticker_set
-            turnover_fraction = len(new_ticker_set - old_ticker_set) / 3.0
+            old_ticker_set = set(current_holdings.keys()) if current_holdings else set()
+            new_positions_count = len(new_ticker_set - old_ticker_set) if current_holdings else (len(new_ticker_set) if allow_new_entries else 0)
+
+            # Strict crisis no-new-entry assertion (P1-2)
+            if not allow_new_entries:
+                assert new_positions_count == 0, f"Invariant violation: {new_positions_count} new entries opened when allow_new_entries is False on {t_date}"
+
+            turnover_fraction = len(new_ticker_set - old_ticker_set) / 3.0 if current_holdings else 1.0
             total_turnover_trades += turnover_fraction
-            # Increment days_held for retained positions; initialize to 1 for new positions
-            new_holdings = {}
-            for x in selected_top3:
-                tkr = x['ticker']
-                prev_days = current_holdings[tkr].get('days_held', 0) if tkr in current_holdings else 0
-                x_copy = dict(x)
-                x_copy['days_held'] = prev_days + 1
-                new_holdings[tkr] = x_copy
-            current_holdings = new_holdings
 
             # ---------------------------------------------------------------------
-            # 3. Portfolio & Individual Record Compilation
+            # 3. Portfolio & Individual Record Compilation (P0-3: Constrained Optimization)
             # ---------------------------------------------------------------------
             selected_tickers = [x['ticker'] for x in selected_top3]
             selected_sectors = [x['sector'] for x in selected_top3]
@@ -549,16 +736,43 @@ class Top3AlphaEvaluator:
             is_clustered = len(set(selected_sectors)) < len(selected_sectors) if len(selected_sectors) > 1 else False
             port_beta = float(np.nanmean([x['beta'] for x in selected_top3 if x['beta'] is not None])) if any(x['beta'] is not None for x in selected_top3) else float('nan')
 
-            # Portfolio position weighting with regime scaling and cash allocation
+            # Portfolio position weighting with regime scaling, optimization, and cash allocation
             n_pos = len(selected_top3)
-            if self.enforce_tradeability_gate or self.enforce_regime_policy:
-                effective_equity_weight = min(1.0, regime_max_exposure) * (n_pos / 3.0)
-                cash_weight = max(0.0, 1.0 - effective_equity_weight)
-                port_weights = [effective_equity_weight / n_pos] * n_pos if n_pos > 0 else []
+            port_utility = 0.0
+            if n_pos > 0:
+                if self.portfolio_allocation_mode == 'OPTIMIZED':
+                    port_weights, cash_weight, port_utility = self._optimize_portfolio_weights(
+                        selected_candidates=selected_top3,
+                        historical_candles=historical_candles,
+                        t_date=t_date,
+                        current_holdings=current_holdings,
+                        regime_max_exposure=regime_max_exposure
+                    )
+                    effective_equity_weight = float(sum(port_weights))
+                else:  # 'EQUAL_WEIGHT'
+                    if self.enforce_tradeability_gate or self.enforce_regime_policy:
+                        effective_equity_weight = min(1.0, regime_max_exposure) * (n_pos / 3.0)
+                        cash_weight = max(0.0, 1.0 - effective_equity_weight)
+                        port_weights = [effective_equity_weight / n_pos] * n_pos
+                    else:
+                        effective_equity_weight = 1.0
+                        cash_weight = 0.0
+                        port_weights = [1.0 / n_pos] * n_pos
             else:
-                effective_equity_weight = 1.0
-                cash_weight = 0.0
-                port_weights = [1.0 / n_pos] * n_pos if n_pos > 0 else []
+                effective_equity_weight = 0.0
+                cash_weight = 1.0
+                port_weights = []
+
+            # Increment days_held and store weight in current_holdings
+            new_holdings = {}
+            for w, x in zip(port_weights, selected_top3):
+                tkr = x['ticker']
+                prev_days = current_holdings[tkr].get('days_held', 0) if tkr in current_holdings else 0
+                x_copy = dict(x)
+                x_copy['days_held'] = prev_days + 1
+                x_copy['weight'] = float(w)
+                new_holdings[tkr] = x_copy
+            current_holdings = new_holdings
 
             cash_ret_5d = cash_weight * (self.rf_annual * (5.0 / 252.0))
             cash_ret_20d = cash_weight * (self.rf_annual * (20.0 / 252.0))
@@ -641,7 +855,9 @@ class Top3AlphaEvaluator:
                 stocksBeatingNiftyCount20d=stocks_beat_20d,
                 cashWeight=cash_weight,
                 macroRegime=macro_regime_str,
-                grossExposure=effective_equity_weight
+                grossExposure=effective_equity_weight,
+                newPositionsOpened=new_positions_count,
+                portfolioUtility=port_utility
             )
             portfolio_daily_records.append(port_rec)
 
@@ -659,7 +875,7 @@ class Top3AlphaEvaluator:
         top3_port_hit_rate_nifty_5d = sum(1 for p in portfolio_daily_records if p.portfolioBeatNifty5d) / n_days * 100.0
 
         top1_abs_win_rate_5d = sum(1 for s in stock_eval_records if s.rank == 1 and s.absoluteWin5d) / n_days * 100.0
-        top3_stock_abs_win_rate_5d = sum(1 for s in stock_eval_records if s.absoluteWin5d) / n_stock_evals * 100.0
+        top3_stock_abs_win_rate_5d = (sum(1 for s in stock_eval_records if s.absoluteWin5d) / n_stock_evals * 100.0) if n_stock_evals > 0 else 0.0
         top3_port_abs_win_rate_5d = sum(1 for p in portfolio_daily_records if p.portfolioNetReturn5d > 0) / n_days * 100.0
 
         top1_hit_rate_nifty_20d = sum(1 for p in portfolio_daily_records if not np.isnan(p.portfolioExcessReturn20d) and p.top1BeatNifty20d) / max(1, sum(1 for p in portfolio_daily_records if not np.isnan(p.portfolioExcessReturn20d))) * 100.0
@@ -761,6 +977,12 @@ class Top3AlphaEvaluator:
             'annualizedCagr': round(cagr, 2),
             'sharpeRatio': round(sharpe, 2) if isinstance(sharpe, (float, int)) else sharpe,
             'tradeCount': n_stock_evals,
+            'portfolioOptimization': {
+                'allocationMode': self.portfolio_allocation_mode,
+                'meanOptimizedGrossExposure': round(float(np.mean([p.grossExposure for p in portfolio_daily_records])), 3),
+                'meanCashWeight': round(float(np.mean([p.cashWeight for p in portfolio_daily_records])), 3),
+                'totalNewPositionsInCrisis': sum(p.newPositionsOpened for p in portfolio_daily_records if p.macroRegime == 'CRISIS_PANIC'),
+            },
         }
 
     def _compute_historical_corr(

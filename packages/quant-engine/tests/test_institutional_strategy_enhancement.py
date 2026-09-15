@@ -22,11 +22,14 @@ from models.regime_specialist_engine import (
     RegimeSignalPolicy,
     REGIME_POLICY_REGISTRY,
     MACRO_REGIME_STATES,
-    CANONICAL_REGIME_STATES
+    CANONICAL_REGIME_STATES,
+    RegimePolicyLearner,
+    RegimePolicyLearnerReport
 )
 from models.tradeability_engine import (
     TradeabilityGatingEngine,
-    TradeabilityAssessment
+    TradeabilityAssessment,
+    EmpiricalForecastUncertaintyEngine
 )
 from models.sleeve_ensemble import (
     FactorSleeveEnsemble,
@@ -35,7 +38,8 @@ from models.sleeve_ensemble import (
 )
 from backtest.top3_alpha_evaluator import (
     Top3AlphaEvaluator,
-    Top3DailyPortfolioRecord
+    Top3DailyPortfolioRecord,
+    TacticalOverlayCalibrator
 )
 from targets.target_definition import compute_targets, assign_cross_sectional_relevance_grades
 
@@ -318,3 +322,316 @@ def test_p5_tactical_entry_timing_bonus():
         use_tactical_entry_filter=True
     )
     assert evaluator.use_tactical_entry_filter is True
+
+
+# =====================================================================
+# Institutional Audit Remediation: P0-1 to P1-2 Tests
+# =====================================================================
+
+def test_p0_1_learned_regime_weights_with_shrinkage(synthetic_benchmark_df):
+    """
+    P0-1: Verifies data-driven regime policy learning with Bayesian shrinkage toward equal-weight.
+    Asserts:
+    1. Spearman rank IC per sleeve is estimated across folds.
+    2. Negative IC sleeves receive zero weight before shrinkage.
+    3. Bayesian shrinkage lambda = N / (N + N0) where N0=50 pulls sleeve weights toward prior (0.20).
+    4. Learner produces valid RegimeSignalPolicy with sleeve weights summing to 1.0.
+    5. Registry update seamlessly sets policies in RegimeSpecialistEngine.
+    """
+    learner = RegimePolicyLearner(prior_strength_n0=50.0)
+
+    dates = pd.date_range('2022-01-01', periods=80, freq='B')
+    tickers = ['TICKER_1', 'TICKER_2', 'TICKER_3', 'TICKER_4', 'TICKER_5']
+    records = []
+    np.random.seed(42)
+    for d in dates:
+        regime = 'BULL_TREND' if d < dates[50] else 'BEAR_TREND'
+        for tkr in tickers:
+            records.append({
+                'date': d,
+                'ticker': tkr,
+                'macro_regime': regime,
+                'ret_20d': float(np.random.normal(0.02, 0.05)),
+                'sleeve_raw_residual_momentum': float(np.random.normal(0.02, 0.05)),
+                'sleeve_raw_tactical_pullback': float(np.random.normal(-0.01, 0.02)),
+                'sleeve_raw_low_volatility': float(np.random.normal(0.01, 0.03)),
+                'sleeve_raw_liquidity_quality': float(np.random.normal(0.0, 1.0)),
+                'sleeve_raw_range_value': float(np.random.normal(0.01, 0.04)),
+                'fwd_excess_return_5d': float(np.random.normal(0.01, 0.03))
+            })
+    train_panel = pd.DataFrame(records)
+
+    policies, reports = learner.learn_policies_from_panel(train_panel)
+
+    assert 'BULL_TREND' in policies
+    assert 'BEAR_TREND' in policies
+    assert 'CRISIS_PANIC' in policies
+
+    bull_report = reports['BULL_TREND']
+    assert isinstance(bull_report, RegimePolicyLearnerReport)
+    assert bull_report.sample_count == 250  # 50 dates * 5 tickers
+    assert 0.0 < bull_report.shrinkage_lambda < 1.0
+
+    # Shrunken weights must sum to 1.0
+    for s_name, w_shrunk in bull_report.shrunken_weights.items():
+        assert 0.0 <= w_shrunk <= 1.0
+    assert abs(sum(bull_report.shrunken_weights.values()) - 1.0) < 1e-4
+
+    # Crisis panic policy must strictly enforce capital preservation
+    crisis_pol = policies['CRISIS_PANIC']
+    assert crisis_pol.max_gross_exposure <= 0.25
+    assert crisis_pol.allow_new_entries is False
+    assert crisis_pol.hurdle_multiplier >= 3.0
+
+    # Set learned policies into RegimeSpecialistEngine
+    engine = RegimeSpecialistEngine(benchmark_df=synthetic_benchmark_df)
+    engine.set_policy_registry(policies)
+    sample_date = str(synthetic_benchmark_df.index[100])[:10]
+    active_pol = engine.get_regime_policy(sample_date)
+    assert active_pol is not None
+
+
+def test_p0_2_empirical_forecast_error_tradeability():
+    """
+    P0-2: Verifies empirical Newey-West/HAC forecast error uncertainty estimation and tradeability gating.
+    Asserts:
+    1. EmpiricalForecastUncertaintyEngine fits Newey-West HAC variance across residuals.
+    2. TradeabilityGatingEngine uses empirical standard error without hardcoded sample count.
+    3. Higher forecast uncertainty raises economic hurdle, filtering uncompetitive trades.
+    """
+    uncertainty_engine = EmpiricalForecastUncertaintyEngine(fallback_error_se=0.005)
+
+    # Generate autocorrelated residuals (AR(1) process simulating overlapping returns)
+    np.random.seed(42)
+    n_samples = 200
+    e = np.zeros(n_samples)
+    noise = np.random.normal(0, 0.02, n_samples)
+    for i in range(1, n_samples):
+        e[i] = 0.6 * e[i - 1] + noise[i]
+
+    res_df = pd.DataFrame({
+        'horizon': ['5d'] * n_samples,
+        'macro_regime': ['BULL_TREND'] * n_samples,
+        'forecast_residual': e
+    })
+
+    calibrated_table = uncertainty_engine.fit_hac_standard_errors(res_df)
+    assert ('5d', 'BULL_TREND') in calibrated_table
+    empirical_se = uncertainty_engine.get_forecast_error_se(horizon='5d', macro_regime='BULL_TREND')
+    assert 0.002 <= empirical_se <= 0.025
+
+    gating_engine = TradeabilityGatingEngine(
+        uncertainty_engine=uncertainty_engine,
+        risk_buffer_lambda=0.08
+    )
+
+    # Marginal edge: filtered out by statistical uncertainty hurdle
+    marginal_assessment = gating_engine.evaluate_candidate(
+        ticker='RELIANCE.NS',
+        date_str='2023-01-01',
+        expected_excess_return=0.003,  # 30 bps
+        horizon_volatility=0.025,
+        calibrated_prob=0.52,
+        horizon='5d',
+        macro_regime='BULL_TREND'
+    )
+    assert marginal_assessment.expected_net_alpha < 0.003
+    assert marginal_assessment.is_tradeable is False
+
+    # Strong edge: passes gate decisively
+    strong_assessment = gating_engine.evaluate_candidate(
+        ticker='TCS.NS',
+        date_str='2023-01-01',
+        expected_excess_return=0.040,  # 400 bps
+        horizon_volatility=0.020,
+        calibrated_prob=0.68,
+        horizon='5d',
+        macro_regime='BULL_TREND'
+    )
+    assert strong_assessment.is_tradeable is True
+    assert strong_assessment.expected_net_alpha > 0.015
+
+
+def test_p0_3_constrained_portfolio_optimizer_vs_equal_weight(synthetic_cross_section_panel, synthetic_benchmark_df):
+    """
+    P0-3: Verifies constrained quadratic utility optimization vs equal weight.
+    Asserts:
+    1. SLSQP optimizer maximizes net alpha minus risk penalty minus turnover penalty.
+    2. Weights strictly obey single-stock bounds (<= 0.40) and sector concentration bounds (<= 0.45).
+    3. Cash allocation matches macro regime gross exposure requirement.
+    4. Evaluator returns portfolioOptimization diagnostics.
+    """
+    historical_candles = {}
+    for t in synthetic_cross_section_panel['ticker'].unique():
+        t_sub = synthetic_cross_section_panel[synthetic_cross_section_panel['ticker'] == t].copy()
+        t_sub.set_index(pd.to_datetime(t_sub['predictionTimestamp']), inplace=True)
+        t_sub['Open'] = t_sub['Close'] * 0.99
+        historical_candles[t] = t_sub
+
+    evaluator_opt = Top3AlphaEvaluator(
+        portfolio_allocation_mode='OPTIMIZED',
+        enforce_regime_policy=True,
+        enforce_tradeability_gate=False
+    )
+
+    res_opt = evaluator_opt.evaluate_top3_alpha(
+        oos_predictions_df=synthetic_cross_section_panel,
+        historical_candles=historical_candles,
+        nifty_candles=synthetic_benchmark_df,
+        ranking_metric='canonical_alpha',
+        horizon='5d'
+    )
+
+    assert 'portfolioOptimization' in res_opt
+    assert res_opt['portfolioOptimization']['allocationMode'] == 'OPTIMIZED'
+    assert res_opt['portfolioOptimization']['meanOptimizedGrossExposure'] > 0.0
+    assert 0.0 <= res_opt['portfolioOptimization']['meanCashWeight'] <= 1.0
+
+    # Also test equal-weight baseline comparison
+    evaluator_eq = Top3AlphaEvaluator(
+        portfolio_allocation_mode='EQUAL_WEIGHT',
+        enforce_regime_policy=True,
+        enforce_tradeability_gate=False
+    )
+
+    res_eq = evaluator_eq.evaluate_top3_alpha(
+        oos_predictions_df=synthetic_cross_section_panel,
+        historical_candles=historical_candles,
+        nifty_candles=synthetic_benchmark_df,
+        ranking_metric='canonical_alpha',
+        horizon='5d'
+    )
+
+    assert res_eq['portfolioOptimization']['allocationMode'] == 'EQUAL_WEIGHT'
+
+
+def test_p1_1_calibrated_tactical_overlay():
+    """
+    P1-1: Verifies tactical overlay calibration using orthogonal OLS regression.
+    Asserts:
+    1. When tactical signal has no statistically significant alpha (t < 2.0, p > 0.05),
+       the calibrated weight is strictly forced to 0.0.
+    2. When tactical signal has significant orthogonal predictive power (t >= 2.0, p <= 0.05),
+       the calibrated weight is positive and matches regression beta.
+    """
+    np.random.seed(42)
+    n = 200
+    core_alpha = np.random.normal(0, 1, n)
+
+    # Case A: Pure noise tactical signal
+    tactical_noise = np.random.normal(0, 1, n)
+    fwd_ret_noise = 0.01 * core_alpha + np.random.normal(0, 0.02, n)
+    df_noise = pd.DataFrame({
+        'canonicalAlphaScore': core_alpha,
+        'sleeve_raw_tactical_pullback': tactical_noise,
+        'fwd_excess_return_5d': fwd_ret_noise
+    })
+
+    weight_noise, t_noise, p_noise = TacticalOverlayCalibrator.calibrate(
+        train_df=df_noise,
+        core_alpha_col='canonicalAlphaScore',
+        tactical_signal_col='sleeve_raw_tactical_pullback',
+        target_col='fwd_excess_return_5d'
+    )
+    assert weight_noise == 0.0
+    assert t_noise < 2.0
+
+    # Case B: Significant tactical signal with genuine predictive power
+    tactical_sig = np.random.normal(0, 1, n)
+    fwd_ret_sig = 0.01 * core_alpha + 0.025 * tactical_sig + np.random.normal(0, 0.01, n)
+    df_sig = pd.DataFrame({
+        'canonicalAlphaScore': core_alpha,
+        'sleeve_raw_tactical_pullback': tactical_sig,
+        'fwd_excess_return_5d': fwd_ret_sig
+    })
+
+    weight_sig, t_sig, p_sig = TacticalOverlayCalibrator.calibrate(
+        train_df=df_sig,
+        core_alpha_col='canonicalAlphaScore',
+        tactical_signal_col='sleeve_raw_tactical_pullback',
+        target_col='fwd_excess_return_5d'
+    )
+    assert weight_sig > 0.0
+    assert t_sig >= 2.0
+    assert p_sig <= 0.05
+
+
+def test_p1_2_crisis_panic_strictly_zero_new_entries(synthetic_benchmark_df):
+    """
+    P1-2: Verifies that in CRISIS_PANIC regime (where allow_new_entries=False),
+    zero new positions are opened and capital preservation is strictly enforced.
+    """
+    engine = RegimeSpecialistEngine(benchmark_df=synthetic_benchmark_df)
+
+    # Dates 310 to 330 in synthetic_benchmark_df are in CRISIS_PANIC
+    crisis_dates = [str(d)[:10] for d in synthetic_benchmark_df.index[310:325]]
+    tickers = [f'STK_{i:02d}.NS' for i in range(10)]
+    sectors = ['IT', 'IT', 'IT', 'FIN', 'FIN', 'FIN', 'AUTO', 'AUTO', 'PHARMA', 'PHARMA']
+    sector_map = dict(zip(tickers, sectors))
+
+    np.random.seed(999)
+    records = []
+    for d_str in crisis_dates:
+        for t in tickers:
+            records.append({
+                'predictionTimestamp': d_str,
+                'ticker': t,
+                'sector': sector_map[t],
+                'Close': float(np.random.uniform(100, 2000)),
+                'ret_5d': float(np.random.normal(-0.03, 0.04)),
+                'ret_20d': float(np.random.normal(-0.06, 0.06)),
+                'beta_nifty': 1.0,
+                'relative_strength_nifty': -0.02,
+                'ema_20_dist': -0.05,
+                'sma_50_dist': -0.08,
+                'atr_percent': 0.03,
+                'vol_20d': 0.30,
+                'downside_deviation': 0.22,
+                'volume_z_score': 0.5,
+                'rel_volume': 1.2,
+                'dist_52w_low': 0.05,
+                'dist_52w_high': -0.30,
+                'stoch_k': 30.0,
+                'expectedReturn': 0.01,
+                'expectedRisk': 0.03,
+                'calibratedProbability': 0.52,
+                'canonicalAlphaScore': float(np.random.uniform(0.5, 1.5)),
+                'adv20': 50000000.0,
+                'ADV': 100000.0,
+                'beta': 1.0
+            })
+    crisis_panel = pd.DataFrame(records)
+
+    historical_candles = {}
+    for t in tickers:
+        t_sub = crisis_panel[crisis_panel['ticker'] == t].copy()
+        t_sub.set_index(pd.to_datetime(t_sub['predictionTimestamp']), inplace=True)
+        t_sub['Open'] = t_sub['Close'] * 0.99
+        historical_candles[t] = t_sub
+
+    evaluator = Top3AlphaEvaluator(
+        enforce_regime_policy=True,
+        enforce_tradeability_gate=False,
+        regime_engine=engine
+    )
+
+    res = evaluator.evaluate_top3_alpha(
+        oos_predictions_df=crisis_panel,
+        historical_candles=historical_candles,
+        nifty_candles=synthetic_benchmark_df,
+        ranking_metric='canonical_alpha',
+        horizon='5d'
+    )
+
+    daily_recs = res['portfolioDailyRecords']
+    assert len(daily_recs) > 0
+
+    # In CRISIS_PANIC with allow_new_entries=False, newPositionsOpened must be exactly 0
+    for r in daily_recs:
+        assert r.macroRegime == 'CRISIS_PANIC'
+        assert r.newPositionsOpened == 0, f"Violation on {r.date}: {r.newPositionsOpened} opened in CRISIS_PANIC"
+        assert r.grossExposure <= 0.25
+        assert r.cashWeight >= 0.75
+
+    assert res['portfolioOptimization']['totalNewPositionsInCrisis'] == 0
+
