@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import YahooFinance from 'yahoo-finance2';
 import {
   MarketDataProvider,
@@ -9,6 +9,10 @@ import {
   UniverseStock,
 } from './market-data.provider.interface';
 import { TOP_300_INDIAN_UNIVERSE } from '../data/indian-universe.data';
+import { isNseHoliday } from '../data/nse-holidays.data';
+
+export const VALID_CHART_RANGES = ['1d', '1w', '1mo', '3mo', '6mo', '1y', '2y', '5y', 'max'] as const;
+export type ValidChartRange = typeof VALID_CHART_RANGES[number];
 
 @Injectable()
 export class YahooMarketDataProvider implements MarketDataProvider {
@@ -34,6 +38,17 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     if (day === 0 || day === 6) {
       return {
         status: 'CLOSED',
+        timestamp: now.toISOString(),
+        timezone: 'Asia/Kolkata',
+        exchange: 'NSE',
+      };
+    }
+
+    // Trading holiday check
+    const holidayCheck = isNseHoliday(now);
+    if (holidayCheck.isHoliday) {
+      return {
+        status: 'HOLIDAY',
         timestamp: now.toISOString(),
         timezone: 'Asia/Kolkata',
         exchange: 'NSE',
@@ -92,6 +107,19 @@ export class YahooMarketDataProvider implements MarketDataProvider {
         ? 'DELAYED'
         : 'CLOSED';
 
+    let sourceTimestamp: string | undefined;
+    if (q.regularMarketTime) {
+      if (typeof q.regularMarketTime === 'number') {
+        sourceTimestamp = new Date(q.regularMarketTime * 1000).toISOString();
+      } else if (q.regularMarketTime instanceof Date) {
+        sourceTimestamp = q.regularMarketTime.toISOString();
+      } else {
+        const d = new Date(q.regularMarketTime);
+        if (!isNaN(d.getTime())) sourceTimestamp = d.toISOString();
+      }
+    }
+    const serverReceivedAt = new Date().toISOString();
+
     return {
       ticker,
       name: meta?.name || q.shortName || q.longName || ticker.replace('.NS', ''),
@@ -109,7 +137,9 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       weekLow52: q.fiftyTwoWeekLow,
       marketState: q.marketState || marketStatus.status,
       exchange: q.exchange || 'NSE',
-      timestamp: new Date().toISOString(),
+      timestamp: sourceTimestamp || serverReceivedAt,
+      sourceTimestamp,
+      serverReceivedAt,
       source: 'NSE / Yahoo Live Feed',
       freshness,
     };
@@ -163,11 +193,8 @@ export class YahooMarketDataProvider implements MarketDataProvider {
           }
         }
       } catch (err: any) {
-        this.logger.warn(`Batch quote failed for ${batch.join(', ')}, falling back: ${err.message}`);
-        const settled = await Promise.allSettled(batch.map((t) => this.getQuote(t)));
-        for (const r of settled) {
-          if (r.status === 'fulfilled' && r.value) results.push(r.value);
-        }
+        this.logger.warn(`Batch quote failed for ${batch.length} tickers: ${err.message}`);
+        // Zero amplification: Do not trigger unthrottled concurrent fan-out storm
       }
     }
     return results;
@@ -177,6 +204,12 @@ export class YahooMarketDataProvider implements MarketDataProvider {
    * Fetches authentic historical candlestick chart data from the National Stock Exchange
    */
   async getHistoricalCandles(ticker: string, range: string): Promise<OHLCVCandle[]> {
+    if (!VALID_CHART_RANGES.includes(range as any)) {
+      throw new BadRequestException(
+        `Invalid chart range '${range}'. Valid ranges: ${VALID_CHART_RANGES.join(', ')}`
+      );
+    }
+
     let interval: '5m' | '15m' | '1d' | '1wk' | '1mo' = '1d';
     let queryPeriod1: Date;
     const now = new Date();
@@ -207,7 +240,7 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       queryPeriod1 = new Date(Date.now() - 5 * 365 * 24 * 60 * 60 * 1000);
     } else {
       interval = '1mo';
-      queryPeriod1 = new Date(Date.now() - 10 * 365 * 24 * 60 * 60 * 1000);
+      queryPeriod1 = new Date(Date.now() - 15 * 365 * 24 * 60 * 60 * 1000);
     }
 
     try {
@@ -329,5 +362,27 @@ export class YahooMarketDataProvider implements MarketDataProvider {
           (s.industry && s.industry.toLowerCase().includes(q))
       )
       .slice(0, 30);
+  }
+
+  /**
+   * Performs an authentic lightweight health check against the market provider
+   */
+  async probeHealth(): Promise<{ status: 'UP' | 'DEGRADED' | 'DOWN'; latencyMs: number }> {
+    const t0 = Date.now();
+    try {
+      const q = (await Promise.race([
+        this.yf.quote('^NSEI'),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Market provider probe timeout')), 3000)
+        ),
+      ])) as any;
+      const latencyMs = Date.now() - t0;
+      if (q && typeof q.regularMarketPrice === 'number' && q.regularMarketPrice > 0) {
+        return { status: 'UP', latencyMs };
+      }
+      return { status: 'DEGRADED', latencyMs };
+    } catch (err: any) {
+      return { status: 'DOWN', latencyMs: Date.now() - t0 };
+    }
   }
 }

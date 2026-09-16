@@ -327,14 +327,30 @@ export class PortfolioService {
       }
 
       const currentPrice = quote.price;
-      const quoteTimestamp = (quote as any).timestamp ? new Date((quote as any).timestamp) : null;
+      const sourceTimestampStr = (quote as any).sourceTimestamp || (quote as any).timestamp;
+      const quoteTimestamp = sourceTimestampStr ? new Date(sourceTimestampStr) : null;
 
-      // Item 8: Quote freshness is not equivalent to quote availability.
-      // Do not trigger auto-sell on stale or unverified quotes.
+      // Stale quote protection: quote freshness must be evaluated against source market timestamp
       const MAX_AUTO_SELL_QUOTE_AGE_MS = 15 * 60 * 1000; // 15 minutes
-      if (!quoteTimestamp || (Date.now() - quoteTimestamp.getTime() > MAX_AUTO_SELL_QUOTE_AGE_MS)) {
+      const nowMs = Date.now();
+
+      if (!quoteTimestamp || isNaN(quoteTimestamp.getTime())) {
         this.logger.warn(
-          `AUTO_SELL_QUOTE_STALE: Ticker ${pos.stock.ticker} quote is stale or missing timestamp (${quoteTimestamp?.toISOString() || 'none'}). Auto-sell skipped.`
+          `AUTO_SELL_QUOTE_STALE: Ticker ${pos.stock.ticker} quote missing valid timestamp. Auto-sell skipped.`
+        );
+        continue;
+      }
+
+      if (quoteTimestamp.getTime() > nowMs + 60_000) {
+        this.logger.warn(
+          `AUTO_SELL_QUOTE_FUTURE: Ticker ${pos.stock.ticker} quote has future timestamp (${quoteTimestamp.toISOString()}). Auto-sell skipped.`
+        );
+        continue;
+      }
+
+      if (nowMs - quoteTimestamp.getTime() > MAX_AUTO_SELL_QUOTE_AGE_MS) {
+        this.logger.warn(
+          `AUTO_SELL_QUOTE_STALE: Ticker ${pos.stock.ticker} quote is stale (${quoteTimestamp.toISOString()}, age ${Math.round((nowMs - quoteTimestamp.getTime()) / 60000)}m > 15m). Auto-sell skipped.`
         );
         continue;
       }
@@ -533,9 +549,16 @@ export class PortfolioService {
     quantity: number,
     orderType: OrderType = OrderType.MARKET,
     idempotencyKey?: string,
+    limitPrice?: number,
   ) {
     if (!quantity || quantity <= 0) {
       throw new BadRequestException('Order quantity must be a positive integer');
+    }
+
+    if (orderType === OrderType.LIMIT) {
+      if (typeof limitPrice !== 'number' || isNaN(limitPrice) || limitPrice <= 0) {
+        throw new BadRequestException('LIMIT order requires a valid positive limitPrice');
+      }
     }
 
     const ticker = (!rawTicker.startsWith('^') && !rawTicker.endsWith('.NS') && !rawTicker.endsWith('.BO'))
@@ -550,6 +573,7 @@ export class PortfolioService {
         type,
         quantity,
         orderType,
+        limitPrice: limitPrice || null,
       });
       canonicalPayloadHash = crypto.createHash('sha256').update(payloadStr).digest('hex');
 
@@ -576,7 +600,26 @@ export class PortfolioService {
 
     // 1. Fetch live market price
     const quote = await this.stockService.getQuote(ticker);
-    const executionPrice = quote.price;
+    if (!quote || typeof quote.price !== 'number' || quote.price <= 0) {
+      throw new BadRequestException(`Unable to obtain valid quote for ${ticker}`);
+    }
+    const marketPrice = quote.price;
+
+    // LIMIT Order Execution Semantics
+    if (orderType === OrderType.LIMIT && limitPrice !== undefined) {
+      if (type === TransactionType.BUY && marketPrice > limitPrice) {
+        throw new BadRequestException(
+          `LIMIT_UNFILLED: Current market price (₹${marketPrice.toFixed(2)}) exceeds limit buy price (₹${limitPrice.toFixed(2)})`
+        );
+      }
+      if (type === TransactionType.SELL && marketPrice < limitPrice) {
+        throw new BadRequestException(
+          `LIMIT_UNFILLED: Current market price (₹${marketPrice.toFixed(2)}) is below limit sell price (₹${limitPrice.toFixed(2)})`
+        );
+      }
+    }
+
+    const executionPrice = marketPrice;
     const totalCost = Money.multiply(quantity, executionPrice);
 
     // 2. Ensure stock record exists in DB
@@ -788,12 +831,14 @@ export class PortfolioService {
 
       const responseData = {
         success: true,
-        message: `Simulated ${type} order for ${quantity} shares of ${ticker} executed successfully at ₹${executionPrice.toFixed(2)}`,
+        message: `Simulated ${orderType} ${type} order for ${quantity} shares of ${ticker} executed successfully at ₹${executionPrice.toFixed(2)}`,
         transactionId: transaction.id,
         ticker,
         type,
+        orderType,
         quantity,
         executionPrice,
+        limitPrice: orderType === OrderType.LIMIT ? limitPrice : undefined,
         totalCost,
       };
 
@@ -832,6 +877,9 @@ export class PortfolioService {
    * Retrieves complete trade history for the user
    */
   async getAllTrades(userId: string, ticker?: string, type?: TransactionType, page: number = 1, limit: number = 50) {
+    const safePage = Math.max(1, Math.floor(page || 1));
+    const safeLimit = Math.min(100, Math.max(1, Math.floor(limit || 50)));
+
     const user = await this.db.client.user.findUnique({ where: { clerkId: userId } });
     if (!user) return [];
 
@@ -851,8 +899,8 @@ export class PortfolioService {
       where,
       include: { stock: true },
       orderBy: { timestamp: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
     });
 
     const uniqueTickers = [...new Set(trades.map((t) => t.stock.ticker))];

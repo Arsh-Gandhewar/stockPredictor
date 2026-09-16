@@ -20,7 +20,7 @@ import { PredictionModule } from './modules/prediction/prediction.module';
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 120, // 120 requests per minute per IP
+        limit: Number(process.env.THROTTLE_LIMIT) || 300, // 300 requests per minute baseline
       },
     ]),
     DatabaseModule,

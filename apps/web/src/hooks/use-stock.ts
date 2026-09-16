@@ -396,8 +396,8 @@ export function useStockQuote(ticker: string) {
     queryKey: ['stock-quote', ticker],
     queryFn: () => fetcher<StockQuote>(`/stock/${encodeURIComponent(ticker)}/quote`),
     enabled: !!ticker,
-    refetchInterval: 5000,
-    staleTime: 3000,
+    refetchInterval: 10000,
+    staleTime: 5000,
   });
 }
 
@@ -519,8 +519,8 @@ export function useAlerts() {
   return useQuery({
     queryKey: ['alerts'],
     queryFn: () => fetcher<AlertItem[]>('/alerts'),
-    refetchInterval: 5000,
-    staleTime: 2000,
+    refetchInterval: 15000,
+    staleTime: 10000,
   });
 }
 
@@ -626,8 +626,8 @@ export function usePortfolio(userId?: string) {
     queryFn: () => fetcher<PortfolioData>('/portfolio', {
       headers: userId ? { 'x-user-id': userId } : undefined,
     }),
-    refetchInterval: 3000,
-    staleTime: 1000,
+    refetchInterval: 10000,
+    staleTime: 5000,
   });
 }
 
@@ -635,64 +635,60 @@ export function usePortfolioSellSignals(userId?: string) {
   return useQuery({
     queryKey: ['portfolio-sell-signals', userId],
     queryFn: async () => {
-      try {
-        const raw = await fetcher<any[]>('/portfolio/sell-signals', {
-          headers: userId ? { 'x-user-id': userId } : undefined,
+      const raw = await fetcher<any[]>('/portfolio/sell-signals', {
+        headers: userId ? { 'x-user-id': userId } : undefined,
+      });
+      if (Array.isArray(raw)) {
+        return raw.map((item) => {
+          const rawDownside = typeof item.downsideProbability === 'number' 
+            ? (item.downsideProbability > 1 ? item.downsideProbability / 100 : item.downsideProbability)
+            : 0.68;
+          const exitProb = item.exitProbability ?? Math.round(rawDownside * 100);
+          
+          const rawAction = item.recommendedAction || item.recommendation || item.decision;
+          const recommendedAction: 'STRONG_SELL' | 'SELL' | 'TAKE_PROFIT' | 'REDUCE' | 'STOP_LOSS' | 'HOLD' =
+            rawAction === 'STRONG_SELL' ? 'STRONG_SELL'
+            : rawAction === 'SELL' ? 'SELL'
+            : rawAction === 'STOP_LOSS' ? 'STOP_LOSS'
+            : rawAction === 'TAKE_PROFIT' ? 'TAKE_PROFIT'
+            : rawAction === 'REDUCE' ? 'REDUCE'
+            : (rawDownside >= 0.75 ? 'STRONG_SELL' : rawDownside >= 0.60 ? 'SELL' : 'REDUCE');
+
+          const decision: Decision = recommendedAction === 'STRONG_SELL' ? 'STRONG_SELL' : recommendedAction === 'SELL' ? 'SELL' : 'REDUCE';
+
+          return {
+            ticker: item.ticker,
+            name: item.name || item.ticker,
+            quantityHeld: item.quantityHeld ?? item.quantity ?? 0,
+            currentPrice: item.currentPrice || 0,
+            investedValue: item.investedValue || 0,
+            currentValue: item.currentValue || 0,
+            pnl: item.pnl ?? (item.currentValue ? item.currentValue - item.investedValue : 0),
+            pnlPercent: item.pnlPercent ?? (item.unrealizedPnLPercent || 0),
+            decision,
+            exitProbability: exitProb,
+            downsideProbability: Math.round(rawDownside * 100),
+            stopLossPrice: item.stopLossPrice || (item.currentPrice ? item.currentPrice * 0.95 : 0),
+            targetPrice: item.targetExitPrice || item.targetPrice || (item.currentPrice ? item.currentPrice * 1.08 : 0),
+            rewardRiskRatio: item.rewardRiskRatio || 1.5,
+            signalQuality: (item.signalQuality || 'HIGH') as SignalQuality,
+            primaryReason: item.financialReasoning || item.primaryReason || 'Quantitative trailing stop and momentum exhaustion condition reached.',
+            financialReasoning: item.financialReasoning,
+            newsImpact: item.newsImpact,
+            gmpAnalysis: item.gmpAnalysis,
+            urgency: (item.urgency || (rawDownside > 0.7 ? 'HIGH' : 'MEDIUM')) as 'HIGH' | 'MEDIUM' | 'LOW',
+            recommendedAction,
+            invalidationLevel: item.invalidationLevel,
+            compositeRiskScore: item.compositeRiskScore,
+            riskState: item.riskState,
+            portfolioWeightPercent: item.portfolioWeightPercent,
+          } as PortfolioExitSignal;
         });
-        if (Array.isArray(raw)) {
-          return raw.map((item) => {
-            const rawDownside = typeof item.downsideProbability === 'number' 
-              ? (item.downsideProbability > 1 ? item.downsideProbability / 100 : item.downsideProbability)
-              : 0.68;
-            const exitProb = item.exitProbability ?? Math.round(rawDownside * 100);
-            
-            const rawAction = item.recommendedAction || item.recommendation || item.decision;
-            const recommendedAction: 'STRONG_SELL' | 'SELL' | 'TAKE_PROFIT' | 'REDUCE' | 'STOP_LOSS' | 'HOLD' =
-              rawAction === 'STRONG_SELL' ? 'STRONG_SELL'
-              : rawAction === 'SELL' ? 'SELL'
-              : rawAction === 'STOP_LOSS' ? 'STOP_LOSS'
-              : rawAction === 'TAKE_PROFIT' ? 'TAKE_PROFIT'
-              : rawAction === 'REDUCE' ? 'REDUCE'
-              : (rawDownside >= 0.75 ? 'STRONG_SELL' : rawDownside >= 0.60 ? 'SELL' : 'REDUCE');
-
-            const decision: Decision = recommendedAction === 'STRONG_SELL' ? 'STRONG_SELL' : recommendedAction === 'SELL' ? 'SELL' : 'REDUCE';
-
-            return {
-              ticker: item.ticker,
-              name: item.name || item.ticker,
-              quantityHeld: item.quantityHeld ?? item.quantity ?? 0,
-              currentPrice: item.currentPrice || 0,
-              investedValue: item.investedValue || 0,
-              currentValue: item.currentValue || 0,
-              pnl: item.pnl ?? (item.currentValue ? item.currentValue - item.investedValue : 0),
-              pnlPercent: item.pnlPercent ?? (item.unrealizedPnLPercent || 0),
-              decision,
-              exitProbability: exitProb,
-              downsideProbability: Math.round(rawDownside * 100),
-              stopLossPrice: item.stopLossPrice || (item.currentPrice ? item.currentPrice * 0.95 : 0),
-              targetPrice: item.targetExitPrice || item.targetPrice || (item.currentPrice ? item.currentPrice * 1.08 : 0),
-              rewardRiskRatio: item.rewardRiskRatio || 1.5,
-              signalQuality: (item.signalQuality || 'HIGH') as SignalQuality,
-              primaryReason: item.financialReasoning || item.primaryReason || 'Quantitative trailing stop and momentum exhaustion condition reached.',
-              financialReasoning: item.financialReasoning,
-              newsImpact: item.newsImpact,
-              gmpAnalysis: item.gmpAnalysis,
-              urgency: (item.urgency || (rawDownside > 0.7 ? 'HIGH' : 'MEDIUM')) as 'HIGH' | 'MEDIUM' | 'LOW',
-              recommendedAction,
-              invalidationLevel: item.invalidationLevel,
-              compositeRiskScore: item.compositeRiskScore,
-              riskState: item.riskState,
-              portfolioWeightPercent: item.portfolioWeightPercent,
-            } as PortfolioExitSignal;
-          });
-        }
-      } catch {
-        // Return empty on error
       }
       return [] as PortfolioExitSignal[];
     },
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 15000,
+    staleTime: 10000,
   });
 }
 
@@ -725,8 +721,8 @@ export function useAllTrades(userId?: string, ticker?: string, type?: 'BUY' | 'S
         headers: userId ? { 'x-user-id': userId } : undefined,
       });
     },
-    refetchInterval: 3000,
-    staleTime: 1000,
+    refetchInterval: 15000,
+    staleTime: 5000,
   });
 }
 
@@ -735,7 +731,15 @@ export const useTradeHistory = useAllTrades;
 export function useExecuteTrade() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (tradeData: { ticker: string; type: 'BUY' | 'SELL'; quantity: number; userId?: string }) =>
+    mutationFn: (tradeData: {
+      ticker: string;
+      type: 'BUY' | 'SELL';
+      quantity: number;
+      orderType?: 'MARKET' | 'LIMIT';
+      limitPrice?: number;
+      idempotencyKey?: string;
+      userId?: string;
+    }) =>
       fetcher('/portfolio/trade', {
         method: 'POST',
         headers: tradeData.userId ? { 'x-user-id': tradeData.userId } : undefined,
@@ -743,6 +747,9 @@ export function useExecuteTrade() {
           ticker: tradeData.ticker,
           type: tradeData.type,
           quantity: tradeData.quantity,
+          orderType: tradeData.orderType || 'MARKET',
+          limitPrice: tradeData.limitPrice,
+          idempotencyKey: tradeData.idempotencyKey,
         }),
       }),
     onSuccess: () => {

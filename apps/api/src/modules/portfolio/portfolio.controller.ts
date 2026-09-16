@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Query, UseGuards, Req } from '@nestjs/comm
 import { PortfolioService } from './portfolio.service';
 import { TransactionType } from 'db';
 import { AuthGuard } from '../../common/guards/auth.guard';
-import { ExecuteTradeDto } from '../../common/dto/trade.dto';
+import { ExecuteTradeDto, GetTradesDto } from '../../common/dto/trade.dto';
 
 @Controller('portfolio')
 @UseGuards(AuthGuard)
@@ -18,15 +18,16 @@ export class PortfolioController {
   @Get('trades')
   async getAllTrades(
     @Req() req: any,
-    @Query('ticker') ticker?: string,
-    @Query('type') type?: TransactionType,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query() query: GetTradesDto
   ): Promise<any[]> {
     const userId = req.userId;
-    const pageNum = page ? parseInt(page, 10) : 1;
-    const limitNum = limit ? parseInt(limit, 10) : 50;
-    return this.portfolioService.getAllTrades(userId, ticker, type, pageNum, limitNum);
+    return this.portfolioService.getAllTrades(
+      userId,
+      query.ticker,
+      query.type,
+      query.page ?? 1,
+      query.limit ?? 50
+    );
   }
 
   @Post('trade')
@@ -41,7 +42,8 @@ export class PortfolioController {
       tradeData.type,
       tradeData.quantity,
       tradeData.orderType,
-      tradeData.idempotencyKey
+      tradeData.idempotencyKey,
+      tradeData.limitPrice
     );
   }
 

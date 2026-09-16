@@ -116,6 +116,7 @@ export class NewsService implements OnModuleDestroy {
         summary: `Market report: ${rawTitle}. Analyzed for impact across Indian equities.`,
         whyItMatters: `Material development in ${category.toLowerCase()} sector impacting institutional flows.`,
         fullBody: `${rawTitle}. Verified reporting from ${source}. Published on ${pubDate.toLocaleString('en-IN')}.`,
+        isFallback: false,
       });
     }
 
@@ -210,8 +211,8 @@ export class NewsService implements OnModuleDestroy {
         title: 'RBI Monetary Policy Committee Maintains Repo Rate with Favorable CPI Projections',
         source: 'Economic Times',
         url: 'https://economictimes.indiatimes.com',
-        publishedAt: new Date().toISOString(),
-        timeAgo: '1h ago',
+        publishedAt: '2025-01-15T09:00:00.000Z',
+        timeAgo: 'Archived Reference',
         category: 'Macro',
         sentiment: 'POSITIVE',
         impact: 'HIGH',
@@ -219,14 +220,15 @@ export class NewsService implements OnModuleDestroy {
         affectedStockName: 'HDFC Bank Limited',
         summary: 'RBI MPC reaffirms monetary stance with stable 6.50% repo rate supporting credit growth across commercial banks.',
         whyItMatters: 'Rate stability anchors corporate capex expansion and sovereign debt yields.',
+        isFallback: true,
       },
       {
         id: 'news_fallback_2',
         title: 'Reliance Industries Green Energy Manufacturing Infrastructure Nears Commercial Operation',
         source: 'LiveMint',
         url: 'https://livemint.com',
-        publishedAt: new Date().toISOString(),
-        timeAgo: '2h ago',
+        publishedAt: '2025-01-15T08:00:00.000Z',
+        timeAgo: 'Archived Reference',
         category: 'Corporate',
         sentiment: 'POSITIVE',
         impact: 'HIGH',
@@ -234,6 +236,7 @@ export class NewsService implements OnModuleDestroy {
         affectedStockName: 'Reliance Industries Limited',
         summary: 'Progress on Jamnagar solar and hydrogen giga-complex accelerates renewable energy transition.',
         whyItMatters: 'Unlocks high-margin new energy earnings stream over the next fiscal cycle.',
+        isFallback: true,
       },
     ];
   }

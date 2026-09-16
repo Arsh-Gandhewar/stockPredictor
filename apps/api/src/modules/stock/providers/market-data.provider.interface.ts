@@ -16,6 +16,8 @@ export interface MarketQuote {
   marketState: string;
   exchange: string;
   timestamp: string;
+  sourceTimestamp?: string;
+  serverReceivedAt?: string;
   source: string;
   freshness: 'LIVE' | 'DELAYED' | 'STALE' | 'CLOSED' | 'DATA_UNAVAILABLE';
 }

@@ -25,10 +25,18 @@ export class HealthController {
     }
 
     const marketStatus = this.marketProvider.getMarketStatus();
-    const isHealthy = dbStatus === 'UP';
+    const marketHealth = await this.marketProvider.probeHealth();
 
-    return res.status(isHealthy ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).json({
-      status: isHealthy ? 'healthy' : 'degraded',
+    const isHealthy = dbStatus === 'UP' && marketHealth.status === 'UP';
+    const isDegraded = dbStatus === 'UP' && marketHealth.status !== 'UP';
+    const isDown = dbStatus === 'DOWN';
+
+    const statusCode = isDown
+      ? HttpStatus.SERVICE_UNAVAILABLE
+      : HttpStatus.OK;
+
+    return res.status(statusCode).json({
+      status: isDown ? 'unhealthy' : isDegraded ? 'degraded' : 'healthy',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       durationMs: Date.now() - startTime,
@@ -38,7 +46,8 @@ export class HealthController {
           latencyMs: dbLatencyMs,
         },
         marketData: {
-          status: 'UP',
+          status: marketHealth.status,
+          latencyMs: marketHealth.latencyMs,
           exchange: marketStatus.exchange,
           marketState: marketStatus.status,
         },

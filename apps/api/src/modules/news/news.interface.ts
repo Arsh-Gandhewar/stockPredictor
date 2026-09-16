@@ -13,4 +13,5 @@ export interface MarketNewsArticle {
   summary: string;
   whyItMatters: string;
   fullBody?: string;
+  isFallback?: boolean;
 }

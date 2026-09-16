@@ -1,4 +1,5 @@
 import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { TransactionType, OrderType } from 'db';
 
 export class ExecuteTradeDto {
@@ -27,4 +28,27 @@ export class ExecuteTradeDto {
   @IsOptional()
   @IsString()
   idempotencyKey?: string;
+}
+
+export class GetTradesDto {
+  @IsOptional()
+  @IsString()
+  ticker?: string;
+
+  @IsOptional()
+  @IsEnum(TransactionType, { message: 'Type must be BUY or SELL' })
+  type?: TransactionType;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Page must be an integer' })
+  @Min(1, { message: 'Page must be greater than or equal to 1' })
+  page?: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt({ message: 'Limit must be an integer' })
+  @Min(1, { message: 'Limit must be greater than or equal to 1' })
+  @Max(100, { message: 'Limit cannot exceed 100 items per page' })
+  limit?: number = 50;
 }

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 
 export interface AlertItem {
@@ -13,9 +13,19 @@ export interface AlertItem {
 @Injectable()
 export class AlertsService {
   private readonly logger = new Logger(AlertsService.name);
-  private fallbackStore = new Map<string, AlertItem[]>();
 
   constructor(private readonly db: DatabaseService) {}
+
+  private validateTicker(ticker: string): string {
+    if (!ticker || typeof ticker !== 'string') {
+      throw new BadRequestException('Stock ticker is required');
+    }
+    const clean = ticker.trim().toUpperCase();
+    if (!/^[A-Z0-9_.-]{1,20}$/.test(clean)) {
+      throw new BadRequestException(`Invalid stock ticker format: '${ticker}'`);
+    }
+    return clean;
+  }
 
   private async getOrCreateUser(userId: string) {
     try {
@@ -39,45 +49,31 @@ export class AlertsService {
         orderBy: { createdAt: 'desc' },
       });
 
-      if (alerts.length > 0) {
-        return alerts.map((a) => ({
-          id: a.id,
-          ticker: a.stock.ticker,
-          targetPrice: a.targetValue || 0,
-          condition: a.condition === 'GREATER_THAN' ? 'ABOVE' : 'BELOW',
-          createdAt: a.createdAt.toISOString(),
-          isActive: a.isActive,
-        }));
-      }
-
-      // If DB is empty, return default alerts or fallback
-      const fallbacks = this.fallbackStore.get(userId) || [];
-      if (fallbacks.length > 0) return fallbacks;
-
-      const defaults: AlertItem[] = [
-        {
-          id: 'default-1',
-          ticker: 'RELIANCE.NS',
-          targetPrice: 3000,
-          condition: 'ABOVE',
-          createdAt: new Date().toISOString(),
-          isActive: true,
-        },
-      ];
-      this.fallbackStore.set(userId, defaults);
-      return defaults;
+      return alerts.map((a) => ({
+        id: a.id,
+        ticker: a.stock.ticker,
+        targetPrice: a.targetValue || 0,
+        condition: a.condition === 'GREATER_THAN' ? 'ABOVE' : 'BELOW',
+        createdAt: a.createdAt.toISOString(),
+        isActive: a.isActive,
+      }));
     } catch (err: any) {
-      this.logger.warn(`Failed to fetch alerts from DB for ${userId}: ${err.message}`);
-      return this.fallbackStore.get(userId) || [];
+      this.logger.error(`Failed to fetch alerts from DB for ${userId}: ${err.message}`);
+      throw err;
     }
   }
 
   async createAlert(
     userId: string,
-    ticker: string,
+    rawTicker: string,
     targetPrice: number,
     condition: 'ABOVE' | 'BELOW'
   ): Promise<AlertItem> {
+    const ticker = this.validateTicker(rawTicker);
+    if (typeof targetPrice !== 'number' || targetPrice <= 0) {
+      throw new BadRequestException('Alert target price must be a positive number');
+    }
+
     const user = await this.getOrCreateUser(userId);
 
     const stock = await this.db.client.stock.upsert({
@@ -103,7 +99,7 @@ export class AlertsService {
       include: { stock: true },
     });
 
-    const createdAlert: AlertItem = {
+    return {
       id: alert.id,
       ticker: alert.stock.ticker,
       targetPrice: alert.targetValue || 0,
@@ -111,27 +107,15 @@ export class AlertsService {
       createdAt: alert.createdAt.toISOString(),
       isActive: alert.isActive,
     };
-
-    const currentFallbacks = this.fallbackStore.get(userId) || [];
-    this.fallbackStore.set(userId, [createdAlert, ...currentFallbacks]);
-
-    return createdAlert;
   }
 
   async deleteAlert(userId: string, alertId: string): Promise<{ success: boolean }> {
-    try {
-      const user = await this.db.client.user.findUnique({ where: { clerkId: userId } });
-      if (user) {
-        await this.db.client.alert.deleteMany({
-          where: { id: alertId, userId: user.id },
-        });
-      }
-    } catch (err: any) {
-      this.logger.warn(`Failed to delete alert from DB for ${userId}: ${err.message}`);
+    const user = await this.db.client.user.findUnique({ where: { clerkId: userId } });
+    if (user) {
+      await this.db.client.alert.deleteMany({
+        where: { id: alertId, userId: user.id },
+      });
     }
-
-    const currentFallbacks = this.fallbackStore.get(userId) || [];
-    this.fallbackStore.set(userId, currentFallbacks.filter((a) => a.id !== alertId));
 
     return { success: true };
   }

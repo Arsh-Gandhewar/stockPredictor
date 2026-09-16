@@ -42,8 +42,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = message.join(', ');
       }
     } else if (exception instanceof Error) {
-      message = exception.message;
-      this.logger.error(`Unhandled Exception: ${exception.message}`, exception.stack);
+      // Security: Do not leak internal exception/database error details to clients
+      message = 'An unexpected internal server error occurred';
+      this.logger.error(`[${request.url}] Unhandled Exception: ${exception.message}`, exception.stack);
+    } else {
+      message = 'An unexpected internal server error occurred';
+      this.logger.error(`[${request.url}] Unhandled Unknown Exception: ${String(exception)}`);
     }
 
     const requestId = request.requestId || (request.headers['x-request-id'] as string) || 'unknown';

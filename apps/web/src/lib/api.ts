@@ -11,19 +11,61 @@ export class ApiError extends Error {
   }
 }
 
-export async function fetcher<T>(endpoint: string, options?: RequestInit): Promise<T> {
+type TokenGetter = () => Promise<string | null>;
+let authTokenGetter: TokenGetter | null = null;
+
+export function setAuthTokenGetter(getter: TokenGetter | null) {
+  authTokenGetter = getter;
+}
+
+export function getAuthTokenGetter(): TokenGetter | null {
+  return authTokenGetter;
+}
+
+export async function fetcher<T>(
+  endpoint: string,
+  options?: RequestInit,
+  retries: number = 2
+): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+
+  let token: string | null = null;
+  if (authTokenGetter) {
+    try {
+      token = await authTokenGetter();
+    } catch {
+      token = null;
+    }
+  }
+
+  // Fallback to environment test bearer token if configured
+  if (!token && typeof process !== 'undefined' && process.env.NEXT_PUBLIC_TEST_BEARER_TOKEN) {
+    token = process.env.NEXT_PUBLIC_TEST_BEARER_TOKEN;
+  }
+
+  const existingHeaders = options?.headers ? new Headers(options.headers) : new Headers();
+  if (!existingHeaders.has('Content-Type')) {
+    existingHeaders.set('Content-Type', 'application/json');
+  }
+  if (token && !existingHeaders.has('Authorization')) {
+    existingHeaders.set('Authorization', `Bearer ${token}`);
+  }
 
   try {
     const res = await fetch(`${API_URL}${endpoint}`, {
       ...options,
       signal: options?.signal || controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...options?.headers,
-      },
+      headers: existingHeaders,
     });
+
+    // 429 Rate-limit Throttle Backoff & Retry
+    if (res.status === 429 && retries > 0) {
+      const retryAfterHeader = res.headers.get('Retry-After');
+      const delayMs = retryAfterHeader ? parseInt(retryAfterHeader, 10) * 1000 : 1500 * (3 - retries);
+      await new Promise((resolve) => setTimeout(resolve, Math.min(delayMs, 5000)));
+      return fetcher<T>(endpoint, options, retries - 1);
+    }
 
     if (!res.ok) {
       let errorData;

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { StockService } from '../stock/stock.service';
 import { YahooMarketDataProvider } from '../stock/providers/yahoo-market-data.provider';
@@ -6,13 +6,23 @@ import { YahooMarketDataProvider } from '../stock/providers/yahoo-market-data.pr
 @Injectable()
 export class WatchlistService {
   private readonly logger = new Logger(WatchlistService.name);
-  private fallbackStore = new Map<string, string[]>();
 
   constructor(
     private readonly db: DatabaseService,
     private readonly stockService: StockService,
     private readonly marketProvider: YahooMarketDataProvider
   ) {}
+
+  private validateTicker(ticker: string): string {
+    if (!ticker || typeof ticker !== 'string') {
+      throw new BadRequestException('Stock ticker is required');
+    }
+    const clean = ticker.trim().toUpperCase();
+    if (!/^[A-Z0-9_.-]{1,20}$/.test(clean)) {
+      throw new BadRequestException(`Invalid stock ticker format: '${ticker}'`);
+    }
+    return clean;
+  }
 
   private async getOrCreateUser(userId: string) {
     try {
@@ -77,99 +87,79 @@ export class WatchlistService {
             },
           });
         }
-        this.fallbackStore.set(userId, defaultTickers);
         return this.stockService.getQuotes(defaultTickers);
       }
 
       const tickers = watchlist.stocks.map((ws) => ws.stock.ticker);
-      this.fallbackStore.set(userId, tickers);
       return this.stockService.getQuotes(tickers);
     } catch (err: any) {
-      this.logger.warn(`Watchlist query fallback for ${userId}: ${err.message}`);
-      const tickers = this.fallbackStore.get(userId) || [
-        'RELIANCE.NS',
-        'TCS.NS',
-        'HDFCBANK.NS',
-        'INFY.NS',
-      ];
-      return this.stockService.getQuotes(tickers);
+      this.logger.error(`Watchlist query failed for ${userId}: ${err.message}`);
+      throw err;
     }
   }
 
-  async addTicker(userId: string, ticker: string): Promise<any> {
+  async addTicker(userId: string, rawTicker: string): Promise<any> {
+    const ticker = this.validateTicker(rawTicker);
+    const user = await this.getOrCreateUser(userId);
+
+    // Find or create watchlist
+    let watchlist;
     try {
-      const user = await this.getOrCreateUser(userId);
-
-      // Find or create watchlist
-      let watchlist;
-      try {
-        watchlist = await this.db.client.watchlist.upsert({
-          where: {
-            userId_name: {
-              userId: user.id,
-              name: 'Default Watchlist',
-            },
-          },
-          update: {},
-          create: { userId: user.id, name: 'Default Watchlist' },
-        });
-      } catch {
-        watchlist = await this.db.client.watchlist.findFirstOrThrow({
-          where: { userId: user.id, name: 'Default Watchlist' },
-        });
-      }
-
-      const universeStock = this.marketProvider.getUniverse().find((s) => s.ticker === ticker);
-      
-      const stock = await this.db.client.stock.upsert({
-        where: { ticker },
-        update: {},
-        create: {
-          ticker,
-          name: universeStock?.name || ticker.replace('.NS', ''),
-          exchange: 'NSE',
-          sector: universeStock?.sector || 'Equities',
-        },
-      });
-
-      await this.db.client.watchlistStock.upsert({
+      watchlist = await this.db.client.watchlist.upsert({
         where: {
-          watchlistId_stockId: {
-            watchlistId: watchlist.id,
-            stockId: stock.id,
+          userId_name: {
+            userId: user.id,
+            name: 'Default Watchlist',
           },
         },
         update: {},
-        create: {
+        create: { userId: user.id, name: 'Default Watchlist' },
+      });
+    } catch {
+      watchlist = await this.db.client.watchlist.findFirstOrThrow({
+        where: { userId: user.id, name: 'Default Watchlist' },
+      });
+    }
+
+    const universeStock = this.marketProvider.getUniverse().find((s) => s.ticker === ticker);
+    
+    const stock = await this.db.client.stock.upsert({
+      where: { ticker },
+      update: {},
+      create: {
+        ticker,
+        name: universeStock?.name || ticker.replace('.NS', ''),
+        exchange: 'NSE',
+        sector: universeStock?.sector || 'Equities',
+      },
+    });
+
+    await this.db.client.watchlistStock.upsert({
+      where: {
+        watchlistId_stockId: {
           watchlistId: watchlist.id,
           stockId: stock.id,
         },
-      });
+      },
+      update: {},
+      create: {
+        watchlistId: watchlist.id,
+        stockId: stock.id,
+      },
+    });
 
-      const current = this.fallbackStore.get(userId) || [];
-      if (!current.includes(ticker)) {
-        this.fallbackStore.set(userId, [ticker, ...current]);
-      }
-    } catch (err: any) {
-      this.logger.error(`Failed to add ticker to watchlist: ${err.message}`);
-    }
     return this.getUserWatchlist(userId);
   }
 
-  async removeTicker(userId: string, ticker: string): Promise<any> {
-    try {
-      await this.db.client.watchlistStock.deleteMany({
-        where: {
-          watchlist: { user: { clerkId: userId } },
-          stock: { ticker },
-        },
-      });
+  async removeTicker(userId: string, rawTicker: string): Promise<any> {
+    const ticker = this.validateTicker(rawTicker);
+    await this.db.client.watchlistStock.deleteMany({
+      where: {
+        watchlist: { user: { clerkId: userId } },
+        stock: { ticker },
+      },
+    });
 
-      const current = this.fallbackStore.get(userId) || [];
-      this.fallbackStore.set(userId, current.filter((t) => t !== ticker));
-    } catch (err: any) {
-      this.logger.error(`Failed to remove ticker from watchlist: ${err.message}`);
-    }
     return this.getUserWatchlist(userId);
   }
 }
