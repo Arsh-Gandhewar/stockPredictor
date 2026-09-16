@@ -190,24 +190,33 @@ export default function StockDetailsPage() {
     ranking: { rank: 7, percentile: 94.2, universeSize: 300 },
   };
 
-  const activeHorizonData = pred.prediction[activeHorizon];
-  const calibratedProb = Math.round(activeHorizonData.calibratedProbability * 100);
-  const expectedReturnPct = (activeHorizonData.expectedReturn * 100).toFixed(2);
-  const ciLowPct = (activeHorizonData.confidenceInterval[0] * 100).toFixed(2);
-  const ciHighPct = (activeHorizonData.confidenceInterval[1] * 100).toFixed(2);
+  const activeHorizonData = pred.prediction?.[activeHorizon] || pred.prediction?.['5d'];
+  const calibratedProb = Math.round(
+    ((activeHorizonData?.calibratedProbability ?? activeHorizonData?.probability) ?? 0.5) * 100
+  );
+  const expectedReturn = activeHorizonData?.expectedReturn;
+  const expectedReturnPct = expectedReturn != null ? (expectedReturn * 100).toFixed(2) : null;
+  const ci = activeHorizonData?.confidenceInterval;
+  const ciLowPct = ci && ci[0] != null ? (ci[0] * 100).toFixed(2) : null;
+  const ciHighPct = ci && ci[1] != null ? (ci[1] * 100).toFixed(2) : null;
 
   // Scenario Matrix calculations
-  const bullUpsidePct = Math.max(parseFloat(ciHighPct), parseFloat(expectedReturnPct) * 1.5).toFixed(1);
+  const bullUpsidePct = ciHighPct != null
+    ? Math.max(parseFloat(ciHighPct), (expectedReturn ? expectedReturn * 150 : 5.0)).toFixed(1)
+    : expectedReturn != null
+    ? (expectedReturn * 150).toFixed(1)
+    : '5.0';
   const bullTargetPrice = (currentPrice * (1 + parseFloat(bullUpsidePct) / 100)).toFixed(2);
   const bullProb = Math.min(95, Math.round(calibratedProb * 0.7));
 
-  const baseUpsidePct = expectedReturnPct;
+  const baseUpsidePct = expectedReturnPct ?? '2.50';
   const baseTargetPrice = (currentPrice * (1 + parseFloat(baseUpsidePct) / 100)).toFixed(2);
   const baseProb = calibratedProb;
 
-  const bearDownsidePct = (pred.risk.downsideProbability * 15 + 3).toFixed(1);
+  const downsideProb = pred.risk?.downsideProbability ?? 0.22;
+  const bearDownsidePct = (downsideProb * 15 + 3).toFixed(1);
   const bearStopPrice = (currentPrice * (1 - parseFloat(bearDownsidePct) / 100)).toFixed(2);
-  const bearProb = Math.round(pred.risk.downsideProbability * 100);
+  const bearProb = Math.round(downsideProb * 100);
 
   // Gauge circular math for calibrated probability
   const gaugeRadius = 36;
@@ -546,11 +555,17 @@ export default function StockDetailsPage() {
                     Expected Alpha Return
                   </span>
                   <div className="text-2xl font-black text-emerald-400 font-mono tracking-tight">
-                    +{expectedReturnPct}%
+                    {expectedReturnPct != null ? `+${expectedReturnPct}%` : '—'}
                   </div>
                   <div className="flex items-center gap-1 text-[10px] text-muted-foreground font-mono">
-                    <TrendingUp className="h-3 w-3 text-emerald-400" />
-                    <span>Horizon Target</span>
+                    {expectedReturnPct != null ? (
+                      <>
+                        <TrendingUp className="h-3 w-3 text-emerald-400" />
+                        <span>Horizon Target</span>
+                      </>
+                    ) : (
+                      <span>{activeHorizonData?.estimationMethod || 'Insufficient Samples'}</span>
+                    )}
                   </div>
                 </div>
 
@@ -560,7 +575,7 @@ export default function StockDetailsPage() {
                     90% Confidence Band
                   </span>
                   <div className="text-lg font-black text-foreground font-mono">
-                    [{ciLowPct}%, {ciHighPct}%]
+                    {ciLowPct != null && ciHighPct != null ? `[${ciLowPct}%, ${ciHighPct}%]` : 'Parametric N/A'}
                   </div>
                   <div className="text-[10px] text-muted-foreground font-mono">
                     Parametric 5th - 95th
@@ -783,23 +798,33 @@ export default function StockDetailsPage() {
             <CardContent className="p-4 space-y-2.5 text-xs font-mono">
               <div className="flex justify-between items-center p-2.5 rounded-xl bg-card/60 border border-border/40">
                 <span className="text-muted-foreground font-sans">Reward-to-Risk (R:R)</span>
-                <span className="font-black text-emerald-400 text-sm">1 : {pred.risk.rewardRiskRatio}</span>
+                <span className="font-black text-emerald-400 text-sm">
+                  {pred.risk?.rewardRiskRatio != null ? `1 : ${pred.risk.rewardRiskRatio}` : '—'}
+                </span>
               </div>
               <div className="flex justify-between items-center p-2.5 rounded-xl bg-card/60 border border-border/40">
                 <span className="text-muted-foreground font-sans">ATR Stop Loss</span>
-                <span className="font-black text-rose-400">₹{pred.risk.stopLossPrice.toFixed(2)}</span>
+                <span className="font-black text-rose-400">
+                  {pred.risk?.stopLossPrice != null ? `₹${pred.risk.stopLossPrice.toFixed(2)}` : '—'}
+                </span>
               </div>
               <div className="flex justify-between items-center p-2.5 rounded-xl bg-card/60 border border-border/40">
                 <span className="text-muted-foreground font-sans">ATR Target Price</span>
-                <span className="font-black text-emerald-400">₹{pred.risk.targetPrice.toFixed(2)}</span>
+                <span className="font-black text-emerald-400">
+                  {pred.risk?.targetPrice != null ? `₹${pred.risk.targetPrice.toFixed(2)}` : '—'}
+                </span>
               </div>
               <div className="flex justify-between items-center p-2.5 rounded-xl bg-card/60 border border-border/40">
                 <span className="text-muted-foreground font-sans">Kelly Suggested Size</span>
-                <span className="font-black text-foreground">{(pred.risk.positionSizeWeight * 100).toFixed(1)}% of Capital</span>
+                <span className="font-black text-foreground">
+                  {pred.risk?.positionSizeWeight != null ? `${(pred.risk.positionSizeWeight * 100).toFixed(1)}% of Capital` : '—'}
+                </span>
               </div>
               <div className="flex justify-between items-center p-2.5 rounded-xl bg-card/60 border border-border/40">
                 <span className="text-muted-foreground font-sans">Daily Volatility (ATR)</span>
-                <span className="font-black text-amber-400">{(pred.risk.volatility * 100).toFixed(2)}%</span>
+                <span className="font-black text-amber-400">
+                  {pred.risk?.volatility != null ? `${(pred.risk.volatility * 100).toFixed(2)}%` : '—'}
+                </span>
               </div>
             </CardContent>
           </Card>
