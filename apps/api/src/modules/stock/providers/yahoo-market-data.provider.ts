@@ -23,8 +23,8 @@ export class YahooMarketDataProvider implements MarketDataProvider {
   /**
    * Evaluates current National Stock Exchange session status based on IST clock
    */
-  getMarketStatus(): MarketStatus {
-    const now = new Date();
+  getMarketStatus(referenceDate?: Date): MarketStatus {
+    const now = referenceDate || new Date();
     // Convert to Indian Standard Time (UTC+5:30)
     const istTimeStr = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
     const istDate = new Date(istTimeStr);
@@ -34,10 +34,29 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     const minutes = istDate.getMinutes();
     const timeInMinutes = hours * 60 + minutes;
 
-    // Weekend check
-    if (day === 0 || day === 6) {
+    // Calendar staleness check
+    const holidayCheck = isNseHoliday(now);
+    if (holidayCheck.isCalendarStale) {
+      this.logger.warn(`CALENDAR_STALE: Current date (${now.toISOString()}) is outside supported exchange calendar bounds.`);
       return {
-        status: 'CLOSED',
+        status: 'CALENDAR_STALE',
+        sessionType: 'CLOSED',
+        isCalendarStale: true,
+        calendarVersion: holidayCheck.calendarVersion,
+        timestamp: now.toISOString(),
+        timezone: 'Asia/Kolkata',
+        exchange: 'NSE',
+      };
+    }
+
+    // Special Muhurat trading session check (e.g. Diwali evening 18:00 - 19:15 IST)
+    if (holidayCheck.isMuhuratSession) {
+      return {
+        status: 'OPEN',
+        sessionType: 'MUHURAT',
+        holidayName: holidayCheck.holiday?.name,
+        isCalendarStale: false,
+        calendarVersion: holidayCheck.calendarVersion,
         timestamp: now.toISOString(),
         timezone: 'Asia/Kolkata',
         exchange: 'NSE',
@@ -45,10 +64,26 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     }
 
     // Trading holiday check
-    const holidayCheck = isNseHoliday(now);
     if (holidayCheck.isHoliday) {
       return {
         status: 'HOLIDAY',
+        sessionType: 'CLOSED',
+        holidayName: holidayCheck.holiday?.name,
+        isCalendarStale: false,
+        calendarVersion: holidayCheck.calendarVersion,
+        timestamp: now.toISOString(),
+        timezone: 'Asia/Kolkata',
+        exchange: 'NSE',
+      };
+    }
+
+    // Weekend check
+    if (day === 0 || day === 6) {
+      return {
+        status: 'CLOSED',
+        sessionType: 'CLOSED',
+        isCalendarStale: false,
+        calendarVersion: holidayCheck.calendarVersion,
         timestamp: now.toISOString(),
         timezone: 'Asia/Kolkata',
         exchange: 'NSE',
@@ -59,6 +94,9 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     if (timeInMinutes >= 540 && timeInMinutes < 555) {
       return {
         status: 'PRE_OPEN',
+        sessionType: 'PRE_MARKET',
+        isCalendarStale: false,
+        calendarVersion: holidayCheck.calendarVersion,
         timestamp: now.toISOString(),
         timezone: 'Asia/Kolkata',
         exchange: 'NSE',
@@ -69,6 +107,9 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     if (timeInMinutes >= 555 && timeInMinutes <= 930) {
       return {
         status: 'OPEN',
+        sessionType: 'REGULAR',
+        isCalendarStale: false,
+        calendarVersion: holidayCheck.calendarVersion,
         timestamp: now.toISOString(),
         timezone: 'Asia/Kolkata',
         exchange: 'NSE',
@@ -77,6 +118,9 @@ export class YahooMarketDataProvider implements MarketDataProvider {
 
     return {
       status: 'CLOSED',
+      sessionType: 'CLOSED',
+      isCalendarStale: false,
+      calendarVersion: holidayCheck.calendarVersion,
       timestamp: now.toISOString(),
       timezone: 'Asia/Kolkata',
       exchange: 'NSE',
@@ -107,7 +151,7 @@ export class YahooMarketDataProvider implements MarketDataProvider {
         ? 'DELAYED'
         : 'CLOSED';
 
-    let sourceTimestamp: string | undefined;
+    let sourceTimestamp: string | null = null;
     if (q.regularMarketTime) {
       if (typeof q.regularMarketTime === 'number') {
         sourceTimestamp = new Date(q.regularMarketTime * 1000).toISOString();
@@ -137,12 +181,21 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       weekLow52: q.fiftyTwoWeekLow,
       marketState: q.marketState || marketStatus.status,
       exchange: q.exchange || 'NSE',
-      timestamp: sourceTimestamp || serverReceivedAt,
+      timestamp: sourceTimestamp,
       sourceTimestamp,
       serverReceivedAt,
       source: 'NSE / Yahoo Live Feed',
       freshness,
     };
+  }
+
+  public isSupportedTicker(rawTicker: string): boolean {
+    if (!rawTicker || typeof rawTicker !== 'string') return false;
+    const normalized = this.normalizeTicker(rawTicker);
+    const bare = normalized.replace(/\.(NS|BO)$/, '');
+    return this.universe.some(
+      (s) => s.ticker === normalized || s.ticker.replace(/\.(NS|BO)$/, '') === bare
+    );
   }
 
   private normalizeTicker(rawTicker: string): string {

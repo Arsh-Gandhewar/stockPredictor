@@ -1,5 +1,6 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
+import { YahooMarketDataProvider } from '../stock/providers/yahoo-market-data.provider';
 
 export interface AlertItem {
   id: string;
@@ -14,7 +15,10 @@ export interface AlertItem {
 export class AlertsService {
   private readonly logger = new Logger(AlertsService.name);
 
-  constructor(private readonly db: DatabaseService) {}
+  constructor(
+    private readonly db: DatabaseService,
+    @Optional() private readonly marketProvider?: YahooMarketDataProvider
+  ) {}
 
   private validateTicker(ticker: string): string {
     if (!ticker || typeof ticker !== 'string') {
@@ -23,6 +27,10 @@ export class AlertsService {
     const clean = ticker.trim().toUpperCase();
     if (!/^[A-Z0-9_.-]{1,20}$/.test(clean)) {
       throw new BadRequestException(`Invalid stock ticker format: '${ticker}'`);
+    }
+    // Semantic universe check: verify symbol exists in supported universe
+    if (this.marketProvider && !this.marketProvider.isSupportedTicker(clean)) {
+      throw new BadRequestException(`Unsupported stock ticker: '${ticker}'. Symbol not found in market universe.`);
     }
     return clean;
   }

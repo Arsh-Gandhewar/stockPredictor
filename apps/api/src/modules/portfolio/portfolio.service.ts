@@ -327,14 +327,20 @@ export class PortfolioService {
       }
 
       const currentPrice = quote.price;
-      const sourceTimestampStr = (quote as any).sourceTimestamp || (quote as any).timestamp;
-      const quoteTimestamp = sourceTimestampStr ? new Date(sourceTimestampStr) : null;
+      // Stale quote protection: quote freshness must be evaluated exclusively against authentic source market timestamp
+      const sourceTimestampStr = (quote as any).sourceTimestamp;
+      if (!sourceTimestampStr) {
+        this.logger.warn(
+          `AUTO_SELL_QUOTE_MISSING_SOURCE_TIME: Ticker ${pos.stock.ticker} quote missing source market timestamp. Auto-sell skipped.`
+        );
+        continue;
+      }
+      const quoteTimestamp = new Date(sourceTimestampStr);
 
-      // Stale quote protection: quote freshness must be evaluated against source market timestamp
       const MAX_AUTO_SELL_QUOTE_AGE_MS = 15 * 60 * 1000; // 15 minutes
       const nowMs = Date.now();
 
-      if (!quoteTimestamp || isNaN(quoteTimestamp.getTime())) {
+      if (isNaN(quoteTimestamp.getTime())) {
         this.logger.warn(
           `AUTO_SELL_QUOTE_STALE: Ticker ${pos.stock.ticker} quote missing valid timestamp. Auto-sell skipped.`
         );
@@ -836,6 +842,8 @@ export class PortfolioService {
         ticker,
         type,
         orderType,
+        executionModel: 'IMMEDIATE_OR_CANCEL',
+        orderStatus: 'FILLED',
         quantity,
         executionPrice,
         limitPrice: orderType === OrderType.LIMIT ? limitPrice : undefined,

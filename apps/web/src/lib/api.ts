@@ -39,10 +39,6 @@ export async function fetcher<T>(
     }
   }
 
-  // Fallback to environment test bearer token if configured
-  if (!token && typeof process !== 'undefined' && process.env.NEXT_PUBLIC_TEST_BEARER_TOKEN) {
-    token = process.env.NEXT_PUBLIC_TEST_BEARER_TOKEN;
-  }
 
   const existingHeaders = options?.headers ? new Headers(options.headers) : new Headers();
   if (!existingHeaders.has('Content-Type')) {

@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@clerk/nextjs';
 import { 
   fetcher, 
   fetchPrediction, 
@@ -478,22 +479,33 @@ export function useStockNews(ticker: string) {
 // ── Watchlist Hooks ───────────────────────────────────────────────────
 
 export function useWatchlist() {
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   return useQuery({
-    queryKey: ['watchlist'],
-    queryFn: () => fetcher<StockQuote[]>('/watchlist'),
-    refetchInterval: 3000,
-    staleTime: 1000,
+    queryKey: ['watchlist', isSignedIn],
+    queryFn: async () => {
+      const token = await getToken();
+      return fetcher<StockQuote[]>('/watchlist', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    },
+    enabled: !!isLoaded && !!isSignedIn,
+    refetchInterval: 10000,
+    staleTime: 5000,
   });
 }
 
 export function useAddToWatchlist() {
   const qc = useQueryClient();
+  const { getToken } = useAuth();
   return useMutation({
-    mutationFn: (ticker: string) =>
-      fetcher('/watchlist/add', {
+    mutationFn: async (ticker: string) => {
+      const token = await getToken();
+      return fetcher('/watchlist/add', {
         method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: JSON.stringify({ ticker }),
-      }),
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['watchlist'] });
     },
@@ -502,11 +514,15 @@ export function useAddToWatchlist() {
 
 export function useRemoveFromWatchlist() {
   const qc = useQueryClient();
+  const { getToken } = useAuth();
   return useMutation({
-    mutationFn: (ticker: string) =>
-      fetcher(`/watchlist/${ticker}`, {
+    mutationFn: async (ticker: string) => {
+      const token = await getToken();
+      return fetcher(`/watchlist/${ticker}`, {
         method: 'DELETE',
-      }),
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['watchlist'] });
     },
@@ -516,9 +532,16 @@ export function useRemoveFromWatchlist() {
 // ── Alerts Hooks ──────────────────────────────────────────────────────
 
 export function useAlerts() {
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   return useQuery({
-    queryKey: ['alerts'],
-    queryFn: () => fetcher<AlertItem[]>('/alerts'),
+    queryKey: ['alerts', isSignedIn],
+    queryFn: async () => {
+      const token = await getToken();
+      return fetcher<AlertItem[]>('/alerts', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    },
+    enabled: !!isLoaded && !!isSignedIn,
     refetchInterval: 15000,
     staleTime: 10000,
   });
@@ -526,12 +549,16 @@ export function useAlerts() {
 
 export function useCreateAlert() {
   const qc = useQueryClient();
+  const { getToken } = useAuth();
   return useMutation({
-    mutationFn: (payload: { ticker: string; targetPrice: number; condition: 'ABOVE' | 'BELOW' }) =>
-      fetcher('/alerts', {
+    mutationFn: async (payload: { ticker: string; targetPrice: number; condition: 'ABOVE' | 'BELOW' }) => {
+      const token = await getToken();
+      return fetcher('/alerts', {
         method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         body: JSON.stringify(payload),
-      }),
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['alerts'] });
     },
@@ -540,11 +567,15 @@ export function useCreateAlert() {
 
 export function useDeleteAlert() {
   const qc = useQueryClient();
+  const { getToken } = useAuth();
   return useMutation({
-    mutationFn: (id: string) =>
-      fetcher(`/alerts/${id}`, {
+    mutationFn: async (id: string) => {
+      const token = await getToken();
+      return fetcher(`/alerts/${id}`, {
         method: 'DELETE',
-      }),
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['alerts'] });
     },
@@ -621,22 +652,35 @@ export interface PortfolioExitSignal {
 }
 
 export function usePortfolio(userId?: string) {
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   return useQuery({
-    queryKey: ['portfolio', userId],
-    queryFn: () => fetcher<PortfolioData>('/portfolio', {
-      headers: userId ? { 'x-user-id': userId } : undefined,
-    }),
+    queryKey: ['portfolio', userId, isSignedIn],
+    queryFn: async () => {
+      const token = await getToken();
+      return fetcher<PortfolioData>('/portfolio', {
+        headers: {
+          ...(userId ? { 'x-user-id': userId } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+    },
+    enabled: !!isLoaded && !!isSignedIn,
     refetchInterval: 10000,
     staleTime: 5000,
   });
 }
 
 export function usePortfolioSellSignals(userId?: string) {
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   return useQuery({
-    queryKey: ['portfolio-sell-signals', userId],
+    queryKey: ['portfolio-sell-signals', userId, isSignedIn],
     queryFn: async () => {
+      const token = await getToken();
       const raw = await fetcher<any[]>('/portfolio/sell-signals', {
-        headers: userId ? { 'x-user-id': userId } : undefined,
+        headers: {
+          ...(userId ? { 'x-user-id': userId } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
       if (Array.isArray(raw)) {
         return raw.map((item) => {
@@ -710,17 +754,23 @@ export interface TradeItem {
 }
 
 export function useAllTrades(userId?: string, ticker?: string, type?: 'BUY' | 'SELL') {
+  const { isLoaded, isSignedIn, getToken } = useAuth();
   return useQuery({
-    queryKey: ['portfolio-trades', userId, ticker, type],
-    queryFn: () => {
+    queryKey: ['portfolio-trades', userId, ticker, type, isSignedIn],
+    queryFn: async () => {
+      const token = await getToken();
       const params = new URLSearchParams();
       if (ticker) params.set('ticker', ticker);
       if (type) params.set('type', type);
       const qs = params.toString();
       return fetcher<TradeItem[]>(`/portfolio/trades${qs ? `?${qs}` : ''}`, {
-        headers: userId ? { 'x-user-id': userId } : undefined,
+        headers: {
+          ...(userId ? { 'x-user-id': userId } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
       });
     },
+    enabled: !!isLoaded && !!isSignedIn,
     refetchInterval: 15000,
     staleTime: 5000,
   });
@@ -730,8 +780,9 @@ export const useTradeHistory = useAllTrades;
 
 export function useExecuteTrade() {
   const queryClient = useQueryClient();
+  const { getToken } = useAuth();
   return useMutation({
-    mutationFn: (tradeData: {
+    mutationFn: async (tradeData: {
       ticker: string;
       type: 'BUY' | 'SELL';
       quantity: number;
@@ -739,10 +790,14 @@ export function useExecuteTrade() {
       limitPrice?: number;
       idempotencyKey?: string;
       userId?: string;
-    }) =>
-      fetcher('/portfolio/trade', {
+    }) => {
+      const token = await getToken();
+      return fetcher('/portfolio/trade', {
         method: 'POST',
-        headers: tradeData.userId ? { 'x-user-id': tradeData.userId } : undefined,
+        headers: {
+          ...(tradeData.userId ? { 'x-user-id': tradeData.userId } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           ticker: tradeData.ticker,
           type: tradeData.type,
@@ -751,7 +806,8 @@ export function useExecuteTrade() {
           limitPrice: tradeData.limitPrice,
           idempotencyKey: tradeData.idempotencyKey,
         }),
-      }),
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
       queryClient.invalidateQueries({ queryKey: ['portfolio-trades'] });
@@ -762,12 +818,18 @@ export function useExecuteTrade() {
 
 export function useResetPortfolio() {
   const queryClient = useQueryClient();
+  const { getToken } = useAuth();
   return useMutation({
-    mutationFn: (userId?: string) =>
-      fetcher('/portfolio/reset', {
+    mutationFn: async (userId?: string) => {
+      const token = await getToken();
+      return fetcher('/portfolio/reset', {
         method: 'POST',
-        headers: userId ? { 'x-user-id': userId } : undefined,
-      }),
+        headers: {
+          ...(userId ? { 'x-user-id': userId } : {}),
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['portfolio'] });
       queryClient.invalidateQueries({ queryKey: ['portfolio-trades'] });

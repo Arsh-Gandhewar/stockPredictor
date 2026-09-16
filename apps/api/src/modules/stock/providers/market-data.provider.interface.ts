@@ -15,8 +15,8 @@ export interface MarketQuote {
   weekLow52?: number;
   marketState: string;
   exchange: string;
-  timestamp: string;
-  sourceTimestamp?: string;
+  timestamp?: string | null;
+  sourceTimestamp?: string | null;
   serverReceivedAt?: string;
   source: string;
   freshness: 'LIVE' | 'DELAYED' | 'STALE' | 'CLOSED' | 'DATA_UNAVAILABLE';
@@ -33,7 +33,11 @@ export interface OHLCVCandle {
 }
 
 export interface MarketStatus {
-  status: 'PRE_OPEN' | 'OPEN' | 'CLOSED' | 'HOLIDAY';
+  status: 'PRE_OPEN' | 'OPEN' | 'CLOSED' | 'HOLIDAY' | 'CALENDAR_STALE';
+  sessionType?: 'REGULAR' | 'PRE_MARKET' | 'MUHURAT' | 'CLOSED';
+  holidayName?: string;
+  isCalendarStale?: boolean;
+  calendarVersion?: string;
   timestamp: string;
   timezone: string;
   exchange: string;

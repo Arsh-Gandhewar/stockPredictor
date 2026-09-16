@@ -63,31 +63,108 @@ export const NSE_TRADING_HOLIDAYS: HolidayEntry[] = [
   { date: '2026-11-09', name: 'Diwali Laxmi Pujan', hasMuhuratTrading: true },
   { date: '2026-11-24', name: 'Guru Nanak Jayanti' },
   { date: '2026-12-25', name: 'Christmas' },
+
+  // 2027
+  { date: '2027-01-26', name: 'Republic Day' },
+  { date: '2027-03-08', name: 'Mahashivratri' },
+  { date: '2027-03-22', name: 'Holi' },
+  { date: '2027-03-26', name: 'Good Friday' },
+  { date: '2027-04-14', name: 'Dr. Ambedkar Jayanti' },
+  { date: '2027-05-01', name: 'Maharashtra Day' },
+  { date: '2027-08-15', name: 'Independence Day' },
+  { date: '2027-10-02', name: 'Mahatma Gandhi Jayanti' },
+  { date: '2027-10-29', name: 'Diwali Laxmi Pujan', hasMuhuratTrading: true },
+  { date: '2027-11-13', name: 'Guru Nanak Jayanti' },
+  { date: '2027-12-25', name: 'Christmas' },
 ];
+
+export const CALENDAR_VERSION = '2026.1';
+export const SUPPORTED_CALENDAR_YEARS = [2024, 2025, 2026, 2027];
 
 const HOLIDAY_MAP = new Map<string, HolidayEntry>(
   NSE_TRADING_HOLIDAYS.map((h) => [h.date, h])
 );
 
 /**
- * Checks if a given date (or date string YYYY-MM-DD) in IST is an NSE trading holiday.
+ * Registers new or updated holiday entries dynamically at runtime.
  */
-export function isNseHoliday(date: Date | string): {
+export function registerHolidays(entries: HolidayEntry[]): void {
+  for (const entry of entries) {
+    HOLIDAY_MAP.set(entry.date, entry);
+    const year = parseInt(entry.date.substring(0, 4), 10);
+    if (!isNaN(year) && !SUPPORTED_CALENDAR_YEARS.includes(year)) {
+      SUPPORTED_CALENDAR_YEARS.push(year);
+      SUPPORTED_CALENDAR_YEARS.sort();
+    }
+  }
+}
+
+/**
+ * Checks if a date falls outside the actively maintained calendar boundary.
+ */
+export function isCalendarStale(date: Date | string): boolean {
+  let year: number;
+  if (typeof date === 'string') {
+    year = parseInt(date.substring(0, 4), 10);
+  } else {
+    const istStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    year = parseInt(istStr.substring(0, 4), 10);
+  }
+  const minYear = Math.min(...SUPPORTED_CALENDAR_YEARS);
+  const maxYear = Math.max(...SUPPORTED_CALENDAR_YEARS);
+  return isNaN(year) || year < minYear || year > maxYear;
+}
+
+export interface HolidayCheckResult {
   isHoliday: boolean;
   holiday?: HolidayEntry;
-} {
+  isCalendarStale: boolean;
+  calendarVersion: string;
+  isMuhuratSession?: boolean;
+}
+
+/**
+ * Checks if a given date (or date string YYYY-MM-DD) in IST is an NSE trading holiday,
+ * including detection of calendar staleness and Muhurat trading sessions.
+ */
+export function isNseHoliday(date: Date | string): HolidayCheckResult {
   let dateStr: string;
+  let timeInMinutes = -1;
+
   if (typeof date === 'string') {
     dateStr = date.substring(0, 10);
+    if (date.length > 10) {
+      const d = new Date(date);
+      if (!isNaN(d.getTime())) {
+        const istTimeStr = d.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+        const istDate = new Date(istTimeStr);
+        timeInMinutes = istDate.getHours() * 60 + istDate.getMinutes();
+      }
+    }
   } else {
     // Format to Asia/Kolkata date string YYYY-MM-DD
     const istStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // en-CA gives YYYY-MM-DD
     dateStr = istStr;
+    const istTimeStr = date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+    const istDate = new Date(istTimeStr);
+    timeInMinutes = istDate.getHours() * 60 + istDate.getMinutes();
   }
 
+  const calendarStale = isCalendarStale(dateStr);
   const holiday = HOLIDAY_MAP.get(dateStr);
+
+  // Muhurat trading session: 18:00 to 19:15 IST (1080 to 1155 minutes)
+  const isMuhuratSession = !!(
+    holiday?.hasMuhuratTrading &&
+    timeInMinutes >= 1080 &&
+    timeInMinutes <= 1155
+  );
+
   return {
     isHoliday: !!holiday,
     holiday,
+    isCalendarStale: calendarStale,
+    calendarVersion: CALENDAR_VERSION,
+    isMuhuratSession,
   };
 }

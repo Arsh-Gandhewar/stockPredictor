@@ -540,6 +540,8 @@ export class BacktestEngine {
         marketState: 'CLOSED',
         exchange: 'NSE',
         timestamp: String(candles[i].time),
+        sourceTimestamp: String(candles[i].time),
+        serverReceivedAt: new Date().toISOString(),
         source: 'backtest',
         freshness: 'CLOSED' as const,
       };

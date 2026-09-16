@@ -95,6 +95,23 @@ describe('Tier 4: Auto-Sell Freshness & Stale Quote Rejection Spec', () => {
     expect(mockDb.client.transaction.create).not.toHaveBeenCalled();
   });
 
+  it('should strictly reject and skip auto-sell if serverReceivedAt is fresh but sourceTimestamp is missing (fail-closed)', async () => {
+    mockDb.client.portfolio.findFirst.mockResolvedValue(basePortfolio);
+    mockStockService.getQuotes.mockResolvedValue([
+      {
+        ticker: 'RELIANCE.NS',
+        price: 2550.0, // Below stop loss (2600)
+        sourceTimestamp: null,
+        serverReceivedAt: new Date().toISOString(), // Fresh receipt time must NOT substitute for source timestamp
+        timestamp: null,
+      },
+    ]);
+
+    const result = await service.evaluateAndExecuteAutoSell('user_auto_sell');
+    expect(result.executedTrades.length).toBe(0);
+    expect(mockDb.client.transaction.create).not.toHaveBeenCalled();
+  });
+
   it('should reject and skip auto-sell if quote has a future-dated timestamp (> now + 60s)', async () => {
     mockDb.client.portfolio.findFirst.mockResolvedValue(basePortfolio);
     const futureDate = new Date(Date.now() + 10 * 60 * 1000).toISOString(); // 10 minutes in future

@@ -21,6 +21,10 @@ export class WatchlistService {
     if (!/^[A-Z0-9_.-]{1,20}$/.test(clean)) {
       throw new BadRequestException(`Invalid stock ticker format: '${ticker}'`);
     }
+    // Semantic universe check: verify symbol exists in supported universe
+    if (this.marketProvider && !this.marketProvider.isSupportedTicker(clean)) {
+      throw new BadRequestException(`Unsupported stock ticker: '${ticker}'. Symbol not found in market universe.`);
+    }
     return clean;
   }
 

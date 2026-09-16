@@ -1,4 +1,4 @@
-import { ExecutionContext, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { ExecutionContext, UnauthorizedException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import * as crypto from 'crypto';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -243,6 +243,48 @@ describe('Tier 2: Institutional Auth Matrix & Role Permutations Spec', () => {
       expect(target).toBeDefined();
       const requiredRoles = reflector.get(ROLES_KEY, target);
       expect(requiredRoles).toBeUndefined();
+    });
+
+    it('should reject concurrent training in the same process with 409 ConflictException', async () => {
+      let resolveTraining: any;
+      const mockService = {
+        trainPipeline: jest.fn().mockImplementation(() => new Promise((resolve) => {
+          resolveTraining = resolve;
+        })),
+      };
+      const controller = new PredictionController(mockService as any);
+      const promise1 = controller.trainModel();
+
+      let caughtError: any;
+      try {
+        await controller.trainModel();
+      } catch (err) {
+        caughtError = err;
+      }
+      expect(caughtError).toBeInstanceOf(ConflictException);
+      expect(caughtError.message).toContain('TRAINING_IN_PROGRESS');
+
+      resolveTraining();
+      await promise1;
+    });
+
+    it('should reject training with 409 ConflictException when distributed DB lock is already held by another instance', async () => {
+      const mockService = { trainPipeline: jest.fn() };
+      const mockDb = {
+        client: {
+          $queryRawUnsafe: jest.fn().mockResolvedValue([{ pg_try_advisory_lock: false }]),
+        },
+      };
+      const controller = new PredictionController(mockService as any, mockDb as any);
+      let caughtError: any;
+      try {
+        await controller.trainModel();
+      } catch (err) {
+        caughtError = err;
+      }
+      expect(caughtError).toBeInstanceOf(ConflictException);
+      expect(caughtError.message).toContain('DISTRIBUTED_TRAINING_IN_PROGRESS');
+      expect(mockService.trainPipeline).not.toHaveBeenCalled();
     });
   });
 });
