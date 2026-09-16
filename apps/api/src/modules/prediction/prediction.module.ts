@@ -18,6 +18,7 @@ import { OnnxInferenceEngine } from './engines/onnx-inference.engine';
 import { RuntimeVerificationService } from './engines/runtime-verification.service';
 import { TestEvidenceService } from './engines/test-evidence.service';
 import { UniverseRegistry } from './engines/universe-registry';
+import { DistributedLockService } from './engines/distributed-lock.service';
 
 @Module({
   imports: [forwardRef(() => StockModule), NewsModule, DatabaseModule],
@@ -38,7 +39,8 @@ import { UniverseRegistry } from './engines/universe-registry';
     RuntimeVerificationService,
     TestEvidenceService,
     UniverseRegistry,
+    DistributedLockService,
   ],
-  exports: [QuantPredictionService, RuntimeVerificationService, TestEvidenceService, UniverseRegistry],
+  exports: [QuantPredictionService, RuntimeVerificationService, TestEvidenceService, UniverseRegistry, DistributedLockService],
 })
 export class PredictionModule {}

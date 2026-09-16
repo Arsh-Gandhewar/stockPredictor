@@ -1,28 +1,29 @@
 import { Controller, Get, Post, Param, Query, UseGuards, ConflictException, Optional } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { QuantPredictionService } from './prediction.service';
-import { DatabaseService } from '../../database/database.service';
+import { DistributedLockService, LockAcquisitionResult } from './engines/distributed-lock.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { THROTTLE_POLICIES } from '../../common/constants/throttle-policies';
 
 @Controller('prediction')
 export class PredictionController {
   private isTraining = false;
-  private static readonly TRAINING_ADVISORY_LOCK_ID = 88812345;
+  public static readonly TRAINING_LOCK_KEY = 'training_pipeline';
 
   constructor(
     private readonly predictionService: QuantPredictionService,
-    @Optional() private readonly db?: DatabaseService,
+    @Optional() private readonly distributedLockService?: DistributedLockService,
   ) {}
 
   @Post('train')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'SERVICE')
-  @Throttle({ training: { limit: 3, ttl: 600000 }, default: { limit: 3, ttl: 600000 } })
+  @Throttle(THROTTLE_POLICIES.TRAINING)
   async trainModel() {
     // Multi-Tier Distributed Concurrency Lock
-    // Tier 1: In-process atomic lock (synchronously acquired to prevent event loop race)
+    // Tier 1: In-process atomic lock (synchronously acquired to eliminate event-loop race)
     if (this.isTraining) {
       throw new ConflictException(
         'TRAINING_IN_PROGRESS: A model training pipeline is currently executing in this process. Concurrent training is rejected.'
@@ -30,34 +31,39 @@ export class PredictionController {
     }
     this.isTraining = true;
 
-    // Tier 2: PostgreSQL distributed advisory lock across cluster instances
-    let acquiredDbLock = false;
-    if (this.db?.client?.$queryRawUnsafe) {
+    // Tier 2: Connection-pool-safe database distributed lease lock
+    let lockResult: LockAcquisitionResult;
+    if (this.distributedLockService) {
       try {
-        const lockResult = await this.db.client.$queryRawUnsafe<Array<{ pg_try_advisory_lock: boolean }>>(
-          `SELECT pg_try_advisory_lock(${PredictionController.TRAINING_ADVISORY_LOCK_ID})`
+        lockResult = await this.distributedLockService.acquireLock(
+          PredictionController.TRAINING_LOCK_KEY,
+          600_000
         );
-        if (lockResult && lockResult[0] && lockResult[0].pg_try_advisory_lock === false) {
-          this.isTraining = false;
-          throw new ConflictException(
-            'DISTRIBUTED_TRAINING_IN_PROGRESS: A model training pipeline is currently executing across another cluster instance.'
-          );
-        }
-        acquiredDbLock = true;
-      } catch (err: any) {
-        if (err instanceof ConflictException) throw err;
-        // Fall back gracefully to in-process lock if DB advisory lock is unsupported in test mock
+      } catch (err) {
+        this.isTraining = false;
+        // Mandatory Fail-Closed Guarantee: Any DB outage or timeout strictly aborts training
+        throw err;
       }
+
+      if (!lockResult.acquired) {
+        this.isTraining = false;
+        throw new ConflictException(
+          'DISTRIBUTED_TRAINING_IN_PROGRESS: A model training pipeline is currently executing across another cluster instance (active lease held).'
+        );
+      }
+    } else {
+      lockResult = { acquired: true, ownerId: 'in-process-unit-test' };
     }
 
     try {
       return await this.predictionService.trainPipeline();
     } finally {
       this.isTraining = false;
-      if (acquiredDbLock && this.db?.client?.$queryRawUnsafe) {
+      if (this.distributedLockService && lockResult && lockResult.ownerId) {
         try {
-          await this.db.client.$queryRawUnsafe(
-            `SELECT pg_advisory_unlock(${PredictionController.TRAINING_ADVISORY_LOCK_ID})`
+          await this.distributedLockService.releaseLock(
+            PredictionController.TRAINING_LOCK_KEY,
+            lockResult.ownerId
           );
         } catch {}
       }
@@ -67,7 +73,7 @@ export class PredictionController {
   @Get('governance')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'SERVICE')
-  @Throttle({ expensive: { limit: 30, ttl: 60000 }, default: { limit: 30, ttl: 60000 } })
+  @Throttle(THROTTLE_POLICIES.EXPENSIVE)
   getGovernance() {
     return this.predictionService.getProductionGovernanceStatus();
   }
@@ -75,7 +81,7 @@ export class PredictionController {
   @Get('scorecard')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'SERVICE')
-  @Throttle({ expensive: { limit: 30, ttl: 60000 }, default: { limit: 30, ttl: 60000 } })
+  @Throttle(THROTTLE_POLICIES.EXPENSIVE)
   getScorecard() {
     return this.predictionService.getProductionScorecard();
   }
@@ -93,7 +99,7 @@ export class PredictionController {
   @Get('model-audit')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'SERVICE')
-  @Throttle({ expensive: { limit: 30, ttl: 60000 }, default: { limit: 30, ttl: 60000 } })
+  @Throttle(THROTTLE_POLICIES.EXPENSIVE)
   getModelAudit() {
     return this.predictionService.getModelAuditReport();
   }
@@ -101,7 +107,7 @@ export class PredictionController {
   @Get('model-artifact')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'SERVICE')
-  @Throttle({ expensive: { limit: 30, ttl: 60000 }, default: { limit: 30, ttl: 60000 } })
+  @Throttle(THROTTLE_POLICIES.EXPENSIVE)
   getModelArtifact() {
     return this.predictionService.getArtifactDetails();
   }
@@ -109,7 +115,7 @@ export class PredictionController {
   @Get('walk-forward')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'SERVICE')
-  @Throttle({ expensive: { limit: 30, ttl: 60000 }, default: { limit: 30, ttl: 60000 } })
+  @Throttle(THROTTLE_POLICIES.EXPENSIVE)
   getWalkForward() {
     return this.predictionService.getWalkForwardFolds();
   }
@@ -117,7 +123,7 @@ export class PredictionController {
   @Get('calibration')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'SERVICE')
-  @Throttle({ expensive: { limit: 30, ttl: 60000 }, default: { limit: 30, ttl: 60000 } })
+  @Throttle(THROTTLE_POLICIES.EXPENSIVE)
   getCalibration() {
     return this.predictionService.getCalibrationReport();
   }
@@ -125,7 +131,7 @@ export class PredictionController {
   @Get('holdout')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('ADMIN', 'SERVICE')
-  @Throttle({ expensive: { limit: 30, ttl: 60000 }, default: { limit: 30, ttl: 60000 } })
+  @Throttle(THROTTLE_POLICIES.EXPENSIVE)
   getHoldout() {
     return this.predictionService.getHoldoutReport();
   }

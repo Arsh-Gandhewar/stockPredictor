@@ -1,0 +1,63 @@
+name: QuantX CI & Quality Gate
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_ENV: test
+  JWT_SECRET: quantx_institutional_test_jwt_secret_32bytes_long!
+  ADMIN_USER_IDS: user_admin_001,user_admin_002
+  ALLOW_LOCAL_MOCK_AUTH: 'false'
+
+jobs:
+  verify:
+    name: Institutional Test & Verification Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Node.js Dependencies
+        run: npm ci || npm install
+
+      - name: Generate Prisma Client
+        run: npx prisma generate --schema=packages/db/prisma/schema.prisma
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r packages/quant-engine/requirements.txt pytest
+
+      - name: Run Jest Unit & Integration Tests
+        run: npm --workspace=api run test -- --forceExit
+
+      - name: Run Jest AppModule Institutional E2E Tests
+        run: npm --workspace=api run test:e2e
+
+      - name: Run Pytest Quant Engine Suite
+        run: python -m pytest packages/quant-engine -q
+
+      - name: Build API Service
+        run: npm --workspace=api run build
+
+      - name: Build Web Application
+        run: npm --workspace=web run build
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+          CLERK_SECRET_KEY: sk_test_mock_key_for_build

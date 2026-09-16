@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ConflictException, ServiceUnavailableException, Logger } from '@nestjs/common';
 import * as crypto from 'crypto';
 import { DatabaseService } from '../../database/database.service';
 import { StockService } from '../stock/stock.service';
@@ -313,6 +313,17 @@ export class PortfolioService {
       return { executedTrades: [] };
     }
 
+    const marketStatus = typeof this.stockService?.getMarketStatusInfo === 'function'
+      ? this.stockService.getMarketStatusInfo()
+      : { status: 'OPEN', isCalendarStale: false, sessionType: 'REGULAR', calendarVersion: '2026.1' };
+
+    if (marketStatus.isCalendarStale || marketStatus.status === 'CALENDAR_STALE') {
+      this.logger.warn(
+        `AUTO_SELL_CALENDAR_STALE: Current date is outside valid exchange calendar bounds (${marketStatus.calendarVersion}). Auto-sell suspended.`
+      );
+      return { executedTrades: [] };
+    }
+
     const tickers = portfolio.positions.map((p) => p.stock.ticker);
     const quotes = await this.stockService.getQuotes(tickers).catch(() => []);
     const quoteMap = new Map(quotes.map((q) => [q.ticker, q]));
@@ -567,6 +578,27 @@ export class PortfolioService {
       }
     }
 
+    // 0. Calendar and Market State Verification (Fail-Closed)
+    const marketStatus = typeof this.stockService?.getMarketStatusInfo === 'function'
+      ? this.stockService.getMarketStatusInfo()
+      : { status: 'OPEN', isCalendarStale: false, sessionType: 'REGULAR', calendarVersion: '2026.1' };
+
+    if (marketStatus.isCalendarStale || marketStatus.status === 'CALENDAR_STALE' || (marketStatus as any).sessionType === 'CALENDAR_CORRUPTED') {
+      throw new ServiceUnavailableException(
+        'EXCHANGE_CALENDAR_STALE: Trading operations are suspended because the exchange holiday calendar is outdated or unverified.'
+      );
+    }
+
+    // Semantic Universe Validation
+    const isSupported = typeof this.stockService?.isSupportedTicker === 'function'
+      ? this.stockService.isSupportedTicker(rawTicker)
+      : true;
+    if (!isSupported) {
+      throw new BadRequestException(
+        `Unsupported stock ticker: '${rawTicker}'. Symbol not found in market universe.`
+      );
+    }
+
     const ticker = (!rawTicker.startsWith('^') && !rawTicker.endsWith('.NS') && !rawTicker.endsWith('.BO'))
       ? `${rawTicker.trim().toUpperCase()}.NS`
       : rawTicker.trim().toUpperCase();
@@ -604,10 +636,28 @@ export class PortfolioService {
       }
     }
 
-    // 1. Fetch live market price
+    // 1. Fetch live market price and verify quote trustworthiness
     const quote = await this.stockService.getQuote(ticker);
-    if (!quote || typeof quote.price !== 'number' || quote.price <= 0) {
+    if (!quote || typeof quote.price !== 'number' || isNaN(quote.price) || quote.price <= 0) {
       throw new BadRequestException(`Unable to obtain valid quote for ${ticker}`);
+    }
+
+    if (quote.sourceTimestamp) {
+      const quoteTime = new Date(quote.sourceTimestamp).getTime();
+      const nowMs = Date.now();
+      if (quoteTime > nowMs + 60_000) {
+        throw new BadRequestException(
+          `QUOTE_CLOCK_ANOMALY: Market quote for ${ticker} has future timestamp (${quote.sourceTimestamp}). Trade rejected.`
+        );
+      }
+      if (
+        (marketStatus.status === 'OPEN' || marketStatus.sessionType === 'REGULAR' || marketStatus.sessionType === 'MUHURAT') &&
+        nowMs - quoteTime > 15 * 60 * 1000
+      ) {
+        throw new BadRequestException(
+          `QUOTE_STALE_DURING_SESSION: Market quote for ${ticker} is stale (${Math.round((nowMs - quoteTime) / 60000)}m old) during active trading hours. Trade rejected.`
+        );
+      }
     }
     const marketPrice = quote.price;
 

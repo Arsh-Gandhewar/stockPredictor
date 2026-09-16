@@ -1,7 +1,10 @@
 /**
- * National Stock Exchange (NSE) Official Trading Holiday Calendar
- * Includes official scheduled trading holidays for 2024, 2025, and 2026.
+ * National Stock Exchange (NSE) Official Trading Holiday Calendar & Session Engine
+ * Backed by cryptographic checksum-verified governance artifact (2024-2027).
  */
+import * as fs from 'fs';
+import * as path from 'path';
+import * as crypto from 'crypto';
 
 export interface HolidayEntry {
   date: string; // YYYY-MM-DD
@@ -85,6 +88,35 @@ const HOLIDAY_MAP = new Map<string, HolidayEntry>(
   NSE_TRADING_HOLIDAYS.map((h) => [h.date, h])
 );
 
+export interface CalendarIntegrityResult {
+  isValid: boolean;
+  checksum: string;
+  version: string;
+  error?: string;
+}
+
+/**
+ * Loads and verifies the cryptographic checksum of the governance calendar artifact.
+ */
+export function verifyCalendarArtifact(): CalendarIntegrityResult {
+  try {
+    const artifactPath = path.resolve(__dirname, '../../../../data/artifacts/governance/nse-calendar-v2026.1.json');
+    if (!fs.existsSync(artifactPath)) {
+      return { isValid: false, checksum: '', version: CALENDAR_VERSION, error: 'CALENDAR_ARTIFACT_MISSING' };
+    }
+    const raw = fs.readFileSync(artifactPath, 'utf-8');
+    const parsed = JSON.parse(raw);
+    const { checksum, ...canonicalDoc } = parsed;
+    const computedHash = crypto.createHash('sha256').update(JSON.stringify(canonicalDoc)).digest('hex');
+    if (computedHash !== checksum) {
+      return { isValid: false, checksum, version: parsed.calendarVersion || CALENDAR_VERSION, error: 'CALENDAR_CHECKSUM_MISMATCH' };
+    }
+    return { isValid: true, checksum, version: parsed.calendarVersion };
+  } catch (err: any) {
+    return { isValid: false, checksum: '', version: CALENDAR_VERSION, error: err.message };
+  }
+}
+
 /**
  * Registers new or updated holiday entries dynamically at runtime.
  */
@@ -143,7 +175,7 @@ export function isNseHoliday(date: Date | string): HolidayCheckResult {
     }
   } else {
     // Format to Asia/Kolkata date string YYYY-MM-DD
-    const istStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // en-CA gives YYYY-MM-DD
+    const istStr = date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
     dateStr = istStr;
     const istTimeStr = date.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
     const istDate = new Date(istTimeStr);
@@ -166,5 +198,138 @@ export function isNseHoliday(date: Date | string): HolidayCheckResult {
     isCalendarStale: calendarStale,
     calendarVersion: CALENDAR_VERSION,
     isMuhuratSession,
+  };
+}
+
+export type TradingSessionType =
+  | 'REGULAR'
+  | 'PRE_MARKET'
+  | 'POST_MARKET'
+  | 'MUHURAT'
+  | 'HOLIDAY'
+  | 'WEEKEND'
+  | 'CLOSED'
+  | 'CALENDAR_STALE'
+  | 'CALENDAR_CORRUPTED';
+
+export interface AuthoritativeSessionClassification {
+  sessionType: TradingSessionType;
+  isTradable: boolean;
+  status: 'OPEN' | 'PRE_OPEN' | 'CLOSED' | 'HOLIDAY' | 'CALENDAR_STALE' | 'CALENDAR_CORRUPTED';
+  isCalendarStale: boolean;
+  holidayName?: string;
+  calendarVersion: string;
+}
+
+/**
+ * Provides authoritative session classification ensuring every supported date/time has exactly
+ * one deterministic session state.
+ */
+export function classifyTradingSession(referenceDate?: Date): AuthoritativeSessionClassification {
+  const now = referenceDate || new Date();
+
+  // Verify calendar artifact integrity
+  const integrity = verifyCalendarArtifact();
+  if (!integrity.isValid && integrity.error === 'CALENDAR_CHECKSUM_MISMATCH') {
+    return {
+      sessionType: 'CALENDAR_CORRUPTED',
+      isTradable: false,
+      status: 'CALENDAR_CORRUPTED',
+      isCalendarStale: true,
+      calendarVersion: CALENDAR_VERSION,
+    };
+  }
+
+  const istTimeStr = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
+  const istDate = new Date(istTimeStr);
+
+  const day = istDate.getDay(); // 0 = Sun, 6 = Sat
+  const hours = istDate.getHours();
+  const minutes = istDate.getMinutes();
+  const timeInMinutes = hours * 60 + minutes;
+
+  const holidayCheck = isNseHoliday(now);
+
+  if (holidayCheck.isCalendarStale) {
+    return {
+      sessionType: 'CALENDAR_STALE',
+      isTradable: false,
+      status: 'CALENDAR_STALE',
+      isCalendarStale: true,
+      calendarVersion: holidayCheck.calendarVersion,
+    };
+  }
+
+  if (holidayCheck.isMuhuratSession) {
+    return {
+      sessionType: 'MUHURAT',
+      isTradable: true,
+      status: 'OPEN',
+      holidayName: holidayCheck.holiday?.name,
+      isCalendarStale: false,
+      calendarVersion: holidayCheck.calendarVersion,
+    };
+  }
+
+  if (holidayCheck.isHoliday) {
+    return {
+      sessionType: 'HOLIDAY',
+      isTradable: false,
+      status: 'HOLIDAY',
+      holidayName: holidayCheck.holiday?.name,
+      isCalendarStale: false,
+      calendarVersion: holidayCheck.calendarVersion,
+    };
+  }
+
+  if (day === 0 || day === 6) {
+    return {
+      sessionType: 'WEEKEND',
+      isTradable: false,
+      status: 'CLOSED',
+      isCalendarStale: false,
+      calendarVersion: holidayCheck.calendarVersion,
+    };
+  }
+
+  // Pre-market: 09:00 to 09:15 IST
+  if (timeInMinutes >= 540 && timeInMinutes < 555) {
+    return {
+      sessionType: 'PRE_MARKET',
+      isTradable: false,
+      status: 'PRE_OPEN',
+      isCalendarStale: false,
+      calendarVersion: holidayCheck.calendarVersion,
+    };
+  }
+
+  // Regular Trading Hours: 09:15 to 15:30 IST
+  if (timeInMinutes >= 555 && timeInMinutes <= 930) {
+    return {
+      sessionType: 'REGULAR',
+      isTradable: true,
+      status: 'OPEN',
+      isCalendarStale: false,
+      calendarVersion: holidayCheck.calendarVersion,
+    };
+  }
+
+  // Post-market: 15:40 to 16:00 IST
+  if (timeInMinutes >= 940 && timeInMinutes <= 960) {
+    return {
+      sessionType: 'POST_MARKET',
+      isTradable: false,
+      status: 'CLOSED',
+      isCalendarStale: false,
+      calendarVersion: holidayCheck.calendarVersion,
+    };
+  }
+
+  return {
+    sessionType: 'CLOSED',
+    isTradable: false,
+    status: 'CLOSED',
+    isCalendarStale: false,
+    calendarVersion: holidayCheck.calendarVersion,
   };
 }

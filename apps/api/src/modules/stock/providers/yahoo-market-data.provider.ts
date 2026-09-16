@@ -9,7 +9,7 @@ import {
   UniverseStock,
 } from './market-data.provider.interface';
 import { TOP_300_INDIAN_UNIVERSE } from '../data/indian-universe.data';
-import { isNseHoliday } from '../data/nse-holidays.data';
+import { isNseHoliday, classifyTradingSession } from '../data/nse-holidays.data';
 
 export const VALID_CHART_RANGES = ['1d', '1w', '1mo', '3mo', '6mo', '1y', '2y', '5y', 'max'] as const;
 export type ValidChartRange = typeof VALID_CHART_RANGES[number];
@@ -25,102 +25,18 @@ export class YahooMarketDataProvider implements MarketDataProvider {
    */
   getMarketStatus(referenceDate?: Date): MarketStatus {
     const now = referenceDate || new Date();
-    // Convert to Indian Standard Time (UTC+5:30)
-    const istTimeStr = now.toLocaleString('en-US', { timeZone: 'Asia/Kolkata' });
-    const istDate = new Date(istTimeStr);
+    const classification = classifyTradingSession(now);
 
-    const day = istDate.getDay(); // 0 = Sun, 6 = Sat
-    const hours = istDate.getHours();
-    const minutes = istDate.getMinutes();
-    const timeInMinutes = hours * 60 + minutes;
-
-    // Calendar staleness check
-    const holidayCheck = isNseHoliday(now);
-    if (holidayCheck.isCalendarStale) {
+    if (classification.isCalendarStale) {
       this.logger.warn(`CALENDAR_STALE: Current date (${now.toISOString()}) is outside supported exchange calendar bounds.`);
-      return {
-        status: 'CALENDAR_STALE',
-        sessionType: 'CLOSED',
-        isCalendarStale: true,
-        calendarVersion: holidayCheck.calendarVersion,
-        timestamp: now.toISOString(),
-        timezone: 'Asia/Kolkata',
-        exchange: 'NSE',
-      };
-    }
-
-    // Special Muhurat trading session check (e.g. Diwali evening 18:00 - 19:15 IST)
-    if (holidayCheck.isMuhuratSession) {
-      return {
-        status: 'OPEN',
-        sessionType: 'MUHURAT',
-        holidayName: holidayCheck.holiday?.name,
-        isCalendarStale: false,
-        calendarVersion: holidayCheck.calendarVersion,
-        timestamp: now.toISOString(),
-        timezone: 'Asia/Kolkata',
-        exchange: 'NSE',
-      };
-    }
-
-    // Trading holiday check
-    if (holidayCheck.isHoliday) {
-      return {
-        status: 'HOLIDAY',
-        sessionType: 'CLOSED',
-        holidayName: holidayCheck.holiday?.name,
-        isCalendarStale: false,
-        calendarVersion: holidayCheck.calendarVersion,
-        timestamp: now.toISOString(),
-        timezone: 'Asia/Kolkata',
-        exchange: 'NSE',
-      };
-    }
-
-    // Weekend check
-    if (day === 0 || day === 6) {
-      return {
-        status: 'CLOSED',
-        sessionType: 'CLOSED',
-        isCalendarStale: false,
-        calendarVersion: holidayCheck.calendarVersion,
-        timestamp: now.toISOString(),
-        timezone: 'Asia/Kolkata',
-        exchange: 'NSE',
-      };
-    }
-
-    // 09:00 - 09:15 IST (Pre-market)
-    if (timeInMinutes >= 540 && timeInMinutes < 555) {
-      return {
-        status: 'PRE_OPEN',
-        sessionType: 'PRE_MARKET',
-        isCalendarStale: false,
-        calendarVersion: holidayCheck.calendarVersion,
-        timestamp: now.toISOString(),
-        timezone: 'Asia/Kolkata',
-        exchange: 'NSE',
-      };
-    }
-
-    // 09:15 - 15:30 IST (Regular Market Trading Hours)
-    if (timeInMinutes >= 555 && timeInMinutes <= 930) {
-      return {
-        status: 'OPEN',
-        sessionType: 'REGULAR',
-        isCalendarStale: false,
-        calendarVersion: holidayCheck.calendarVersion,
-        timestamp: now.toISOString(),
-        timezone: 'Asia/Kolkata',
-        exchange: 'NSE',
-      };
     }
 
     return {
-      status: 'CLOSED',
-      sessionType: 'CLOSED',
-      isCalendarStale: false,
-      calendarVersion: holidayCheck.calendarVersion,
+      status: classification.status,
+      sessionType: classification.sessionType,
+      isCalendarStale: classification.isCalendarStale,
+      calendarVersion: classification.calendarVersion,
+      holidayName: classification.holidayName,
       timestamp: now.toISOString(),
       timezone: 'Asia/Kolkata',
       exchange: 'NSE',
@@ -191,11 +107,10 @@ export class YahooMarketDataProvider implements MarketDataProvider {
 
   public isSupportedTicker(rawTicker: string): boolean {
     if (!rawTicker || typeof rawTicker !== 'string') return false;
-    const normalized = this.normalizeTicker(rawTicker);
-    const bare = normalized.replace(/\.(NS|BO)$/, '');
-    return this.universe.some(
-      (s) => s.ticker === normalized || s.ticker.replace(/\.(NS|BO)$/, '') === bare
-    );
+    const t = rawTicker.trim().toUpperCase();
+    if (t.endsWith('.BO')) return false;
+    const normalized = this.normalizeTicker(t);
+    return this.universe.some((s) => s.ticker === normalized);
   }
 
   private normalizeTicker(rawTicker: string): string {

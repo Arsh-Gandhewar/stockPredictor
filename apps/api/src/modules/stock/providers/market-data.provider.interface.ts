@@ -33,8 +33,17 @@ export interface OHLCVCandle {
 }
 
 export interface MarketStatus {
-  status: 'PRE_OPEN' | 'OPEN' | 'CLOSED' | 'HOLIDAY' | 'CALENDAR_STALE';
-  sessionType?: 'REGULAR' | 'PRE_MARKET' | 'MUHURAT' | 'CLOSED';
+  status: 'PRE_OPEN' | 'OPEN' | 'CLOSED' | 'HOLIDAY' | 'CALENDAR_STALE' | 'CALENDAR_CORRUPTED';
+  sessionType?:
+    | 'REGULAR'
+    | 'PRE_MARKET'
+    | 'POST_MARKET'
+    | 'MUHURAT'
+    | 'HOLIDAY'
+    | 'WEEKEND'
+    | 'CLOSED'
+    | 'CALENDAR_STALE'
+    | 'CALENDAR_CORRUPTED';
   holidayName?: string;
   isCalendarStale?: boolean;
   calendarVersion?: string;

@@ -163,6 +163,10 @@ export class StockService {
     return this.marketProvider.getMarketStatus();
   }
 
+  isSupportedTicker(ticker: string): boolean {
+    return this.marketProvider.isSupportedTicker(ticker);
+  }
+
   async getQuote(ticker: string): Promise<MarketQuote> {
     const cacheKey = `quote:${ticker}`;
     const cached = this.getCached<MarketQuote>(cacheKey);

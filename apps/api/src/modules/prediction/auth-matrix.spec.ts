@@ -1,4 +1,4 @@
-import { ExecutionContext, UnauthorizedException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { ExecutionContext, UnauthorizedException, ForbiddenException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import * as crypto from 'crypto';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -270,12 +270,11 @@ describe('Tier 2: Institutional Auth Matrix & Role Permutations Spec', () => {
 
     it('should reject training with 409 ConflictException when distributed DB lock is already held by another instance', async () => {
       const mockService = { trainPipeline: jest.fn() };
-      const mockDb = {
-        client: {
-          $queryRawUnsafe: jest.fn().mockResolvedValue([{ pg_try_advisory_lock: false }]),
-        },
+      const mockLockService = {
+        acquireLock: jest.fn().mockResolvedValue({ acquired: false, ownerId: 'other-worker' }),
+        releaseLock: jest.fn(),
       };
-      const controller = new PredictionController(mockService as any, mockDb as any);
+      const controller = new PredictionController(mockService as any, mockLockService as any);
       let caughtError: any;
       try {
         await controller.trainModel();
@@ -284,6 +283,26 @@ describe('Tier 2: Institutional Auth Matrix & Role Permutations Spec', () => {
       }
       expect(caughtError).toBeInstanceOf(ConflictException);
       expect(caughtError.message).toContain('DISTRIBUTED_TRAINING_IN_PROGRESS');
+      expect(mockService.trainPipeline).not.toHaveBeenCalled();
+    });
+
+    it('should fail closed with 503 ServiceUnavailableException and never train if distributed lock provider errors', async () => {
+      const mockService = { trainPipeline: jest.fn() };
+      const mockLockService = {
+        acquireLock: jest.fn().mockRejectedValue(
+          new ServiceUnavailableException('DISTRIBUTED_LOCK_UNAVAILABLE: Database lock provider is unreachable.')
+        ),
+        releaseLock: jest.fn(),
+      };
+      const controller = new PredictionController(mockService as any, mockLockService as any);
+      let caughtError: any;
+      try {
+        await controller.trainModel();
+      } catch (err) {
+        caughtError = err;
+      }
+      expect(caughtError).toBeInstanceOf(ServiceUnavailableException);
+      expect(caughtError.message).toContain('DISTRIBUTED_LOCK_UNAVAILABLE');
       expect(mockService.trainPipeline).not.toHaveBeenCalled();
     });
   });
