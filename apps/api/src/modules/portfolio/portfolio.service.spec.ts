@@ -52,31 +52,37 @@ describe('PortfolioService', () => {
       // Execution Attempt 1: Price drops to 2390 at 10:31
       const execHash1 = crypto
         .createHash('sha256')
-        .update(JSON.stringify({
-          triggerEventId,
-          ticker: position.stock.ticker,
-          quantity: position.quantity,
-          observedPrice: 2390.0,
-          executionPrice: 2388.8,
-          quoteTimestamp: '2026-08-01T10:31:00.000Z',
-        }))
+        .update(
+          JSON.stringify({
+            triggerEventId,
+            ticker: position.stock.ticker,
+            quantity: position.quantity,
+            observedPrice: 2390.0,
+            executionPrice: 2388.8,
+            quoteTimestamp: '2026-08-01T10:31:00.000Z',
+          }),
+        )
         .digest('hex');
 
       // Execution Attempt 2: Price drops to 2380 at 10:32 (different price and time)
       const execHash2 = crypto
         .createHash('sha256')
-        .update(JSON.stringify({
-          triggerEventId,
-          ticker: position.stock.ticker,
-          quantity: position.quantity,
-          observedPrice: 2380.0,
-          executionPrice: 2378.8,
-          quoteTimestamp: '2026-08-01T10:32:00.000Z',
-        }))
+        .update(
+          JSON.stringify({
+            triggerEventId,
+            ticker: position.stock.ticker,
+            quantity: position.quantity,
+            observedPrice: 2380.0,
+            executionPrice: 2378.8,
+            quoteTimestamp: '2026-08-01T10:32:00.000Z',
+          }),
+        )
         .digest('hex');
 
       // 1. Economic trigger identity and deduplication key remain IDENTICAL
-      expect(triggerEventId).toBe('RISK_EVENT_pos_reliance_001_2026-08-01T09:15:00.000Z_AUTO_STOP_LOSS');
+      expect(triggerEventId).toBe(
+        'RISK_EVENT_pos_reliance_001_2026-08-01T09:15:00.000Z_AUTO_STOP_LOSS',
+      );
       expect(canonicalPayloadHash).toBeDefined();
 
       // 2. Physical execution request hashes are DISTINCT per market quote observation
@@ -107,4 +113,3 @@ describe('PortfolioService', () => {
     });
   });
 });
-

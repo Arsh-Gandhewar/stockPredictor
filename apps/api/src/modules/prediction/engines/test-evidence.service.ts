@@ -38,7 +38,10 @@ export interface TestEvidenceValidationResult {
 export class TestEvidenceService {
   private readonly logger = new Logger(TestEvidenceService.name);
   public static readonly HMAC_SECRET = 'quantx-gov-ci-salt-2026-v5-1';
-  private readonly evidencePath = path.resolve(__dirname, '../../../../data/artifacts/governance/test-evidence.json');
+  private readonly evidencePath = path.resolve(
+    __dirname,
+    '../../../../data/artifacts/governance/test-evidence.json',
+  );
 
   public static signPayload(payload: TestRunEvidencePayload): string {
     const canonical = JSON.stringify({
@@ -47,7 +50,10 @@ export class TestEvidenceService {
       suites: payload.suites,
       overallPassed: payload.overallPassed,
     });
-    return crypto.createHmac('sha256', TestEvidenceService.HMAC_SECRET).update(canonical).digest('hex');
+    return crypto
+      .createHmac('sha256', TestEvidenceService.HMAC_SECRET)
+      .update(canonical)
+      .digest('hex');
   }
 
   public recordEvidence(payload: TestRunEvidencePayload): SignedTestEvidence {
@@ -60,11 +66,17 @@ export class TestEvidenceService {
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    fs.writeFileSync(this.evidencePath, JSON.stringify(signedEvidence, null, 2), 'utf-8');
+    fs.writeFileSync(
+      this.evidencePath,
+      JSON.stringify(signedEvidence, null, 2),
+      'utf-8',
+    );
     return signedEvidence;
   }
 
-  public loadAndValidateEvidence(expectedCommitSha?: string): TestEvidenceValidationResult {
+  public loadAndValidateEvidence(
+    expectedCommitSha?: string,
+  ): TestEvidenceValidationResult {
     const failureReasons: string[] = [];
 
     if (!fs.existsSync(this.evidencePath)) {
@@ -72,7 +84,9 @@ export class TestEvidenceService {
         isValid: false,
         jestPassed: 0,
         pytestPassed: 0,
-        failureReasons: ['TEST_EVIDENCE_FILE_MISSING: No signed test-evidence.json found in governance artifacts.'],
+        failureReasons: [
+          'TEST_EVIDENCE_FILE_MISSING: No signed test-evidence.json found in governance artifacts.',
+        ],
       };
     }
 
@@ -81,18 +95,24 @@ export class TestEvidenceService {
       const data: SignedTestEvidence = JSON.parse(raw);
 
       if (!data.signature) {
-        failureReasons.push('TEST_EVIDENCE_UNSIGNED: test-evidence.json lacks cryptographic signature.');
+        failureReasons.push(
+          'TEST_EVIDENCE_UNSIGNED: test-evidence.json lacks cryptographic signature.',
+        );
       } else {
         const expectedSig = TestEvidenceService.signPayload(data);
         if (data.signature !== expectedSig) {
-          failureReasons.push('TEST_EVIDENCE_TAMPERED: HMAC signature mismatch in test-evidence.json.');
+          failureReasons.push(
+            'TEST_EVIDENCE_TAMPERED: HMAC signature mismatch in test-evidence.json.',
+          );
         }
       }
 
       if (expectedCommitSha && data.commitSha !== expectedCommitSha) {
         let isParentCommit = false;
         try {
-          const parentSha = require('child_process').execSync('git rev-parse HEAD~1', { encoding: 'utf-8' }).trim();
+          const parentSha = require('child_process')
+            .execSync('git rev-parse HEAD~1', { encoding: 'utf-8' })
+            .trim();
           if (parentSha === data.commitSha) {
             isParentCommit = true;
           }
@@ -100,7 +120,7 @@ export class TestEvidenceService {
 
         if (!isParentCommit) {
           failureReasons.push(
-            `TEST_EVIDENCE_COMMIT_MISMATCH: Evidence generated for commit ${data.commitSha.slice(0, 7)}, but current HEAD is ${expectedCommitSha.slice(0, 7)}.`
+            `TEST_EVIDENCE_COMMIT_MISMATCH: Evidence generated for commit ${data.commitSha.slice(0, 7)}, but current HEAD is ${expectedCommitSha.slice(0, 7)}.`,
           );
         }
       }
@@ -108,16 +128,32 @@ export class TestEvidenceService {
       const jest = data.suites?.jest;
       const pytest = data.suites?.pytest;
 
-      if (!jest || jest.exitCode !== 0 || jest.failedTests > 0 || jest.passedTests === 0) {
-        failureReasons.push(`JEST_SUITE_FAILURE: Jest reports ${jest?.failedTests ?? 'unknown'} failures (exit code: ${jest?.exitCode}).`);
+      if (
+        !jest ||
+        jest.exitCode !== 0 ||
+        jest.failedTests > 0 ||
+        jest.passedTests === 0
+      ) {
+        failureReasons.push(
+          `JEST_SUITE_FAILURE: Jest reports ${jest?.failedTests ?? 'unknown'} failures (exit code: ${jest?.exitCode}).`,
+        );
       }
 
-      if (!pytest || pytest.exitCode !== 0 || pytest.failedTests > 0 || pytest.passedTests === 0) {
-        failureReasons.push(`PYTEST_SUITE_FAILURE: Pytest reports ${pytest?.failedTests ?? 'unknown'} failures (exit code: ${pytest?.exitCode}).`);
+      if (
+        !pytest ||
+        pytest.exitCode !== 0 ||
+        pytest.failedTests > 0 ||
+        pytest.passedTests === 0
+      ) {
+        failureReasons.push(
+          `PYTEST_SUITE_FAILURE: Pytest reports ${pytest?.failedTests ?? 'unknown'} failures (exit code: ${pytest?.exitCode}).`,
+        );
       }
 
       if (!data.overallPassed) {
-        failureReasons.push('TEST_SUITE_OVERALL_FAILED: overallPassed flag is false.');
+        failureReasons.push(
+          'TEST_SUITE_OVERALL_FAILED: overallPassed flag is false.',
+        );
       }
 
       const isValid = failureReasons.length === 0;

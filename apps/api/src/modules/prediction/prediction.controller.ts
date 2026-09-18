@@ -1,7 +1,20 @@
-import { Controller, Get, Post, Param, Query, UseGuards, ConflictException, Optional } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Query,
+  UseGuards,
+  ConflictException,
+  Optional,
+  Logger,
+} from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { QuantPredictionService } from './prediction.service';
-import { DistributedLockService, LockAcquisitionResult } from './engines/distributed-lock.service';
+import {
+  DistributedLockService,
+  LockAcquisitionResult,
+} from './engines/distributed-lock.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -9,12 +22,14 @@ import { THROTTLE_POLICIES } from '../../common/constants/throttle-policies';
 
 @Controller('prediction')
 export class PredictionController {
+  private readonly logger = new Logger(PredictionController.name);
   private isTraining = false;
   public static readonly TRAINING_LOCK_KEY = 'training_pipeline';
 
   constructor(
     private readonly predictionService: QuantPredictionService,
-    @Optional() private readonly distributedLockService?: DistributedLockService,
+    @Optional()
+    private readonly distributedLockService?: DistributedLockService,
   ) {}
 
   @Post('train')
@@ -26,7 +41,7 @@ export class PredictionController {
     // Tier 1: In-process atomic lock (synchronously acquired to eliminate event-loop race)
     if (this.isTraining) {
       throw new ConflictException(
-        'TRAINING_IN_PROGRESS: A model training pipeline is currently executing in this process. Concurrent training is rejected.'
+        'TRAINING_IN_PROGRESS: A model training pipeline is currently executing in this process. Concurrent training is rejected.',
       );
     }
     this.isTraining = true;
@@ -37,7 +52,7 @@ export class PredictionController {
       try {
         lockResult = await this.distributedLockService.acquireLock(
           PredictionController.TRAINING_LOCK_KEY,
-          600_000
+          600_000,
         );
       } catch (err) {
         this.isTraining = false;
@@ -48,22 +63,52 @@ export class PredictionController {
       if (!lockResult.acquired) {
         this.isTraining = false;
         throw new ConflictException(
-          'DISTRIBUTED_TRAINING_IN_PROGRESS: A model training pipeline is currently executing across another cluster instance (active lease held).'
+          'DISTRIBUTED_TRAINING_IN_PROGRESS: A model training pipeline is currently executing across another cluster instance (active lease held).',
         );
       }
     } else {
-      lockResult = { acquired: true, ownerId: 'in-process-unit-test' };
+      lockResult = {
+        acquired: true,
+        ownerId: 'in-process-unit-test',
+        fencingToken: 1,
+      };
+    }
+
+    let heartbeatTimer: NodeJS.Timeout | null = null;
+    if (this.distributedLockService && lockResult.ownerId) {
+      heartbeatTimer = setInterval(async () => {
+        try {
+          const renewed = await this.distributedLockService!.renewLease(
+            PredictionController.TRAINING_LOCK_KEY,
+            lockResult.ownerId,
+            600_000,
+          );
+          if (!renewed) {
+            this.logger.warn(
+              `TRAINING_HEARTBEAT_LOST: Could not renew lease for owner '${lockResult.ownerId}'.`,
+            );
+          }
+        } catch (err: any) {
+          this.logger.warn(`TRAINING_HEARTBEAT_ERROR: ${err.message}`);
+        }
+      }, 5_000);
+      heartbeatTimer.unref?.();
     }
 
     try {
-      return await this.predictionService.trainPipeline();
+      return await this.predictionService.trainPipeline({
+        ownerId: lockResult.ownerId,
+        fencingToken: lockResult.fencingToken,
+      });
     } finally {
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       this.isTraining = false;
       if (this.distributedLockService && lockResult && lockResult.ownerId) {
         try {
           await this.distributedLockService.releaseLock(
             PredictionController.TRAINING_LOCK_KEY,
-            lockResult.ownerId
+            lockResult.ownerId,
+            lockResult.fencingToken,
           );
         } catch {}
       }

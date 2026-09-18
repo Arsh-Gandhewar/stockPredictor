@@ -8,19 +8,19 @@ import { Money } from '../../../common/utils/money.util';
 export type CostRegime = 'LOW_COST' | 'BASE_COST' | 'HIGH_COST';
 
 export interface TransactionCostConfig {
-  brokerageRate: number;      // e.g. 0.0003 (3 bps)
-  sttRateSell: number;        // e.g. 0.0010 (10 bps on sell side)
-  exchangeRate: number;       // e.g. 0.0000345 (0.345 bps)
-  gstRate: number;            // 18% on (brokerage + exchange)
-  stampDutyRateBuy: number;   // 0.00015 (1.5 bps on buy side)
-  sebiRate: number;           // 0.000001 (0.01 bps)
-  slippageBps: number;        // Base execution slippage in basis points
+  brokerageRate: number; // e.g. 0.0003 (3 bps)
+  sttRateSell: number; // e.g. 0.0010 (10 bps on sell side)
+  exchangeRate: number; // e.g. 0.0000345 (0.345 bps)
+  gstRate: number; // 18% on (brokerage + exchange)
+  stampDutyRateBuy: number; // 0.00015 (1.5 bps on buy side)
+  sebiRate: number; // 0.000001 (0.01 bps)
+  slippageBps: number; // Base execution slippage in basis points
 }
 
 export const COST_REGIMES: Record<CostRegime, TransactionCostConfig> = {
   LOW_COST: {
     brokerageRate: 0.0001,
-    sttRateSell: 0.0010,
+    sttRateSell: 0.001,
     exchangeRate: 0.00003,
     gstRate: 0.18,
     stampDutyRateBuy: 0.00015,
@@ -29,7 +29,7 @@ export const COST_REGIMES: Record<CostRegime, TransactionCostConfig> = {
   },
   BASE_COST: {
     brokerageRate: 0.0003,
-    sttRateSell: 0.0010,
+    sttRateSell: 0.001,
     exchangeRate: 0.0000345,
     gstRate: 0.18,
     stampDutyRateBuy: 0.00015,
@@ -38,7 +38,7 @@ export const COST_REGIMES: Record<CostRegime, TransactionCostConfig> = {
   },
   HIGH_COST: {
     brokerageRate: 0.0005,
-    sttRateSell: 0.0010,
+    sttRateSell: 0.001,
     exchangeRate: 0.0000345,
     gstRate: 0.18,
     stampDutyRateBuy: 0.00015,
@@ -51,7 +51,10 @@ export class TransactionCostEngine {
   private config: TransactionCostConfig;
   public readonly regime: CostRegime;
 
-  constructor(regime: CostRegime = 'BASE_COST', customConfig?: TransactionCostConfig) {
+  constructor(
+    regime: CostRegime = 'BASE_COST',
+    customConfig?: TransactionCostConfig,
+  ) {
     this.regime = regime;
     this.config = customConfig || COST_REGIMES[regime];
   }
@@ -67,7 +70,13 @@ export class TransactionCostEngine {
     const entrySebi = cfg.sebiRate;
     const entrySlippage = cfg.slippageBps / 10000.0;
 
-    const entryTotal = entryBrokerage + entryExchange + entryGst + entryStamp + entrySebi + entrySlippage;
+    const entryTotal =
+      entryBrokerage +
+      entryExchange +
+      entryGst +
+      entryStamp +
+      entrySebi +
+      entrySlippage;
 
     // Exit charges (sell side)
     const exitBrokerage = cfg.brokerageRate;
@@ -77,7 +86,13 @@ export class TransactionCostEngine {
     const exitSebi = cfg.sebiRate;
     const exitSlippage = cfg.slippageBps / 10000.0;
 
-    const exitTotal = exitBrokerage + exitExchange + exitGst + exitStt + exitSebi + exitSlippage;
+    const exitTotal =
+      exitBrokerage +
+      exitExchange +
+      exitGst +
+      exitStt +
+      exitSebi +
+      exitSlippage;
 
     return entryTotal + exitTotal;
   }
@@ -103,7 +118,10 @@ export class TransactionCostEngine {
 
     // Net proceeds: Gross proceeds after adverse price minus statutory fees
     // Invariant: netProceeds = (quantity * executionPrice) - statutoryFees = notional - (statutoryFees + slippage)
-    const netProceeds = Math.max(0, Money.round(effectiveGrossProceeds - statutoryFees));
+    const netProceeds = Math.max(
+      0,
+      Money.round(effectiveGrossProceeds - statutoryFees),
+    );
     const totalFriction = Money.round(statutoryFees + slippage);
 
     return {
@@ -133,4 +151,3 @@ export class TransactionCostEngine {
     return { ...this.config };
   }
 }
-

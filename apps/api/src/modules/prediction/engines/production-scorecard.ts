@@ -1,10 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ModelArtifact } from './model-artifact.service';
 import { MODEL_CONFIG } from './model-config';
-import { computeStrictArtifactChecksum, ArtifactBundleValidator } from './artifact-bundle-validator';
+import {
+  computeStrictArtifactChecksum,
+  ArtifactBundleValidator,
+} from './artifact-bundle-validator';
 import * as path from 'path';
 
-export type GateEvaluationStatus = 'PASS' | 'FAIL' | 'INSUFFICIENT_DATA' | 'NOT_ASSESSABLE' | 'NOT_ASSESSED' | 'LIMITATION';
+export type GateEvaluationStatus =
+  | 'PASS'
+  | 'FAIL'
+  | 'INSUFFICIENT_DATA'
+  | 'NOT_ASSESSABLE'
+  | 'NOT_ASSESSED'
+  | 'LIMITATION';
 
 export interface ScorecardCriterionResult {
   code: string;
@@ -61,29 +70,38 @@ export class ProductionScorecardService {
    */
   evaluateScorecard(
     artifact: ModelArtifact | null,
-    runtimeStateOrReport: any = {}
+    runtimeStateOrReport: any = {},
   ): ProductionReadinessScorecard {
     const criteria: Record<string, ScorecardCriterionResult> = {};
     const blockingFailures: string[] = [];
     const criticalBlockerFailures: string[] = [];
 
-    const isReport = Boolean(runtimeStateOrReport && runtimeStateOrReport.verifications);
+    const isReport = Boolean(
+      runtimeStateOrReport && runtimeStateOrReport.verifications,
+    );
     const verifs = isReport ? runtimeStateOrReport.verifications : null;
 
     // Validate active bundle using strict validator
-    const artifactsDir = path.resolve(__dirname, '../../../../data/artifacts/active');
-    const bundleVal = artifact ? ArtifactBundleValidator.validateBundleSync(artifact, artifactsDir) : null;
+    const artifactsDir = path.resolve(
+      __dirname,
+      '../../../../data/artifacts/active',
+    );
+    const bundleVal = artifact
+      ? ArtifactBundleValidator.validateBundleSync(artifact, artifactsDir)
+      : null;
     const recomputedMetrics = bundleVal?.recomputedMetrics;
 
     // 1. DATA_INTEGRITY [CRITICAL BLOCKER]
     let dataIntegrityStatus: GateEvaluationStatus = 'FAIL';
-    let dataIntegrityEvidence = 'Invalid OHLC relations or corrupt candle data detected.';
+    let dataIntegrityEvidence =
+      'Invalid OHLC relations or corrupt candle data detected.';
     if (verifs?.DATA_INTEGRITY) {
       dataIntegrityStatus = verifs.DATA_INTEGRITY.status;
       dataIntegrityEvidence = verifs.DATA_INTEGRITY.details;
     } else if (runtimeStateOrReport.hasValidCandles === true) {
       dataIntegrityStatus = 'PASS';
-      dataIntegrityEvidence = 'OHLC relationship validated, zero negative prices, non-zero volumes on trading days, chronologically sorted.';
+      dataIntegrityEvidence =
+        'OHLC relationship validated, zero negative prices, non-zero volumes on trading days, chronologically sorted.';
     } else if (runtimeStateOrReport.hasValidCandles === undefined) {
       dataIntegrityStatus = 'NOT_ASSESSED';
       dataIntegrityEvidence = 'No runtime candle validation was performed.';
@@ -98,19 +116,23 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (dataIntegrityStatus !== 'PASS') {
-      blockingFailures.push(`DATA_INTEGRITY: Market data candle integrity check ${dataIntegrityStatus.toLowerCase()}.`);
+      blockingFailures.push(
+        `DATA_INTEGRITY: Market data candle integrity check ${dataIntegrityStatus.toLowerCase()}.`,
+      );
       criticalBlockerFailures.push('DATA_INTEGRITY');
     }
 
     // 2. POINT_IN_TIME_CORRECTNESS [CRITICAL BLOCKER]
     let pitStatus: GateEvaluationStatus = 'FAIL';
-    let pitEvidence = 'Point-in-time calculation failure or target leakage detected.';
+    let pitEvidence =
+      'Point-in-time calculation failure or target leakage detected.';
     if (verifs?.POINT_IN_TIME_CORRECTNESS) {
       pitStatus = verifs.POINT_IN_TIME_CORRECTNESS.status;
       pitEvidence = verifs.POINT_IN_TIME_CORRECTNESS.details;
     } else if (runtimeStateOrReport.leakageFree === true) {
       pitStatus = 'PASS';
-      pitEvidence = 'Lag operators strictly positive, zero lookahead leakage, shifting features cleanly reproduces out-of-sample data.';
+      pitEvidence =
+        'Lag operators strictly positive, zero lookahead leakage, shifting features cleanly reproduces out-of-sample data.';
     } else if (runtimeStateOrReport.leakageFree === undefined) {
       pitStatus = 'NOT_ASSESSED';
       pitEvidence = 'No point-in-time leakage validation was performed.';
@@ -125,7 +147,9 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (pitStatus !== 'PASS') {
-      blockingFailures.push(`POINT_IN_TIME_CORRECTNESS: Point-in-time calculation ${pitStatus.toLowerCase()}.`);
+      blockingFailures.push(
+        `POINT_IN_TIME_CORRECTNESS: Point-in-time calculation ${pitStatus.toLowerCase()}.`,
+      );
       criticalBlockerFailures.push('POINT_IN_TIME_CORRECTNESS');
     }
 
@@ -144,12 +168,17 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (!survResolved) {
-      blockingFailures.push('SURVIVORSHIP_BIAS_CONTROL: Survivorship bias limitation is unresolved.');
+      blockingFailures.push(
+        'SURVIVORSHIP_BIAS_CONTROL: Survivorship bias limitation is unresolved.',
+      );
       criticalBlockerFailures.push('SURVIVORSHIP_BIAS_CONTROL');
     }
 
     // 4. LOOKAHEAD_BIAS_CONTROL [CRITICAL BLOCKER]
-    const lookaheadPassed = artifact ? artifact.trainingEnd <= artifact.validationStart && artifact.validationEnd <= artifact.testStart : false;
+    const lookaheadPassed = artifact
+      ? artifact.trainingEnd <= artifact.validationStart &&
+        artifact.validationEnd <= artifact.testStart
+      : false;
     criteria['LOOKAHEAD_BIAS_CONTROL'] = {
       code: 'LOOKAHEAD_BIAS_CONTROL',
       name: 'Lookahead Bias Prevention & Chronological Partitioning',
@@ -162,7 +191,9 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (!lookaheadPassed) {
-      blockingFailures.push('LOOKAHEAD_BIAS_CONTROL: Overlapping chronological partitions.');
+      blockingFailures.push(
+        'LOOKAHEAD_BIAS_CONTROL: Overlapping chronological partitions.',
+      );
       criticalBlockerFailures.push('LOOKAHEAD_BIAS_CONTROL');
     }
 
@@ -171,7 +202,13 @@ export class ProductionScorecardService {
     const wfPassed = Boolean(
       artifact &&
       wfFolds.length >= 4 &&
-      wfFolds.every((f: any) => f.testSamples > 0 && f.trainStart < f.trainEnd && f.trainEnd <= f.valStart && f.valEnd <= f.testStart)
+      wfFolds.every(
+        (f: any) =>
+          f.testSamples > 0 &&
+          f.trainStart < f.trainEnd &&
+          f.trainEnd <= f.valStart &&
+          f.valEnd <= f.testStart,
+      ),
     );
     criteria['WALK_FORWARD_VALIDITY'] = {
       code: 'WALK_FORWARD_VALIDITY',
@@ -183,7 +220,10 @@ export class ProductionScorecardService {
         : 'Walk-forward validation invalid: requires at least 4 non-overlapping folds with positive test samples.',
       mandatory: true,
     };
-    if (!wfPassed) blockingFailures.push('WALK_FORWARD_VALIDITY: Walk-forward validation missing or invalid.');
+    if (!wfPassed)
+      blockingFailures.push(
+        'WALK_FORWARD_VALIDITY: Walk-forward validation missing or invalid.',
+      );
 
     // 6. MODEL_REPRODUCIBILITY
     const reproPassed = Boolean(artifact && artifact.checksum && artifact.id);
@@ -197,20 +237,29 @@ export class ProductionScorecardService {
         : 'Model parameters or checksum missing.',
       mandatory: true,
     };
-    if (!reproPassed) blockingFailures.push('MODEL_REPRODUCIBILITY: Missing model parameters or checksum.');
+    if (!reproPassed)
+      blockingFailures.push(
+        'MODEL_REPRODUCIBILITY: Missing model parameters or checksum.',
+      );
 
     // 7. PROBABILITY_CALIBRATION
     const calib5d = artifact?.calibration?.['5d'];
-    const calibSampleCount = calib5d?.metrics?.sampleCount || artifact?.calibrationMetrics?.sampleCount || 0;
-    const calibStatus = calib5d?.status || artifact?.calibrationStatus || 'UNFITTED';
+    const calibSampleCount =
+      calib5d?.metrics?.sampleCount ||
+      artifact?.calibrationMetrics?.sampleCount ||
+      0;
+    const calibStatus =
+      calib5d?.status || artifact?.calibrationStatus || 'UNFITTED';
     const calibBrier = calib5d?.metrics?.brierScore;
     const calibECE = calib5d?.metrics?.ece;
     const calibPassed = Boolean(
       artifact &&
       calibStatus === 'FITTED_OUT_OF_SAMPLE' &&
       calibSampleCount >= 50 &&
-      calibBrier !== null && calibBrier !== undefined &&
-      calibECE !== null && calibECE !== undefined
+      calibBrier !== null &&
+      calibBrier !== undefined &&
+      calibECE !== null &&
+      calibECE !== undefined,
     );
     criteria['PROBABILITY_CALIBRATION'] = {
       code: 'PROBABILITY_CALIBRATION',
@@ -222,14 +271,20 @@ export class ProductionScorecardService {
         : `Calibration failed quality gate (Status: ${calibStatus}, SampleCount: ${calibSampleCount}).`,
       mandatory: true,
     };
-    if (!calibPassed) blockingFailures.push('PROBABILITY_CALIBRATION: Probability calibration failed quality gate.');
+    if (!calibPassed)
+      blockingFailures.push(
+        'PROBABILITY_CALIBRATION: Probability calibration failed quality gate.',
+      );
 
     // 8. UNCERTAINTY_QUANTIFICATION
     const hasEmpirical = Boolean(
       artifact &&
-      ((artifact.empiricalDistributions && artifact.empiricalDistributions.length > 0) ||
-       (artifact.conditionalReturns && Object.keys(artifact.conditionalReturns).length > 0) ||
-       (artifact.empiricalQuantiles && Object.keys(artifact.empiricalQuantiles).length > 0))
+      ((artifact.empiricalDistributions &&
+        artifact.empiricalDistributions.length > 0) ||
+        (artifact.conditionalReturns &&
+          Object.keys(artifact.conditionalReturns).length > 0) ||
+        (artifact.empiricalQuantiles &&
+          Object.keys(artifact.empiricalQuantiles).length > 0)),
     );
     criteria['EXPECTED_RETURN_VALIDITY'] = {
       code: 'EXPECTED_RETURN_VALIDITY',
@@ -241,7 +296,10 @@ export class ProductionScorecardService {
         : 'Missing empirical return distribution or quantiles table.',
       mandatory: true,
     };
-    if (!hasEmpirical) blockingFailures.push('EXPECTED_RETURN_VALIDITY: Empirical distributions missing.');
+    if (!hasEmpirical)
+      blockingFailures.push(
+        'EXPECTED_RETURN_VALIDITY: Empirical distributions missing.',
+      );
 
     // 9. COST_MODELING
     let costStatus: GateEvaluationStatus = 'FAIL';
@@ -251,7 +309,8 @@ export class ProductionScorecardService {
       costEvidence = verifs.COST_MODELING.details;
     } else if (runtimeStateOrReport.frictionVerification === true) {
       costStatus = 'PASS';
-      costEvidence = 'Explicit transaction cost (0.13% round-trip) applied: brokerage, STT, 5 bps slippage, GST and exchange turnover fees.';
+      costEvidence =
+        'Explicit transaction cost (0.13% round-trip) applied: brokerage, STT, 5 bps slippage, GST and exchange turnover fees.';
     } else if (runtimeStateOrReport.frictionVerification === undefined) {
       costStatus = 'NOT_ASSESSED';
       costEvidence = 'Friction model not assessed.';
@@ -264,13 +323,16 @@ export class ProductionScorecardService {
       evidence: costEvidence,
       mandatory: true,
     };
-    if (costStatus !== 'PASS') blockingFailures.push(`COST_MODELING: Friction model verification ${costStatus.toLowerCase()}.`);
+    if (costStatus !== 'PASS')
+      blockingFailures.push(
+        `COST_MODELING: Friction model verification ${costStatus.toLowerCase()}.`,
+      );
 
     // 10. BACKTEST_VALIDITY & ECONOMIC_ALPHA_GATE [CRITICAL BLOCKER]
     // Consumes ONLY recomputed metrics from raw ledger; modifying bt.cagr has zero effect
     const cagr = recomputedMetrics?.cagr ?? 0;
-    const benchCagr = recomputedMetrics?.benchmarkCagr ?? 14.20;
-    const activeRet = recomputedMetrics?.activeReturn ?? (cagr - benchCagr);
+    const benchCagr = recomputedMetrics?.benchmarkCagr ?? 14.2;
+    const activeRet = recomputedMetrics?.activeReturn ?? cagr - benchCagr;
     const ir = recomputedMetrics?.informationRatio ?? 0;
     const pf = recomputedMetrics?.profitFactor ?? 0;
     const sharpe = recomputedMetrics?.sharpe ?? 0;
@@ -285,12 +347,12 @@ export class ProductionScorecardService {
       bundleVal?.details.backtestValid &&
       cagr >= 10.0 &&
       activeRet > 0 &&
-      ir >= 0.40 &&
-      pf >= 1.20 &&
-      sharpe >= 0.80 &&
+      ir >= 0.4 &&
+      pf >= 1.2 &&
+      sharpe >= 0.8 &&
       maxDd >= -20.0 &&
       trades >= 30 &&
-      eqCount >= 252
+      eqCount >= 252,
     );
 
     criteria['BACKTEST_VALIDITY'] = {
@@ -305,7 +367,9 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (!economicPassed) {
-      blockingFailures.push('BACKTEST_VALIDITY: Strategy failed minimum institutional risk-adjusted return hurdle.');
+      blockingFailures.push(
+        'BACKTEST_VALIDITY: Strategy failed minimum institutional risk-adjusted return hurdle.',
+      );
       criticalBlockerFailures.push('BACKTEST_VALIDITY');
     }
 
@@ -317,7 +381,8 @@ export class ProductionScorecardService {
       riskEvidence = verifs.RISK_MODEL.details;
     } else if (runtimeStateOrReport.varVerification === true) {
       riskStatus = 'PASS';
-      riskEvidence = 'Downside deviation, annualized volatility, true 60d rolling max drawdown, beta vs NIFTY, gap risk, and historical expected shortfall calculated on historical candles.';
+      riskEvidence =
+        'Downside deviation, annualized volatility, true 60d rolling max drawdown, beta vs NIFTY, gap risk, and historical expected shortfall calculated on historical candles.';
     } else if (runtimeStateOrReport.varVerification === undefined) {
       riskStatus = 'NOT_ASSESSED';
       riskEvidence = 'Risk modeling not assessed.';
@@ -332,7 +397,9 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (riskStatus !== 'PASS') {
-      blockingFailures.push(`RISK_MODEL: Risk model verification ${riskStatus.toLowerCase()}.`);
+      blockingFailures.push(
+        `RISK_MODEL: Risk model verification ${riskStatus.toLowerCase()}.`,
+      );
       criticalBlockerFailures.push('RISK_MODEL');
     }
 
@@ -342,9 +409,13 @@ export class ProductionScorecardService {
     if (verifs?.PORTFOLIO_RISK) {
       portfolioStatus = verifs.PORTFOLIO_RISK.status;
       portfolioEvidence = verifs.PORTFOLIO_RISK.details;
-    } else if (runtimeStateOrReport.limitVerification === true || runtimeStateOrReport.exposureVerification === true) {
+    } else if (
+      runtimeStateOrReport.limitVerification === true ||
+      runtimeStateOrReport.exposureVerification === true
+    ) {
       portfolioStatus = 'PASS';
-      portfolioEvidence = 'Single-stock position sizing <= 10%, sector concentration <= 25%, and gross portfolio exposure <= 100% strictly enforced.';
+      portfolioEvidence =
+        'Single-stock position sizing <= 10%, sector concentration <= 25%, and gross portfolio exposure <= 100% strictly enforced.';
     } else if (runtimeStateOrReport.limitVerification === undefined) {
       portfolioStatus = 'NOT_ASSESSED';
       portfolioEvidence = 'Portfolio limits not assessed.';
@@ -359,13 +430,16 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (portfolioStatus !== 'PASS') {
-      blockingFailures.push(`PORTFOLIO_RISK: Portfolio risk limits ${portfolioStatus.toLowerCase()}.`);
+      blockingFailures.push(
+        `PORTFOLIO_RISK: Portfolio risk limits ${portfolioStatus.toLowerCase()}.`,
+      );
       criticalBlockerFailures.push('PORTFOLIO_RISK');
     }
 
     // 13. ARTIFACT_INTEGRITY [CRITICAL BLOCKER]
     let integrityPassed = false;
-    let integrityEvidence = 'Artifact missing, corrupted, or checksum validation failed.';
+    let integrityEvidence =
+      'Artifact missing, corrupted, or checksum validation failed.';
     if (artifact && artifact.checksum && artifact.id) {
       const computedSha = computeStrictArtifactChecksum(artifact);
       if (computedSha === artifact.checksum) {
@@ -385,13 +459,17 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (!integrityPassed) {
-      blockingFailures.push('ARTIFACT_INTEGRITY: Artifact integrity verification failed.');
+      blockingFailures.push(
+        'ARTIFACT_INTEGRITY: Artifact integrity verification failed.',
+      );
       criticalBlockerFailures.push('ARTIFACT_INTEGRITY');
     }
 
     // 14. MODEL_VERSIONING [CRITICAL BLOCKER]
     const expectedVersion = MODEL_CONFIG.VERSION; // '5.1.0'
-    const versionPassed = Boolean(artifact && artifact.modelVersion === expectedVersion);
+    const versionPassed = Boolean(
+      artifact && artifact.modelVersion === expectedVersion,
+    );
     criteria['MODEL_VERSIONING'] = {
       code: 'MODEL_VERSIONING',
       name: 'Model Identity & Semantic Versioning',
@@ -404,7 +482,9 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (!versionPassed) {
-      blockingFailures.push('MODEL_VERSIONING: Model version or identity mismatch.');
+      blockingFailures.push(
+        'MODEL_VERSIONING: Model version or identity mismatch.',
+      );
       criticalBlockerFailures.push('MODEL_VERSIONING');
     }
 
@@ -416,7 +496,8 @@ export class ProductionScorecardService {
       explainEvidence = verifs.EXPLAINABILITY.details;
     } else if (runtimeStateOrReport.attributionVerification === true) {
       explainStatus = 'PASS';
-      explainEvidence = 'Every live prediction exposes structured feature contributions, regime rationale, technical evidence, and invalidation stop conditions.';
+      explainEvidence =
+        'Every live prediction exposes structured feature contributions, regime rationale, technical evidence, and invalidation stop conditions.';
     } else if (runtimeStateOrReport.attributionVerification === undefined) {
       explainStatus = 'NOT_ASSESSED';
       explainEvidence = 'Explainability not assessed.';
@@ -429,7 +510,10 @@ export class ProductionScorecardService {
       evidence: explainEvidence,
       mandatory: true,
     };
-    if (explainStatus !== 'PASS') blockingFailures.push(`EXPLAINABILITY: Feature explainability ${explainStatus.toLowerCase()}.`);
+    if (explainStatus !== 'PASS')
+      blockingFailures.push(
+        `EXPLAINABILITY: Feature explainability ${explainStatus.toLowerCase()}.`,
+      );
 
     // 16. TEST_COVERAGE
     let testStatus: GateEvaluationStatus = 'FAIL';
@@ -439,7 +523,8 @@ export class ProductionScorecardService {
       testEvidence = verifs.TEST_COVERAGE.details;
     } else if (runtimeStateOrReport.allTestsPassing === true) {
       testStatus = 'PASS';
-      testEvidence = '100% test pass rate across all test suites covering leakage prevention, reconciliation invariants, and adversarial edge cases.';
+      testEvidence =
+        '100% test pass rate across all test suites covering leakage prevention, reconciliation invariants, and adversarial edge cases.';
     } else if (runtimeStateOrReport.allTestsPassing === undefined) {
       testStatus = 'NOT_ASSESSED';
       testEvidence = 'No test suite validation was performed.';
@@ -452,10 +537,15 @@ export class ProductionScorecardService {
       evidence: testEvidence,
       mandatory: true,
     };
-    if (testStatus !== 'PASS') blockingFailures.push(`TEST_COVERAGE: Test suite validation ${testStatus.toLowerCase()}.`);
+    if (testStatus !== 'PASS')
+      blockingFailures.push(
+        `TEST_COVERAGE: Test suite validation ${testStatus.toLowerCase()}.`,
+      );
 
     // 17. PRODUCTION_INFERENCE [CRITICAL BLOCKER]
-    const infPassed = Boolean(artifact !== null && bundleVal?.details.onnxModelsValid);
+    const infPassed = Boolean(
+      artifact !== null && bundleVal?.details.onnxModelsValid,
+    );
     criteria['PRODUCTION_INFERENCE'] = {
       code: 'PRODUCTION_INFERENCE',
       name: 'Runtime Inference Uses Verified Active Artifact & ONNX Engine',
@@ -468,7 +558,9 @@ export class ProductionScorecardService {
       isCriticalBlocker: true,
     };
     if (!infPassed) {
-      blockingFailures.push('PRODUCTION_INFERENCE: Runtime inference missing active artifact or ONNX models invalid.');
+      blockingFailures.push(
+        'PRODUCTION_INFERENCE: Runtime inference missing active artifact or ONNX models invalid.',
+      );
       criticalBlockerFailures.push('PRODUCTION_INFERENCE');
     }
 
@@ -480,7 +572,8 @@ export class ProductionScorecardService {
       failSafeEvidence = verifs.FAIL_SAFE_BEHAVIOR.details;
     } else if (runtimeStateOrReport.fallbackTriggerVerification === true) {
       failSafeStatus = 'PASS';
-      failSafeEvidence = 'When unpopulated or corrupted, system cleanly fails closed with pure null quantitative outputs without claiming false precision.';
+      failSafeEvidence =
+        'When unpopulated or corrupted, system cleanly fails closed with pure null quantitative outputs without claiming false precision.';
     } else if (runtimeStateOrReport.fallbackTriggerVerification === undefined) {
       failSafeStatus = 'NOT_ASSESSED';
       failSafeEvidence = 'Fail-safe behavior not assessed.';
@@ -493,22 +586,39 @@ export class ProductionScorecardService {
       evidence: failSafeEvidence,
       mandatory: true,
     };
-    if (failSafeStatus !== 'PASS') blockingFailures.push(`FAIL_SAFE_BEHAVIOR: Fail-safe verification ${failSafeStatus.toLowerCase()}.`);
+    if (failSafeStatus !== 'PASS')
+      blockingFailures.push(
+        `FAIL_SAFE_BEHAVIOR: Fail-safe verification ${failSafeStatus.toLowerCase()}.`,
+      );
 
     const criteriaList = Object.values(criteria);
     const passedCount = criteriaList.filter((c) => c.status === 'PASS').length;
     const failedCount = criteriaList.filter((c) => c.status === 'FAIL').length;
-    const notAssessableCount = criteriaList.filter((c) => c.status === 'NOT_ASSESSED').length;
-    const insufficientDataCount = criteriaList.filter((c) => c.status === 'INSUFFICIENT_DATA').length;
+    const notAssessableCount = criteriaList.filter(
+      (c) => c.status === 'NOT_ASSESSED',
+    ).length;
+    const insufficientDataCount = criteriaList.filter(
+      (c) => c.status === 'INSUFFICIENT_DATA',
+    ).length;
     const passRate = parseFloat((passedCount / criteriaList.length).toFixed(4));
 
     // Mandatory Blocker Rule: No non-critical pass rate can override a critical blocker
     const hasCriticalFailure = criticalBlockerFailures.length > 0;
-    const technicalMethodStatus: 'PASS' | 'FAIL' = (!hasCriticalFailure && criteriaList.every((c) => c.status === 'PASS')) ? 'PASS' : 'FAIL';
-    const economicStrategyStatus: 'PASS' | 'FAIL' = economicPassed ? 'PASS' : 'FAIL';
+    const technicalMethodStatus: 'PASS' | 'FAIL' =
+      !hasCriticalFailure && criteriaList.every((c) => c.status === 'PASS')
+        ? 'PASS'
+        : 'FAIL';
+    const economicStrategyStatus: 'PASS' | 'FAIL' = economicPassed
+      ? 'PASS'
+      : 'FAIL';
 
-    const productionReady = (!hasCriticalFailure && blockingFailures.length === 0 && economicStrategyStatus === 'PASS' && technicalMethodStatus === 'PASS');
-    const overallStatus: 'PRODUCTION_READY' | 'NOT_PRODUCTION_READY' = productionReady ? 'PRODUCTION_READY' : 'NOT_PRODUCTION_READY';
+    const productionReady =
+      !hasCriticalFailure &&
+      blockingFailures.length === 0 &&
+      economicStrategyStatus === 'PASS' &&
+      technicalMethodStatus === 'PASS';
+    const overallStatus: 'PRODUCTION_READY' | 'NOT_PRODUCTION_READY' =
+      productionReady ? 'PRODUCTION_READY' : 'NOT_PRODUCTION_READY';
 
     return {
       overallStatus,

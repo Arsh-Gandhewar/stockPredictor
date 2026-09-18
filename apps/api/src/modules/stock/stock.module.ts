@@ -13,4 +13,3 @@ import { PredictionModule } from '../prediction/prediction.module';
   exports: [StockService, YahooMarketDataProvider],
 })
 export class StockModule {}
-

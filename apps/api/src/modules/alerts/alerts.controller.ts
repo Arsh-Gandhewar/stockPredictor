@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Delete, Param, Body, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { AlertsService } from './alerts.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { CreateAlertDto } from './dto/create-alert.dto';
@@ -15,12 +24,14 @@ export class AlertsController {
   }
 
   @Post()
-  async createAlert(
-    @Req() req: any,
-    @Body() body: CreateAlertDto
-  ) {
+  async createAlert(@Req() req: any, @Body() body: CreateAlertDto) {
     const userId = req.userId || 'default_user';
-    return this.alertsService.createAlert(userId, body.ticker, body.targetPrice, body.condition);
+    return this.alertsService.createAlert(
+      userId,
+      body.ticker,
+      body.targetPrice,
+      body.condition,
+    );
   }
 
   @Delete(':id')

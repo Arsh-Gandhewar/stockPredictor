@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Query,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { PortfolioService } from './portfolio.service';
 import { TransactionType } from 'db';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -18,7 +26,7 @@ export class PortfolioController {
   @Get('trades')
   async getAllTrades(
     @Req() req: any,
-    @Query() query: GetTradesDto
+    @Query() query: GetTradesDto,
   ): Promise<any[]> {
     const userId = req.userId;
     return this.portfolioService.getAllTrades(
@@ -26,15 +34,12 @@ export class PortfolioController {
       query.ticker,
       query.type,
       query.page ?? 1,
-      query.limit ?? 50
+      query.limit ?? 50,
     );
   }
 
   @Post('trade')
-  async executeTrade(
-    @Req() req: any,
-    @Body() tradeData: ExecuteTradeDto
-  ) {
+  async executeTrade(@Req() req: any, @Body() tradeData: ExecuteTradeDto) {
     const userId = req.userId;
     return this.portfolioService.executeTrade(
       userId,
@@ -43,7 +48,7 @@ export class PortfolioController {
       tradeData.quantity,
       tradeData.orderType,
       tradeData.idempotencyKey,
-      tradeData.limitPrice
+      tradeData.limitPrice,
     );
   }
 

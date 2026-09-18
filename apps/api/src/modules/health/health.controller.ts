@@ -2,12 +2,13 @@ import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { DatabaseService } from '../../database/database.service';
 import { YahooMarketDataProvider } from '../stock/providers/yahoo-market-data.provider';
+import { verifyCalendarArtifact } from '../stock/data/nse-holidays.data';
 
 @Controller('health')
 export class HealthController {
   constructor(
     private readonly db: DatabaseService,
-    private readonly marketProvider: YahooMarketDataProvider
+    private readonly marketProvider: YahooMarketDataProvider,
   ) {}
 
   @Get()
@@ -31,9 +32,7 @@ export class HealthController {
     const isDegraded = dbStatus === 'UP' && marketHealth.status !== 'UP';
     const isDown = dbStatus === 'DOWN';
 
-    const statusCode = isDown
-      ? HttpStatus.SERVICE_UNAVAILABLE
-      : HttpStatus.OK;
+    const statusCode = isDown ? HttpStatus.SERVICE_UNAVAILABLE : HttpStatus.OK;
 
     return res.status(statusCode).json({
       status: isDown ? 'unhealthy' : isDegraded ? 'degraded' : 'healthy',
@@ -66,11 +65,65 @@ export class HealthController {
 
   @Get('readiness')
   async getReadiness(@Res() res: Response) {
+    const dependencies: Record<string, { ready: boolean; details?: string }> =
+      {};
+
+    // 1. Database Connectivity
     try {
       await this.db.client.$queryRaw`SELECT 1`;
-      return res.status(HttpStatus.OK).json({ status: 'ready', timestamp: new Date().toISOString() });
-    } catch (err) {
-      return res.status(HttpStatus.SERVICE_UNAVAILABLE).json({ status: 'not_ready' });
+      dependencies.database = { ready: true };
+    } catch (err: any) {
+      dependencies.database = {
+        ready: false,
+        details: 'Database query failed',
+      };
     }
+
+    // 2. Distributed Lock Table Availability
+    try {
+      await this.db.client.$queryRawUnsafe(
+        'SELECT lock_key FROM distributed_locks LIMIT 0',
+      );
+      dependencies.distributedLocks = { ready: true };
+    } catch (err: any) {
+      dependencies.distributedLocks = {
+        ready: false,
+        details: 'Distributed lock table unavailable',
+      };
+    }
+
+    // 3. Calendar Integrity
+    const calendarIntegrity = verifyCalendarArtifact();
+    dependencies.calendar = {
+      ready: calendarIntegrity.isValid,
+      details: calendarIntegrity.isValid
+        ? undefined
+        : calendarIntegrity.error || 'Calendar integrity verification failed',
+    };
+
+    // 4. Market Data Provider Connectivity
+    try {
+      const providerProbe = await this.marketProvider.probeHealth();
+      dependencies.marketProvider = {
+        ready: providerProbe.status !== 'DOWN',
+        details:
+          providerProbe.status === 'DOWN'
+            ? 'Market data provider probe failed'
+            : undefined,
+      };
+    } catch (err: any) {
+      dependencies.marketProvider = { ready: false, details: err.message };
+    }
+
+    const allReady = Object.values(dependencies).every((d) => d.ready);
+    const statusCode = allReady
+      ? HttpStatus.OK
+      : HttpStatus.SERVICE_UNAVAILABLE;
+
+    return res.status(statusCode).json({
+      status: allReady ? 'ready' : 'not_ready',
+      timestamp: new Date().toISOString(),
+      dependencies,
+    });
   }
 }

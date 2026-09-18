@@ -22,17 +22,60 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
-  // Apply Security Headers
+  // Apply Security Headers with Clerk/Next.js compatible CSP
   app.use(
     helmet({
-      contentSecurityPolicy: false,
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: [
+            "'self'",
+            "'unsafe-inline'",
+            'https://*.clerk.accounts.dev',
+            'https://challenges.cloudflare.com',
+          ],
+          connectSrc: [
+            "'self'",
+            'https://*.clerk.accounts.dev',
+            'https://api.clerk.com',
+          ],
+          imgSrc: [
+            "'self'",
+            'data:',
+            'https://img.clerk.com',
+            'https://images.unsplash.com',
+          ],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          fontSrc: ["'self'", 'data:'],
+          frameSrc: ["'self'", 'https://challenges.cloudflare.com'],
+          objectSrc: ["'none'"],
+          upgradeInsecureRequests:
+            process.env.NODE_ENV === 'production' ? [] : null,
+        },
+      },
       crossOriginEmbedderPolicy: false,
-    })
+    }),
   );
 
-  // Enable CORS
+  // Enable Strict CORS
+  const configuredOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
   app.enableCors({
-    origin: '*',
+    origin: (
+      origin: string | undefined,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
+      if (!origin) return callback(null, true);
+      if (
+        configuredOrigins.includes(origin) ||
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
+      return callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
@@ -43,7 +86,7 @@ async function bootstrap() {
       whitelist: true,
       transform: true,
       forbidNonWhitelisted: false,
-    })
+    }),
   );
 
   // Global Structured Logging & Exception Filters
@@ -52,6 +95,8 @@ async function bootstrap() {
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
-  logger.log(`🚀 QuantX Production API Gateway listening on http://127.0.0.1:${port}`);
+  logger.log(
+    `🚀 QuantX Production API Gateway listening on http://127.0.0.1:${port}`,
+  );
 }
 bootstrap();

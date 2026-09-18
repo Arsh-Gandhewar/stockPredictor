@@ -1,4 +1,13 @@
-import { Controller, Get, Param, Query, Inject, forwardRef } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Param,
+  Query,
+  Inject,
+  forwardRef,
+  Res,
+} from '@nestjs/common';
+import type { Response } from 'express';
 import { StockService } from './stock.service';
 import { QuantPredictionService } from '../prediction/prediction.service';
 
@@ -7,12 +16,38 @@ export class StockController {
   constructor(
     private readonly stockService: StockService,
     @Inject(forwardRef(() => QuantPredictionService))
-    private readonly predictionService: QuantPredictionService
+    private readonly predictionService: QuantPredictionService,
   ) {}
 
   @Get('market-summary')
-  async getMarketSummary() {
-    return this.stockService.getMarketSummary();
+  async getMarketSummary(
+    @Res({ passthrough: true }) res?: Response,
+    @Query('envelope') envelope?: string,
+  ) {
+    const summary = await this.stockService.getMarketSummary();
+    const totalExpected = 4;
+    const degradationState: 'complete' | 'partial' | 'unavailable' =
+      summary.length >= totalExpected
+        ? 'complete'
+        : summary.length > 0
+          ? 'partial'
+          : 'unavailable';
+
+    if (res && typeof (res as any).setHeader === 'function') {
+      (res as any).setHeader('X-Market-Summary-Degradation', degradationState);
+    }
+
+    if (envelope === 'true') {
+      return {
+        degradationState,
+        indices: summary,
+      };
+    }
+
+    return summary.map((item) => ({
+      ...item,
+      degradationState,
+    }));
   }
 
   @Get('market-status')
@@ -98,4 +133,3 @@ export class StockController {
     return this.predictionService.getPrediction(ticker);
   }
 }
-

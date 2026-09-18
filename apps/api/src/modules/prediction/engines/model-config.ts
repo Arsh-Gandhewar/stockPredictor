@@ -58,7 +58,7 @@ export const MODEL_CONFIG = {
     STOP_LOSS_ATR_MULTIPLIER: 2.0,
     TARGET_ATR_MULTIPLIER: 3.0,
     MIN_ASSET_VOLATILITY_FLOOR: 0.012, // 1.2% daily floor
-    MAX_ASSET_VOLATILITY_CAP: 0.08,   // 8.0% daily cap
+    MAX_ASSET_VOLATILITY_CAP: 0.08, // 8.0% daily cap
     DOWNSIDE_PROBABILITY_BOUNDS: {
       MIN: 0.05,
       MAX: 0.95,
@@ -67,8 +67,8 @@ export const MODEL_CONFIG = {
     KELLY_FRACTION: 0.25,
     MAX_PORTFOLIO_WEIGHT_PER_STOCK: 0.15, // 15% max allocation
     MIN_PORTFOLIO_WEIGHT_PER_STOCK: 0.02, // 2% min allocation
-    SECTOR_CONCENTRATION_LIMIT: 0.40,     // 40% max in single sector
-    POSITION_CONCENTRATION_LIMIT: 0.20,   // 20% concentration alert
+    SECTOR_CONCENTRATION_LIMIT: 0.4, // 40% max in single sector
+    POSITION_CONCENTRATION_LIMIT: 0.2, // 20% concentration alert
     // Multi-factor RiskScore component weights (normalized to 1.0)
     SCORE_WEIGHTS: {
       VOLATILITY: 0.18,
@@ -78,7 +78,7 @@ export const MODEL_CONFIG = {
       ATR_PERCENT: 0.12,
       GAP_RISK: 0.08,
       ILLIQUIDITY: 0.07,
-      TAIL_RISK: 0.10,
+      TAIL_RISK: 0.1,
     },
     // Dynamic Position Risk States (0 - 100)
     STATE_THRESHOLDS: {
@@ -96,45 +96,45 @@ export const MODEL_CONFIG = {
     INDIA_VIX_SYMBOL: '^INDIAVIX',
     VIX_PANIC_THRESHOLD: 28.0,
     VIX_ELEVATED_THRESHOLD: 22.0,
-    PANIC_VOLATILITY_ANNUALIZED: 0.30, // 30% annualized vol
+    PANIC_VOLATILITY_ANNUALIZED: 0.3, // 30% annualized vol
     BULL_VOLATILITY_CEILING: 0.25,
     BEAR_MOMENTUM_20D_THRESHOLD: -0.03, // -3% over 20d
     // Multipliers for directional signals conditioned on regime
     SIGNAL_MULTIPLIERS: {
       BULL_TREND: { UP: 1.15, DOWN: 0.85 },
-      BULL_VOLATILE: { UP: 1.00, DOWN: 0.95 },
-      SIDEWAYS: { UP: 1.00, DOWN: 1.00 },
-      BEAR_TREND: { UP: 0.80, DOWN: 1.20 },
-      PANIC: { UP: 0.50, DOWN: 1.35 },
+      BULL_VOLATILE: { UP: 1.0, DOWN: 0.95 },
+      SIDEWAYS: { UP: 1.0, DOWN: 1.0 },
+      BEAR_TREND: { UP: 0.8, DOWN: 1.2 },
+      PANIC: { UP: 0.5, DOWN: 1.35 },
     },
   },
 
   // ── Inference & Multi-Factor Blending ──
   INFERENCE: {
-    BASE_PRIOR_PROBABILITY: 0.50,
+    BASE_PRIOR_PROBABILITY: 0.5,
     HORIZONS: {
       '1d': {
         DAYS: 1,
-        MOMENTUM_WEIGHT: 0.40,
-        TREND_WEIGHT: 0.20,
+        MOMENTUM_WEIGHT: 0.4,
+        TREND_WEIGHT: 0.2,
         VOL_PENALTY_WEIGHT: -0.15,
         MEAN_REV_WEIGHT: 0.25,
         ESTIMATED_STD_SCALE: 1.0,
       },
       '5d': {
         DAYS: 5,
-        MOMENTUM_WEIGHT: 0.30,
+        MOMENTUM_WEIGHT: 0.3,
         TREND_WEIGHT: 0.35,
-        VOL_PENALTY_WEIGHT: -0.10,
+        VOL_PENALTY_WEIGHT: -0.1,
         MEAN_REV_WEIGHT: 0.25,
         ESTIMATED_STD_SCALE: 1.9,
       },
       '20d': {
         DAYS: 20,
         MOMENTUM_WEIGHT: 0.15,
-        TREND_WEIGHT: 0.50,
+        TREND_WEIGHT: 0.5,
         VOL_PENALTY_WEIGHT: -0.05,
-        MEAN_REV_WEIGHT: 0.30,
+        MEAN_REV_WEIGHT: 0.3,
         ESTIMATED_STD_SCALE: 3.6,
       },
     },
@@ -145,21 +145,21 @@ export const MODEL_CONFIG = {
   RANKING: {
     LOW_RISK: {
       MAX_DOWNSIDE_PROBABILITY: 0.55,
-      MAX_ATR_PERCENT: 0.040,
-      MAX_MAX_DRAWDOWN: 0.20,
-      WEIGHT_EXPECTED_VALUE: 0.30,
-      WEIGHT_SORTINO: 0.30,
+      MAX_ATR_PERCENT: 0.04,
+      MAX_MAX_DRAWDOWN: 0.2,
+      WEIGHT_EXPECTED_VALUE: 0.3,
+      WEIGHT_SORTINO: 0.3,
       WEIGHT_RISK_SAFETY: 0.25,
       WEIGHT_LIQUIDITY: 0.15,
     },
     HIGH_ALPHA: {
       MIN_ATR_PERCENT: 0.015,
       MIN_REWARD_RISK_RATIO: 1.4,
-      WEIGHT_EXPECTED_VALUE: 0.30,
+      WEIGHT_EXPECTED_VALUE: 0.3,
       WEIGHT_REWARD_RISK: 0.25,
-      WEIGHT_ASYMMETRY: 0.20,
+      WEIGHT_ASYMMETRY: 0.2,
       WEIGHT_MOMENTUM_CONFIRMATION: 0.15,
-      WEIGHT_RELATIVE_STRENGTH: 0.10,
+      WEIGHT_RELATIVE_STRENGTH: 0.1,
       PENALTY_EXCESSIVE_VOLATILITY: 0.15,
       PENALTY_DRAWDOWN: 0.15,
     },
@@ -181,27 +181,27 @@ export const MODEL_CONFIG = {
     },
     DOWNSIDE_THRESHOLDS: {
       STRONG_SELL: 0.75,
-      SELL: 0.60,
-      REDUCE: 0.50,
+      SELL: 0.6,
+      REDUCE: 0.5,
     },
-    DATA_QUALITY_MIN_SCORE: 0.50,
+    DATA_QUALITY_MIN_SCORE: 0.5,
   },
 
   // ── Institutional Trading Friction & Cost Modeling (NSE Reality) ──
   COSTS: {
-    BROKERAGE_PCT: 0.0003,      // 0.03% institutional / discount broker rate
-    STT_SELL_PCT: 0.0010,       // 0.10% Securities Transaction Tax on delivery sell
+    BROKERAGE_PCT: 0.0003, // 0.03% institutional / discount broker rate
+    STT_SELL_PCT: 0.001, // 0.10% Securities Transaction Tax on delivery sell
     EXCHANGE_TURNOVER_PCT: 0.0000345, // NSE turnover charges
-    SEBI_TURNOVER_PCT: 0.000001,      // SEBI regulatory charges
-    GST_ON_CHARGES_PCT: 0.18,   // 18% GST on brokerage + exchange fees
-    SLIPPAGE_BPS: 5,            // 5 bps (0.05%) average market execution slippage
+    SEBI_TURNOVER_PCT: 0.000001, // SEBI regulatory charges
+    GST_ON_CHARGES_PCT: 0.18, // 18% GST on brokerage + exchange fees
+    SLIPPAGE_BPS: 5, // 5 bps (0.05%) average market execution slippage
     // Total estimated one-way friction ~ 0.065%, round-trip ~ 0.13%
     TOTAL_ROUNDTRIP_FRICTION_PCT: 0.0013,
   },
 
   // ── Backtesting & Walk-Forward Validation Engine ──
   BACKTEST: {
-    EVALUATION_STEP_DAYS: 3,     // Evaluate every 3 trading days for richer trade universe
+    EVALUATION_STEP_DAYS: 3, // Evaluate every 3 trading days for richer trade universe
     WARMUP_PERIOD_DAYS: 55,
     LOOKBACK_DATA_RANGE: '1y',
     MIN_CANDLES_REQUIRED: 75,
@@ -209,9 +209,9 @@ export const MODEL_CONFIG = {
 
   // ── Portfolio Construction & Sizing Bounds ──
   PORTFOLIO: {
-    MAX_SINGLE_STOCK_WEIGHT: 0.10, // Max 10% allocation in any single stock (institutional standard)
+    MAX_SINGLE_STOCK_WEIGHT: 0.1, // Max 10% allocation in any single stock (institutional standard)
     SECTOR_CONCENTRATION_CAP: 0.25, // Max 25% allocation in any single sector
-    MAX_GROSS_EXPOSURE: 1.0,        // Max 100% gross exposure
+    MAX_GROSS_EXPOSURE: 1.0, // Max 100% gross exposure
     MAX_CONCURRENT_POSITIONS: 10,
     COST_PER_TRADE_PERCENT: 0.0013, // 0.13% round-trip friction
   },

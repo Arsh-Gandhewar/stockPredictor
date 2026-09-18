@@ -123,14 +123,24 @@ export class ModelArtifactService {
   private readonly logger = new Logger(ModelArtifactService.name);
 
   // Single Canonical Artifact Directory
-  private readonly baseArtifactDir = fs.existsSync(path.resolve(process.cwd(), 'data/artifacts/active/model-artifact.json'))
+  private readonly baseArtifactDir = fs.existsSync(
+    path.resolve(process.cwd(), 'data/artifacts/active/model-artifact.json'),
+  )
     ? path.resolve(process.cwd(), 'data/artifacts')
-    : fs.existsSync(path.resolve(process.cwd(), 'apps/api/data/artifacts/active/model-artifact.json'))
-    ? path.resolve(process.cwd(), 'apps/api/data/artifacts')
-    : path.resolve(__dirname, '../../../../data/artifacts');
+    : fs.existsSync(
+          path.resolve(
+            process.cwd(),
+            'apps/api/data/artifacts/active/model-artifact.json',
+          ),
+        )
+      ? path.resolve(process.cwd(), 'apps/api/data/artifacts')
+      : path.resolve(__dirname, '../../../../data/artifacts');
   private readonly activeDir = path.join(this.baseArtifactDir, 'active');
   private readonly versionsDir = path.join(this.baseArtifactDir, 'versions');
-  private readonly activeArtifactFile = path.join(this.activeDir, 'model-artifact.json');
+  private readonly activeArtifactFile = path.join(
+    this.activeDir,
+    'model-artifact.json',
+  );
 
   constructor() {
     this.ensureCanonicalDirectories();
@@ -184,7 +194,9 @@ export class ModelArtifactService {
         gateDetails.checksumValid = true;
       } else {
         gateDetails.checksumValid = false;
-        blockingReasons.push(`Checksum mismatch: expected ${computed}, got ${artifact.checksum}`);
+        blockingReasons.push(
+          `Checksum mismatch: expected ${computed}, got ${artifact.checksum}`,
+        );
       }
     } else {
       gateDetails.checksumValid = false;
@@ -192,13 +204,26 @@ export class ModelArtifactService {
     }
 
     // 2. Version & Schema Compatibility Gate
-    const modelVerMatch = artifact.modelVersion === ModelRegistry.getModelVersion() || artifact.modelVersion === '5.1.0' || artifact.modelVersion === '5.0.0';
-    const featureVerMatch = artifact.featureVersion?.includes('v5.1.0') || artifact.featureVersion?.includes('v5.0.0') || artifact.featureVersion?.includes('v4.0.0') || artifact.featureVersion?.includes('v2.0.0');
+    const modelVerMatch =
+      artifact.modelVersion === ModelRegistry.getModelVersion() ||
+      artifact.modelVersion === '5.1.0' ||
+      artifact.modelVersion === '5.0.0';
+    const featureVerMatch =
+      artifact.featureVersion?.includes('v5.1.0') ||
+      artifact.featureVersion?.includes('v5.0.0') ||
+      artifact.featureVersion?.includes('v4.0.0') ||
+      artifact.featureVersion?.includes('v2.0.0');
     if (modelVerMatch && featureVerMatch) {
       gateDetails.versionCompatibility = true;
     } else {
-      if (!modelVerMatch) blockingReasons.push(`Model version mismatch: expected ${ModelRegistry.getModelVersion()}, got ${artifact.modelVersion}`);
-      if (!featureVerMatch) blockingReasons.push(`Feature version mismatch: expected v5.1.0-multi-factor-25, got ${artifact.featureVersion}`);
+      if (!modelVerMatch)
+        blockingReasons.push(
+          `Model version mismatch: expected ${ModelRegistry.getModelVersion()}, got ${artifact.modelVersion}`,
+        );
+      if (!featureVerMatch)
+        blockingReasons.push(
+          `Feature version mismatch: expected v5.1.0-multi-factor-25, got ${artifact.featureVersion}`,
+        );
     }
 
     // 3. Chronological Date Range Integrity Gate (Train <= Val <= Test <= Holdout)
@@ -212,55 +237,103 @@ export class ModelArtifactService {
     const hEnd = new Date(artifact.holdoutEnd).getTime();
 
     if (
-      !isNaN(tStart) && !isNaN(tEnd) && !isNaN(vStart) && !isNaN(vEnd) &&
-      !isNaN(testStart) && !isNaN(testEnd) && !isNaN(hStart) && !isNaN(hEnd) &&
-      tStart <= tEnd && tEnd <= vStart && vStart <= vEnd && vEnd <= testStart && testStart <= testEnd && testEnd <= hStart && hStart <= hEnd
+      !isNaN(tStart) &&
+      !isNaN(tEnd) &&
+      !isNaN(vStart) &&
+      !isNaN(vEnd) &&
+      !isNaN(testStart) &&
+      !isNaN(testEnd) &&
+      !isNaN(hStart) &&
+      !isNaN(hEnd) &&
+      tStart <= tEnd &&
+      tEnd <= vStart &&
+      vStart <= vEnd &&
+      vEnd <= testStart &&
+      testStart <= testEnd &&
+      testEnd <= hStart &&
+      hStart <= hEnd
     ) {
       gateDetails.dateRangeIntegrity = true;
     } else {
-      blockingReasons.push('Invalid chronological partition date ordering (must satisfy Train <= Validation <= Test <= Holdout)');
+      blockingReasons.push(
+        'Invalid chronological partition date ordering (must satisfy Train <= Validation <= Test <= Holdout)',
+      );
     }
 
     // 4. Data Sufficiency Gate
     const calib5d = artifact.calibration?.['5d'];
     const knots = calib5d?.knots || artifact.calibrationKnots || [];
     const knotsCount = knots.length;
-    const rawSampleCount = calib5d?.metrics?.sampleCount ?? artifact.calibrationMetrics?.sampleCount ?? 0;
-    const calibSampleCount = rawSampleCount > 0 ? rawSampleCount : (knotsCount >= 5 ? 50 : 0);
+    const rawSampleCount =
+      calib5d?.metrics?.sampleCount ??
+      artifact.calibrationMetrics?.sampleCount ??
+      0;
+    const calibSampleCount =
+      rawSampleCount > 0 ? rawSampleCount : knotsCount >= 5 ? 50 : 0;
 
-    const calibSufficient = calibSampleCount >= STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES;
-    const knotsSufficient = knotsCount >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS;
+    const calibSufficient =
+      calibSampleCount >= STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES;
+    const knotsSufficient =
+      knotsCount >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS;
 
     if (calibSufficient && knotsSufficient) {
       gateDetails.sampleSufficiency = true;
     } else {
-      if (!calibSufficient) blockingReasons.push(`Insufficient calibration samples: got ${calibSampleCount}, minimum required is ${STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES}`);
-      if (!knotsSufficient) blockingReasons.push(`Insufficient calibration knots: got ${knotsCount}, minimum required is ${STATISTICAL_GATES.MIN_CALIBRATION_KNOTS}`);
+      if (!calibSufficient)
+        blockingReasons.push(
+          `Insufficient calibration samples: got ${calibSampleCount}, minimum required is ${STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES}`,
+        );
+      if (!knotsSufficient)
+        blockingReasons.push(
+          `Insufficient calibration knots: got ${knotsCount}, minimum required is ${STATISTICAL_GATES.MIN_CALIBRATION_KNOTS}`,
+        );
     }
 
     // 5. Calibration Quality Gate (Monotonicity & ECE Bound)
-    const isMonotonic = calib5d?.metrics?.isMonotonic ?? artifact.calibrationMetrics?.isMonotonic ?? true;
-    const ece = calib5d?.metrics?.ece ?? artifact.calibrationMetrics?.ece ?? 0.05;
+    const isMonotonic =
+      calib5d?.metrics?.isMonotonic ??
+      artifact.calibrationMetrics?.isMonotonic ??
+      true;
+    const ece =
+      calib5d?.metrics?.ece ?? artifact.calibrationMetrics?.ece ?? 0.05;
     const eceOk = ece <= STATISTICAL_GATES.MAX_CALIBRATION_ECE;
-    const calibStatus = calib5d?.status || artifact.calibrationStatus || 'FITTED_OUT_OF_SAMPLE';
+    const calibStatus =
+      calib5d?.status || artifact.calibrationStatus || 'FITTED_OUT_OF_SAMPLE';
 
     if (isMonotonic && eceOk && calibStatus === 'FITTED_OUT_OF_SAMPLE') {
       gateDetails.calibrationQuality = true;
     } else {
-      if (!isMonotonic) blockingReasons.push('Calibration knots violate non-decreasing monotonicity');
-      if (!eceOk) blockingReasons.push(`ECE (${(ece * 100).toFixed(1)}%) exceeds maximum threshold`);
-      if (calibStatus !== 'FITTED_OUT_OF_SAMPLE') blockingReasons.push(`Calibration status is ${calibStatus}`);
+      if (!isMonotonic)
+        blockingReasons.push(
+          'Calibration knots violate non-decreasing monotonicity',
+        );
+      if (!eceOk)
+        blockingReasons.push(
+          `ECE (${(ece * 100).toFixed(1)}%) exceeds maximum threshold`,
+        );
+      if (calibStatus !== 'FITTED_OUT_OF_SAMPLE')
+        blockingReasons.push(`Calibration status is ${calibStatus}`);
     }
 
     // 6. ONNX Model Hash Verification Gate
     if (artifact.onnxModels && typeof artifact.onnxModels === 'object') {
-      for (const [horizon, mInfo] of Object.entries(artifact.onnxModels as Record<string, any>)) {
-        if (typeof mInfo === 'object' && mInfo !== null && mInfo.filename && mInfo.sha256) {
+      for (const [horizon, mInfo] of Object.entries(artifact.onnxModels)) {
+        if (
+          typeof mInfo === 'object' &&
+          mInfo !== null &&
+          mInfo.filename &&
+          mInfo.sha256
+        ) {
           const mPath = path.join(this.activeDir, mInfo.filename);
           if (fs.existsSync(mPath)) {
-            const actualSha = crypto.createHash('sha256').update(fs.readFileSync(mPath)).digest('hex');
+            const actualSha = crypto
+              .createHash('sha256')
+              .update(fs.readFileSync(mPath))
+              .digest('hex');
             if (actualSha !== mInfo.sha256) {
-              blockingReasons.push(`ONNX file hash mismatch for ${horizon} (${mInfo.filename}): expected ${mInfo.sha256.slice(0, 12)}..., got ${actualSha.slice(0, 12)}...`);
+              blockingReasons.push(
+                `ONNX file hash mismatch for ${horizon} (${mInfo.filename}): expected ${mInfo.sha256.slice(0, 12)}..., got ${actualSha.slice(0, 12)}...`,
+              );
             }
           } else {
             blockingReasons.push(`ONNX file missing for ${horizon}: ${mPath}`);
@@ -276,11 +349,16 @@ export class ModelArtifactService {
   /**
    * Deterministically saves a model artifact to the canonical active location and versioned archive
    */
-  saveArtifact(rawArtifact: Omit<ModelArtifact, 'checksum' | 'id'>): { success: boolean; artifactId: string } {
+  saveArtifact(rawArtifact: Omit<ModelArtifact, 'checksum' | 'id'>): {
+    success: boolean;
+    artifactId: string;
+  } {
     try {
       this.ensureCanonicalDirectories();
 
-      const artifactId = (rawArtifact as any).id || `art_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
+      const artifactId =
+        (rawArtifact as any).id ||
+        `art_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
       const canonicalSchemaHash = getCanonicalFeatureSchemaHash();
       const existing = fs.existsSync(this.activeArtifactFile)
         ? JSON.parse(fs.readFileSync(this.activeArtifactFile, 'utf-8'))
@@ -290,8 +368,15 @@ export class ModelArtifactService {
       for (const h of ['1d', '5d', '20d'] as const) {
         const mPath = path.join(this.activeDir, `model_${h}.onnx`);
         if (fs.existsSync(mPath) && (!onnxModels[h] || !onnxModels[h].sha256)) {
-          const sha = crypto.createHash('sha256').update(fs.readFileSync(mPath)).digest('hex');
-          onnxModels[h] = { filename: `model_${h}.onnx`, sha256: sha, status: 'VALID' };
+          const sha = crypto
+            .createHash('sha256')
+            .update(fs.readFileSync(mPath))
+            .digest('hex');
+          onnxModels[h] = {
+            filename: `model_${h}.onnx`,
+            sha256: sha,
+            status: 'VALID',
+          };
         }
       }
 
@@ -309,13 +394,26 @@ export class ModelArtifactService {
       };
 
       // Save to active canonical file
-      fs.writeFileSync(this.activeArtifactFile, JSON.stringify(finalArtifact, null, 2), 'utf-8');
+      fs.writeFileSync(
+        this.activeArtifactFile,
+        JSON.stringify(finalArtifact, null, 2),
+        'utf-8',
+      );
 
       // Save to versioned archive
-      const versionFile = path.join(this.versionsDir, `${finalArtifact.modelVersion}_${artifactId}.json`);
-      fs.writeFileSync(versionFile, JSON.stringify(finalArtifact, null, 2), 'utf-8');
+      const versionFile = path.join(
+        this.versionsDir,
+        `${finalArtifact.modelVersion}_${artifactId}.json`,
+      );
+      fs.writeFileSync(
+        versionFile,
+        JSON.stringify(finalArtifact, null, 2),
+        'utf-8',
+      );
 
-      this.logger.log(`Model artifact persisted to ${this.activeArtifactFile} (ID: ${artifactId}, Checksum: ${checksum.slice(0, 8)})`);
+      this.logger.log(
+        `Model artifact persisted to ${this.activeArtifactFile} (ID: ${artifactId}, Checksum: ${checksum.slice(0, 8)})`,
+      );
       return { success: true, artifactId };
     } catch (err) {
       this.logger.warn(`Failed to persist model artifact: ${err}`);
@@ -326,7 +424,10 @@ export class ModelArtifactService {
   /**
    * Loads and validates the canonical active artifact.
    */
-  loadActiveArtifact(): { artifact: ModelArtifact | null; validation: ArtifactValidationResult } {
+  loadActiveArtifact(): {
+    artifact: ModelArtifact | null;
+    validation: ArtifactValidationResult;
+  } {
     try {
       if (fs.existsSync(this.activeArtifactFile)) {
         const raw = fs.readFileSync(this.activeArtifactFile, 'utf-8');
@@ -334,10 +435,14 @@ export class ModelArtifactService {
         const validation = this.validateArtifact(parsed);
 
         if (validation.isValid) {
-          this.logger.log(`Active canonical artifact verified and loaded (ID: ${parsed.id}, Model: ${parsed.modelVersion})`);
+          this.logger.log(
+            `Active canonical artifact verified and loaded (ID: ${parsed.id}, Model: ${parsed.modelVersion})`,
+          );
           return { artifact: parsed, validation };
         } else {
-          this.logger.warn(`Active artifact failed statistical validation gate: ${validation.blockingReasons.join('; ')}`);
+          this.logger.warn(
+            `Active artifact failed statistical validation gate: ${validation.blockingReasons.join('; ')}`,
+          );
           return { artifact: null, validation };
         }
       }

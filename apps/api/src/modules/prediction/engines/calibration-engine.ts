@@ -1,6 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ModelRegistry } from './model-registry';
-import { CalibrationGateMetrics, STATISTICAL_GATES } from './model-artifact.service';
+import {
+  CalibrationGateMetrics,
+  STATISTICAL_GATES,
+} from './model-artifact.service';
 
 export interface CalibrationBucket {
   binLower: number;
@@ -32,15 +35,15 @@ export class CalibrationEngine {
   // Pre-initialized with identity mapping, updated strictly when fitted on validation observations
   private isotonicKnots: [number, number][] = [
     [0.05, 0.05],
-    [0.10, 0.10],
-    [0.20, 0.20],
-    [0.30, 0.30],
-    [0.40, 0.40],
-    [0.50, 0.50],
-    [0.60, 0.60],
-    [0.70, 0.70],
-    [0.80, 0.80],
-    [0.90, 0.90],
+    [0.1, 0.1],
+    [0.2, 0.2],
+    [0.3, 0.3],
+    [0.4, 0.4],
+    [0.5, 0.5],
+    [0.6, 0.6],
+    [0.7, 0.7],
+    [0.8, 0.8],
+    [0.9, 0.9],
     [0.95, 0.95],
   ];
 
@@ -88,9 +91,14 @@ export class CalibrationEngine {
    * Includes anti-pathological shrinkage for sparse extreme tails.
    */
   fitPAV(samples: { prob: number; outcome: number }[]): [number, number][] {
-    if (!samples || samples.length < STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES) {
+    if (
+      !samples ||
+      samples.length < STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES
+    ) {
       this.isFittedFromValidation = false;
-      this.logger.warn(`PAV calibration rejected: insufficient validation samples (${samples?.length || 0} < ${STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES})`);
+      this.logger.warn(
+        `PAV calibration rejected: insufficient validation samples (${samples?.length || 0} < ${STATISTICAL_GATES.MIN_VALIDATION_CALIBRATION_SAMPLES})`,
+      );
       return this.isotonicKnots;
     }
 
@@ -127,14 +135,19 @@ export class CalibrationEngine {
         if (blocks[i].meanOutcome > blocks[i + 1].meanOutcome) {
           const totalWeight = blocks[i].weight + blocks[i + 1].weight;
           const mergedProb =
-            (blocks[i].meanProb * blocks[i].weight + blocks[i + 1].meanProb * blocks[i + 1].weight) /
+            (blocks[i].meanProb * blocks[i].weight +
+              blocks[i + 1].meanProb * blocks[i + 1].weight) /
             totalWeight;
           const mergedOutcome =
             (blocks[i].meanOutcome * blocks[i].weight +
               blocks[i + 1].meanOutcome * blocks[i + 1].weight) /
             totalWeight;
 
-          blocks[i] = { meanProb: mergedProb, meanOutcome: mergedOutcome, weight: totalWeight };
+          blocks[i] = {
+            meanProb: mergedProb,
+            meanOutcome: mergedOutcome,
+            weight: totalWeight,
+          };
           blocks.splice(i + 1, 1);
           violated = true;
           break;
@@ -148,7 +161,9 @@ export class CalibrationEngine {
       if (b.weight < STATISTICAL_GATES.MIN_TAIL_SAMPLES_FOR_EXTREME_PROB) {
         // Shrink towards prior base rate 0.50
         const priorWeight = 10;
-        rawOutcome = (b.meanOutcome * b.weight + 0.50 * priorWeight) / (b.weight + priorWeight);
+        rawOutcome =
+          (b.meanOutcome * b.weight + 0.5 * priorWeight) /
+          (b.weight + priorWeight);
       }
       return [
         parseFloat(Math.max(0.05, Math.min(0.95, b.meanProb)).toFixed(3)),
@@ -157,15 +172,26 @@ export class CalibrationEngine {
     });
 
     // Ensure continuous boundary anchors exist across the full [0.05, 0.95] spectrum
-    const fittedKnots: [number, number][] = [...rawKnots].sort((a, b) => a[0] - b[0]);
+    const fittedKnots: [number, number][] = [...rawKnots].sort(
+      (a, b) => a[0] - b[0],
+    );
     if (fittedKnots.length > 0) {
       if (fittedKnots[0][0] > 0.05) {
-        const yMin = Math.max(0.05, Math.min(fittedKnots[0][1], fittedKnots[0][1] - (fittedKnots[0][0] - 0.05) * 0.8));
+        const yMin = Math.max(
+          0.05,
+          Math.min(
+            fittedKnots[0][1],
+            fittedKnots[0][1] - (fittedKnots[0][0] - 0.05) * 0.8,
+          ),
+        );
         fittedKnots.unshift([0.05, parseFloat(yMin.toFixed(3))]);
       }
       if (fittedKnots[fittedKnots.length - 1][0] < 0.95) {
         const last = fittedKnots[fittedKnots.length - 1];
-        const yMax = Math.min(0.95, Math.max(last[1], last[1] + (0.95 - last[0]) * 0.8));
+        const yMax = Math.min(
+          0.95,
+          Math.max(last[1], last[1] + (0.95 - last[0]) * 0.8),
+        );
         fittedKnots.push([0.95, parseFloat(yMax.toFixed(3))]);
       }
 
@@ -186,7 +212,7 @@ export class CalibrationEngine {
       this.lastECE = this.calculateECE(samples);
 
       this.logger.log(
-        `Isotonic regression calibrated with ${samples.length} validation observations into ${fittedKnots.length} monotonic knots (ECE: ${(this.lastECE * 100).toFixed(1)}%).`
+        `Isotonic regression calibrated with ${samples.length} validation observations into ${fittedKnots.length} monotonic knots (ECE: ${(this.lastECE * 100).toFixed(1)}%).`,
       );
     } else {
       this.isFittedFromValidation = false;
@@ -195,18 +221,28 @@ export class CalibrationEngine {
     return this.isotonicKnots;
   }
 
-  calculateBrierScore(predictions: { prob: number; outcome: number }[]): number {
+  calculateBrierScore(
+    predictions: { prob: number; outcome: number }[],
+  ): number {
     if (!predictions || predictions.length === 0) return 0.16;
-    const sumSq = predictions.reduce((sum, p) => sum + Math.pow(p.prob - p.outcome, 2), 0);
+    const sumSq = predictions.reduce(
+      (sum, p) => sum + Math.pow(p.prob - p.outcome, 2),
+      0,
+    );
     return parseFloat((sumSq / predictions.length).toFixed(4));
   }
 
-  calculateECE(predictions: { prob: number; outcome: number }[], numBins: number = 8): number {
+  calculateECE(
+    predictions: { prob: number; outcome: number }[],
+    numBins: number = 8,
+  ): number {
     if (!predictions || predictions.length === 0) return 0.04;
-    const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from(
-      { length: numBins },
-      () => ({ probSum: 0, outcomeSum: 0, count: 0 })
-    );
+    const bins: { probSum: number; outcomeSum: number; count: number }[] =
+      Array.from({ length: numBins }, () => ({
+        probSum: 0,
+        outcomeSum: 0,
+        count: 0,
+      }));
 
     for (const p of predictions) {
       const binIdx = Math.min(numBins - 1, Math.floor(p.prob * numBins));
@@ -228,12 +264,17 @@ export class CalibrationEngine {
     return parseFloat(ece.toFixed(4));
   }
 
-  calculateMCE(predictions: { prob: number; outcome: number }[], numBins: number = 8): number {
+  calculateMCE(
+    predictions: { prob: number; outcome: number }[],
+    numBins: number = 8,
+  ): number {
     if (!predictions || predictions.length === 0) return 0.08;
-    const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from(
-      { length: numBins },
-      () => ({ probSum: 0, outcomeSum: 0, count: 0 })
-    );
+    const bins: { probSum: number; outcomeSum: number; count: number }[] =
+      Array.from({ length: numBins }, () => ({
+        probSum: 0,
+        outcomeSum: 0,
+        count: 0,
+      }));
 
     for (const p of predictions) {
       const binIdx = Math.min(numBins - 1, Math.floor(p.prob * numBins));
@@ -255,7 +296,9 @@ export class CalibrationEngine {
     return parseFloat(maxDiff.toFixed(4));
   }
 
-  getCalibrationGateMetrics(predictions: { prob: number; outcome: number }[]): CalibrationGateMetrics {
+  getCalibrationGateMetrics(
+    predictions: { prob: number; outcome: number }[],
+  ): CalibrationGateMetrics {
     const calibrated = (predictions || []).map((p) => ({
       prob: this.apply(p.prob),
       outcome: p.outcome,
@@ -287,20 +330,30 @@ export class CalibrationEngine {
     return this.isotonicKnots;
   }
 
-  setKnots(knots: [number, number][], isFitted: boolean = true, metrics?: CalibrationGateMetrics) {
+  setKnots(
+    knots: [number, number][],
+    isFitted: boolean = true,
+    metrics?: CalibrationGateMetrics,
+  ) {
     this.isotonicKnots = knots;
     this.isFittedFromValidation = isFitted;
 
     if (knots && knots.length > 0) {
-      const yValues = knots.map(k => k[1]);
+      const yValues = knots.map((k) => k[1]);
       const min = Math.min(...yValues);
       const max = Math.max(...yValues);
-      if (max - min < 0.10) {
+      if (max - min < 0.1) {
         this.isFittedFromValidation = false;
         this.isotonicKnots = [
-          [0.05, 0.05], [0.1, 0.1], [0.5, 0.5], [0.9, 0.9], [0.95, 0.95]
+          [0.05, 0.05],
+          [0.1, 0.1],
+          [0.5, 0.5],
+          [0.9, 0.9],
+          [0.95, 0.95],
         ];
-        this.logger.warn(`Calibration rejected: Loaded knots collapsed to near constant value. Reverting to identity.`);
+        this.logger.warn(
+          `Calibration rejected: Loaded knots collapsed to near constant value. Reverting to identity.`,
+        );
       }
     }
 
@@ -320,9 +373,11 @@ export class CalibrationEngine {
   }
 
   getCalibrationQuality(): 'HIGH' | 'MEDIUM' | 'POOR' | 'UNAVAILABLE' {
-    if (!this.isFittedFromValidation || isNaN(this.lastECE)) return 'UNAVAILABLE';
+    if (!this.isFittedFromValidation || isNaN(this.lastECE))
+      return 'UNAVAILABLE';
     if (this.lastECE <= 0.06 && this.lastFittedSampleCount >= 50) return 'HIGH';
-    if (this.lastECE <= 0.12 && this.lastFittedSampleCount >= 20) return 'MEDIUM';
+    if (this.lastECE <= 0.12 && this.lastFittedSampleCount >= 20)
+      return 'MEDIUM';
     return 'POOR';
   }
 

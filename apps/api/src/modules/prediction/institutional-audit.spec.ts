@@ -2,25 +2,41 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CalibrationEngine } from './engines/calibration-engine';
 import { ModelInferenceEngine } from './engines/model-inference';
 import { FeatureEngine } from './engines/feature-engine';
-import { ModelArtifactService, ModelArtifact } from './engines/model-artifact.service';
+import {
+  ModelArtifactService,
+  ModelArtifact,
+} from './engines/model-artifact.service';
 import { ProductionScorecardService } from './engines/production-scorecard';
 import { TransactionCostEngine } from './engines/transaction-costs';
-import { OHLCVCandle, MarketQuote } from '../stock/providers/market-data.provider.interface';
+import {
+  OHLCVCandle,
+  MarketQuote,
+} from '../stock/providers/market-data.provider.interface';
 
 // ── Independent Mathematical Recomputations (Not using production methods) ──
 
-function independentBrierScore(predictions: { prob: number; outcome: number }[]): number {
+function independentBrierScore(
+  predictions: { prob: number; outcome: number }[],
+): number {
   if (!predictions.length) return 0;
-  const sumSq = predictions.reduce((acc, p) => acc + Math.pow(p.prob - p.outcome, 2), 0);
+  const sumSq = predictions.reduce(
+    (acc, p) => acc + Math.pow(p.prob - p.outcome, 2),
+    0,
+  );
   return sumSq / predictions.length;
 }
 
-function independentECE(predictions: { prob: number; outcome: number }[], numBins: number = 8): number {
+function independentECE(
+  predictions: { prob: number; outcome: number }[],
+  numBins: number = 8,
+): number {
   if (!predictions.length) return 0;
-  const bins: { probSum: number; outcomeSum: number; count: number }[] = Array.from(
-    { length: numBins },
-    () => ({ probSum: 0, outcomeSum: 0, count: 0 })
-  );
+  const bins: { probSum: number; outcomeSum: number; count: number }[] =
+    Array.from({ length: numBins }, () => ({
+      probSum: 0,
+      outcomeSum: 0,
+      count: 0,
+    }));
 
   for (const p of predictions) {
     const binIdx = Math.min(numBins - 1, Math.floor(p.prob * numBins));
@@ -34,35 +50,48 @@ function independentECE(predictions: { prob: number; outcome: number }[], numBin
     if (b.count > 0) {
       const avgProb = b.probSum / b.count;
       const avgOutcome = b.outcomeSum / b.count;
-      totalEce += (b.count / predictions.length) * Math.abs(avgProb - avgOutcome);
+      totalEce +=
+        (b.count / predictions.length) * Math.abs(avgProb - avgOutcome);
     }
   }
   return totalEce;
 }
 
-function independentCAGR(initialEquity: number, finalEquity: number, totalDays: number): number {
+function independentCAGR(
+  initialEquity: number,
+  finalEquity: number,
+  totalDays: number,
+): number {
   if (totalDays <= 0 || initialEquity <= 0) return 0;
   const totalReturn = (finalEquity - initialEquity) / initialEquity;
   return (Math.pow(1 + totalReturn, 252 / totalDays) - 1) * 100;
 }
 
-function independentSharpe(dailyReturns: number[], riskFreeRateDaily: number = 0.065 / 252): number {
+function independentSharpe(
+  dailyReturns: number[],
+  riskFreeRateDaily: number = 0.065 / 252,
+): number {
   if (dailyReturns.length < 2) return 0;
   const excess = dailyReturns.map((r) => r - riskFreeRateDaily);
   const mean = excess.reduce((s, x) => s + x, 0) / excess.length;
-  const variance = excess.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / (excess.length - 1);
+  const variance =
+    excess.reduce((s, x) => s + Math.pow(x - mean, 2), 0) / (excess.length - 1);
   const std = Math.sqrt(variance);
   if (std === 0) return 0;
   return (mean / std) * Math.sqrt(252);
 }
 
-function independentSortino(dailyReturns: number[], riskFreeRateDaily: number = 0.065 / 252): number {
+function independentSortino(
+  dailyReturns: number[],
+  riskFreeRateDaily: number = 0.065 / 252,
+): number {
   if (dailyReturns.length < 2) return 0;
   const excess = dailyReturns.map((r) => r - riskFreeRateDaily);
   const mean = excess.reduce((s, x) => s + x, 0) / excess.length;
   const downside = dailyReturns.filter((r) => r < 0);
   if (!downside.length) return 0;
-  const downVariance = downside.reduce((s, x) => s + Math.pow(x, 2), 0) / downside.length;
+  const downVariance =
+    downside.reduce((s, x) => s + Math.pow(x, 2), 0) / downside.length;
   const downStd = Math.sqrt(downVariance);
   if (downStd === 0) return 0;
   return (mean / downStd) * Math.sqrt(252);
@@ -82,7 +111,9 @@ function independentMaxDrawdown(equityCurve: number[]): number {
 
 function independentProfitFactor(returns: number[]): number {
   const gains = returns.filter((r) => r > 0).reduce((s, r) => s + r, 0);
-  const losses = Math.abs(returns.filter((r) => r < 0).reduce((s, r) => s + r, 0));
+  const losses = Math.abs(
+    returns.filter((r) => r < 0).reduce((s, r) => s + r, 0),
+  );
   if (losses === 0) return gains > 0 ? 999 : 1.0;
   return gains / losses;
 }
@@ -109,28 +140,30 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
     inferenceEngine = module.get<ModelInferenceEngine>(ModelInferenceEngine);
     featureEngine = module.get<FeatureEngine>(FeatureEngine);
     artifactService = module.get<ModelArtifactService>(ModelArtifactService);
-    scorecardService = module.get<ProductionScorecardService>(ProductionScorecardService);
+    scorecardService = module.get<ProductionScorecardService>(
+      ProductionScorecardService,
+    );
   });
 
   describe('1. Independent Mathematical Invariant Recomputations', () => {
     it('reconciles Brier Score with independent formula', () => {
       const sample = [
-        { prob: 0.80, outcome: 1 },
-        { prob: 0.20, outcome: 0 },
-        { prob: 0.60, outcome: 1 },
-        { prob: 0.40, outcome: 0 },
+        { prob: 0.8, outcome: 1 },
+        { prob: 0.2, outcome: 0 },
+        { prob: 0.6, outcome: 1 },
+        { prob: 0.4, outcome: 0 },
       ];
       const prodBrier = calibrationEngine.calculateBrierScore(sample);
       const indepBrier = independentBrierScore(sample);
       expect(prodBrier).toBeCloseTo(indepBrier, 5);
-      expect(indepBrier).toBeCloseTo(0.10, 3);
+      expect(indepBrier).toBeCloseTo(0.1, 3);
     });
 
     it('reconciles Expected Calibration Error (ECE) with independent binned formula', () => {
       const sample = [
         { prob: 0.25, outcome: 0 },
-        { prob: 0.30, outcome: 0 },
-        { prob: 0.70, outcome: 1 },
+        { prob: 0.3, outcome: 0 },
+        { prob: 0.7, outcome: 1 },
         { prob: 0.85, outcome: 1 },
       ];
       const prodECE = calibrationEngine.calculateECE(sample, 8);
@@ -139,13 +172,19 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
     });
 
     it('reconciles CAGR, Sharpe, Sortino, Max Drawdown, and Profit Factor', () => {
-      const dailyReturns = [0.01, -0.005, 0.015, -0.002, 0.008, 0.004, -0.007, 0.012];
+      const dailyReturns = [
+        0.01, -0.005, 0.015, -0.002, 0.008, 0.004, -0.007, 0.012,
+      ];
       const equityCurve = [100];
       for (const r of dailyReturns) {
         equityCurve.push(equityCurve[equityCurve.length - 1] * (1 + r));
       }
 
-      const cagr = independentCAGR(equityCurve[0], equityCurve[equityCurve.length - 1], dailyReturns.length);
+      const cagr = independentCAGR(
+        equityCurve[0],
+        equityCurve[equityCurve.length - 1],
+        dailyReturns.length,
+      );
       const sharpe = independentSharpe(dailyReturns);
       const sortino = independentSortino(dailyReturns);
       const mdd = independentMaxDrawdown(equityCurve);
@@ -192,15 +231,28 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
         holdoutEnd: '2026-08-22',
         horizon: '5d' as const,
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE' as const,
-        calibrationKnots: [[0, 0], [0.5, 0.5], [1, 1]] as [number, number][],
-        calibrationMetrics: { brierScore: 0.40, ece: 0.50, mce: 0.80, sampleCount: 50, populatedBins: 4, isMonotonic: true },
+        calibrationKnots: [
+          [0, 0],
+          [0.5, 0.5],
+          [1, 1],
+        ] as [number, number][],
+        calibrationMetrics: {
+          brierScore: 0.4,
+          ece: 0.5,
+          mce: 0.8,
+          sampleCount: 50,
+          populatedBins: 4,
+          isMonotonic: true,
+        },
         createdAt: new Date().toISOString(),
         checksum: 'fake_checksum',
       } as unknown as ModelArtifact;
 
       const validation = artifactService.validateArtifact(invalidArtifact);
       expect(validation.isValid).toBe(false);
-      expect(validation.blockingReasons.some((r) => r.includes('ECE'))).toBe(true);
+      expect(validation.blockingReasons.some((r) => r.includes('ECE'))).toBe(
+        true,
+      );
     });
 
     it('Case 2: Rejects sparse empirical buckets (N < 5) from production inference', () => {
@@ -219,7 +271,7 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
         },
       ]);
 
-      const result = inferenceEngine.estimateExpectedReturn(0.60, '5d', 0.02);
+      const result = inferenceEngine.estimateExpectedReturn(0.6, '5d', 0.02);
       expect(result.method).toBe('INSUFFICIENT_DATA');
     });
 
@@ -255,18 +307,28 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
       const featOriginal = featureEngine.calculateFeatures(quote, pastSlice);
 
       const pastSliceCopy = baseCandles.slice(0, 50);
-      const featAfterFutureMutation = featureEngine.calculateFeatures(quote, pastSliceCopy);
+      const featAfterFutureMutation = featureEngine.calculateFeatures(
+        quote,
+        pastSliceCopy,
+      );
       expect(featAfterFutureMutation['rsi_14']).toBe(featOriginal['rsi_14']);
-      expect(featAfterFutureMutation['sma_50_dist']).toBe(featOriginal['sma_50_dist']);
+      expect(featAfterFutureMutation['sma_50_dist']).toBe(
+        featOriginal['sma_50_dist'],
+      );
     });
 
     it('Case 4: Rejects artifact with altered checksum', () => {
       const { artifact } = artifactService.loadActiveArtifact();
       if (artifact) {
-        const tampered = { ...artifact, checksum: 'corrupted_sha256_hash_12345' };
+        const tampered = {
+          ...artifact,
+          checksum: 'corrupted_sha256_hash_12345',
+        };
         const validation = artifactService.validateArtifact(tampered);
         expect(validation.isValid).toBe(false);
-        expect(validation.blockingReasons.some((r) => r.includes('Checksum'))).toBe(true);
+        expect(
+          validation.blockingReasons.some((r) => r.includes('Checksum')),
+        ).toBe(true);
       }
     });
 
@@ -286,14 +348,30 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
         holdoutEnd: '2026-08-22',
         horizon: '5d' as const,
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE' as const,
-        calibrationKnots: [[0, 0], [1, 1]] as [number, number][],
-        calibrationMetrics: { brierScore: 0.15, ece: 0.05, mce: 0.10, sampleCount: 50, populatedBins: 4, isMonotonic: true },
+        calibrationKnots: [
+          [0, 0],
+          [1, 1],
+        ] as [number, number][],
+        calibrationMetrics: {
+          brierScore: 0.15,
+          ece: 0.05,
+          mce: 0.1,
+          sampleCount: 50,
+          populatedBins: 4,
+          isMonotonic: true,
+        },
         createdAt: new Date().toISOString(),
         checksum: 'some_hash',
       } as unknown as ModelArtifact;
       const validation = artifactService.validateArtifact(contaminatedArtifact);
       expect(validation.isValid).toBe(false);
-      expect(validation.blockingReasons.some((r) => r.toLowerCase().includes('chronological') || r.toLowerCase().includes('date'))).toBe(true);
+      expect(
+        validation.blockingReasons.some(
+          (r) =>
+            r.toLowerCase().includes('chronological') ||
+            r.toLowerCase().includes('date'),
+        ),
+      ).toBe(true);
     });
 
     it('Case 6: Flags model version mismatch', () => {
@@ -312,14 +390,28 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
         holdoutEnd: '2026-08-22',
         horizon: '5d' as const,
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE' as const,
-        calibrationKnots: [[0, 0], [1, 1]] as [number, number][],
-        calibrationMetrics: { brierScore: 0.15, ece: 0.05, mce: 0.10, sampleCount: 50, populatedBins: 4, isMonotonic: true },
+        calibrationKnots: [
+          [0, 0],
+          [1, 1],
+        ] as [number, number][],
+        calibrationMetrics: {
+          brierScore: 0.15,
+          ece: 0.05,
+          mce: 0.1,
+          sampleCount: 50,
+          populatedBins: 4,
+          isMonotonic: true,
+        },
         createdAt: new Date().toISOString(),
         checksum: 'some_hash',
       } as unknown as ModelArtifact;
       const validation = artifactService.validateArtifact(wrongVersionArtifact);
       expect(validation.isValid).toBe(false);
-      expect(validation.blockingReasons.some((r) => r.toLowerCase().includes('version mismatch'))).toBe(true);
+      expect(
+        validation.blockingReasons.some((r) =>
+          r.toLowerCase().includes('version mismatch'),
+        ),
+      ).toBe(true);
     });
 
     it('Case 7: Scorecard blocks production readiness if calibration quality fails', () => {
@@ -331,30 +423,32 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
     it('Case 8: Scenario tree probabilities sum to exactly 1.0000', () => {
       const pred20d = 0.65;
       const downsideProb = 0.35;
-      const rawBull = Math.max(0.10, Math.min(0.45, pred20d * 0.45));
-      const rawBear = Math.max(0.10, Math.min(0.45, downsideProb * 0.45));
-      const rawBase = Math.max(0.10, 1 - rawBull - rawBear);
+      const rawBull = Math.max(0.1, Math.min(0.45, pred20d * 0.45));
+      const rawBear = Math.max(0.1, Math.min(0.45, downsideProb * 0.45));
+      const rawBase = Math.max(0.1, 1 - rawBull - rawBear);
       const sum = rawBull + rawBear + rawBase;
 
       const bull = parseFloat((rawBull / sum).toFixed(4));
       const bear = parseFloat((rawBear / sum).toFixed(4));
       const base = parseFloat((1.0 - bull - bear).toFixed(4));
 
-      expect(bull + bear + base).toBeCloseTo(1.0000, 4);
+      expect(bull + bear + base).toBeCloseTo(1.0, 4);
     });
 
     it('Case 9: Clean fail-closed behavior when artifact is missing', () => {
       inferenceEngine.setEmpiricalBuckets([]);
-      const est = inferenceEngine.estimateExpectedReturn(0.50, '5d', 0.02);
+      const est = inferenceEngine.estimateExpectedReturn(0.5, '5d', 0.02);
       expect(est.method).toBe('INSUFFICIENT_DATA');
       expect(est.uncertainty).toBeNull();
     });
 
     it('Case 10: Independently catches manually altered Sharpe ratio', () => {
-      const reportedSharpe = 3.50;
+      const reportedSharpe = 3.5;
       const actualDailyReturns = [0.001, -0.002, 0.0015, -0.001];
       const recalculatedSharpe = independentSharpe(actualDailyReturns);
-      expect(Math.abs(reportedSharpe - recalculatedSharpe)).toBeGreaterThan(1.0);
+      expect(Math.abs(reportedSharpe - recalculatedSharpe)).toBeGreaterThan(
+        1.0,
+      );
     });
 
     it('Case 11: Rejects non-monotonic calibration knots', () => {
@@ -371,14 +465,26 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
         holdoutStart: '2026-07-16',
         holdoutEnd: '2026-08-22',
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
-        calibrationKnots: [[0.1, 0.8], [0.9, 0.2]],
-        calibrationMetrics: { brierScore: 0.15, ece: 0.05, mce: 0.10, sampleCount: 50, populatedBins: 4, isMonotonic: false },
+        calibrationKnots: [
+          [0.1, 0.8],
+          [0.9, 0.2],
+        ],
+        calibrationMetrics: {
+          brierScore: 0.15,
+          ece: 0.05,
+          mce: 0.1,
+          sampleCount: 50,
+          populatedBins: 4,
+          isMonotonic: false,
+        },
         createdAt: new Date().toISOString(),
       } as unknown as ModelArtifact;
 
       const validation = artifactService.validateArtifact(nonMonotonicArtifact);
       expect(validation.isValid).toBe(false);
-      expect(validation.blockingReasons.some((r) => r.includes('monotonicity'))).toBe(true);
+      expect(
+        validation.blockingReasons.some((r) => r.includes('monotonicity')),
+      ).toBe(true);
     });
 
     it('Case 12: Rejects calibration with fewer than 2 knots', () => {
@@ -396,13 +502,22 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
         holdoutEnd: '2026-08-22',
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
         calibrationKnots: [[0.5, 0.5]],
-        calibrationMetrics: { brierScore: 0.15, ece: 0.05, mce: 0.10, sampleCount: 50, populatedBins: 4, isMonotonic: true },
+        calibrationMetrics: {
+          brierScore: 0.15,
+          ece: 0.05,
+          mce: 0.1,
+          sampleCount: 50,
+          populatedBins: 4,
+          isMonotonic: true,
+        },
         createdAt: new Date().toISOString(),
       } as unknown as ModelArtifact;
 
       const validation = artifactService.validateArtifact(singleKnotArtifact);
       expect(validation.isValid).toBe(false);
-      expect(validation.blockingReasons.some((r) => r.includes('knots'))).toBe(true);
+      expect(validation.blockingReasons.some((r) => r.includes('knots'))).toBe(
+        true,
+      );
     });
 
     it('Case 13: Rejects training with zero sample count', () => {
@@ -419,22 +534,37 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
         holdoutStart: '2026-07-16',
         holdoutEnd: '2026-08-22',
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
-        calibrationKnots: [[0, 0], [1, 1]],
-        calibrationMetrics: { brierScore: 0.25, ece: 0.05, mce: 0.10, sampleCount: 0, populatedBins: 0, isMonotonic: true },
+        calibrationKnots: [
+          [0, 0],
+          [1, 1],
+        ],
+        calibrationMetrics: {
+          brierScore: 0.25,
+          ece: 0.05,
+          mce: 0.1,
+          sampleCount: 0,
+          populatedBins: 0,
+          isMonotonic: true,
+        },
         createdAt: new Date().toISOString(),
       } as unknown as ModelArtifact;
 
       const validation = artifactService.validateArtifact(zeroSampleArtifact);
       expect(validation.isValid).toBe(false);
-      expect(validation.blockingReasons.some((r) => r.includes('samples'))).toBe(true);
+      expect(
+        validation.blockingReasons.some((r) => r.includes('samples')),
+      ).toBe(true);
     });
 
     it('Case 14: Centralized transaction cost parity (Brokerage, STT, Exchange, GST, Stamp, SEBI, Slippage)', () => {
       const costEngine = new TransactionCostEngine('BASE_COST');
       const roundTrip = costEngine.calculateRoundTripCostRate();
-      expect(roundTrip).toBeGreaterThan(0.0010);
-      expect(roundTrip).toBeLessThan(0.0030);
-      expect(costEngine.computeNetReturn(0.05)).toBeCloseTo(0.05 - roundTrip, 5);
+      expect(roundTrip).toBeGreaterThan(0.001);
+      expect(roundTrip).toBeLessThan(0.003);
+      expect(costEngine.computeNetReturn(0.05)).toBeCloseTo(
+        0.05 - roundTrip,
+        5,
+      );
     });
 
     it('Case 15: Conservative same-candle collision rule resolves Stop-Loss before Target', () => {
@@ -448,13 +578,24 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
       expect(hitTarget && hitStop).toBe(true);
 
       // Conservative rule: Stop loss triggers first
-      const executedPrice = (hitTarget && hitStop) ? stopLoss : (hitTarget ? target : stopLoss);
+      const executedPrice =
+        hitTarget && hitStop ? stopLoss : hitTarget ? target : stopLoss;
       expect(executedPrice).toBe(stopLoss);
     });
 
     it('Case 16: Rejects corrupted OHLCV candles (High < Low)', () => {
-      const corruptCandle = { time: 1000, open: 100, high: 90, low: 95, close: 92, volume: 1000 };
-      const isValid = corruptCandle.high >= corruptCandle.low && corruptCandle.high >= corruptCandle.open && corruptCandle.high >= corruptCandle.close;
+      const corruptCandle = {
+        time: 1000,
+        open: 100,
+        high: 90,
+        low: 95,
+        close: 92,
+        volume: 1000,
+      };
+      const isValid =
+        corruptCandle.high >= corruptCandle.low &&
+        corruptCandle.high >= corruptCandle.open &&
+        corruptCandle.high >= corruptCandle.close;
       expect(isValid).toBe(false);
     });
 
@@ -480,7 +621,9 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
     });
 
     it('Case 18: Rejects zero-volume trading day anomalies without proper flags', () => {
-      const zeroVolCandles: OHLCVCandle[] = [{ time: 1000, open: 100, high: 100, low: 100, close: 100, volume: 0 }];
+      const zeroVolCandles: OHLCVCandle[] = [
+        { time: 1000, open: 100, high: 100, low: 100, close: 100, volume: 0 },
+      ];
       expect(zeroVolCandles[0].volume).toBe(0);
     });
 
@@ -503,9 +646,16 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
     });
 
     it('Case 22: Rejects NaN / Inf inputs into ONNX feature vector', () => {
-      const rawFeatures: Record<string, number | null> = { rsi_14: NaN, sma_50_dist: Infinity };
-      const cleanedRsi = isNaN(Number(rawFeatures['rsi_14'])) ? 50.0 : Number(rawFeatures['rsi_14']);
-      const cleanedSma = !isFinite(Number(rawFeatures['sma_50_dist'])) ? 0.0 : Number(rawFeatures['sma_50_dist']);
+      const rawFeatures: Record<string, number | null> = {
+        rsi_14: NaN,
+        sma_50_dist: Infinity,
+      };
+      const cleanedRsi = isNaN(Number(rawFeatures['rsi_14']))
+        ? 50.0
+        : Number(rawFeatures['rsi_14']);
+      const cleanedSma = !isFinite(Number(rawFeatures['sma_50_dist']))
+        ? 0.0
+        : Number(rawFeatures['sma_50_dist']);
       expect(cleanedRsi).toBe(50.0);
       expect(cleanedSma).toBe(0.0);
     });
@@ -519,7 +669,9 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
     it('Case 24: Verifies survivorship bias disclosure present in all manifest exports', () => {
       const { artifact } = artifactService.loadActiveArtifact();
       if (artifact) {
-        expect(['RESOLVED', 'NOT_FULLY_RESOLVED']).toContain(artifact.survivorshipStatus);
+        expect(['RESOLVED', 'NOT_FULLY_RESOLVED']).toContain(
+          artifact.survivorshipStatus,
+        );
         expect(artifact.survivorshipDisclosure).toBeDefined();
       }
     });
@@ -537,9 +689,10 @@ describe('QuantX Final Institutional-Grade Quantitative Audit Suite', () => {
     it('evaluates all 18 criteria programmatically on valid active artifact', () => {
       const { artifact, validation } = artifactService.loadActiveArtifact();
       if (artifact && artifact.gateDetails && validation) {
-        (artifact.gateDetails as any).checksumValid = validation.gateDetails.checksumValid;
+        (artifact.gateDetails as any).checksumValid =
+          validation.gateDetails.checksumValid;
       }
-      
+
       const scorecard = scorecardService.evaluateScorecard(artifact, {
         hasValidCandles: true,
         leakageFree: true,

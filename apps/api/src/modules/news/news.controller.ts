@@ -9,7 +9,7 @@ export class NewsController {
   async getMarketNews(
     @Query('category') category?: string,
     @Query('q') query?: string,
-    @Query('limit') limit: number = 30
+    @Query('limit') limit: number = 30,
   ) {
     return this.newsService.getMarketNews(category, query, limit);
   }

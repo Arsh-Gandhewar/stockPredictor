@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Delete, Param, Body, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Param,
+  Body,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { WatchlistService } from './watchlist.service';
 import { AuthGuard } from '../../common/guards/auth.guard';
 import { AddWatchlistDto } from './dto/add-watchlist.dto';

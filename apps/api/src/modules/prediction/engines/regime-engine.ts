@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { MarketRegime } from '../prediction.types';
-import { MarketIndexBenchmark, OHLCVCandle } from '../../stock/providers/market-data.provider.interface';
+import {
+  MarketIndexBenchmark,
+  OHLCVCandle,
+} from '../../stock/providers/market-data.provider.interface';
 import { MODEL_CONFIG } from './model-config';
 
 export interface RegimeDetails {
@@ -25,7 +28,7 @@ export class RegimeEngine {
    */
   detectRegime(
     indices: MarketIndexBenchmark[],
-    niftyCandles?: OHLCVCandle[]
+    niftyCandles?: OHLCVCandle[],
   ): MarketRegime {
     const details = this.evaluateRegime(indices, niftyCandles);
     return details.regime;
@@ -33,10 +36,10 @@ export class RegimeEngine {
 
   evaluateRegime(
     indices: MarketIndexBenchmark[],
-    niftyCandles?: OHLCVCandle[]
+    niftyCandles?: OHLCVCandle[],
   ): RegimeDetails {
-    const nifty = indices.find(i => i.symbol === '^NSEI');
-    const vix = indices.find(i => i.symbol === '^INDIAVIX');
+    const nifty = indices.find((i) => i.symbol === '^NSEI');
+    const vix = indices.find((i) => i.symbol === '^INDIAVIX');
 
     const vixValue = vix ? vix.value : 14.5; // typical baseline VIX
     const niftyChange = nifty ? nifty.changePercent : 0;
@@ -47,7 +50,7 @@ export class RegimeEngine {
     let momentum20d = niftyChange / 100;
 
     if (niftyCandles && niftyCandles.length >= 50) {
-      const closes = niftyCandles.map(c => c.close);
+      const closes = niftyCandles.map((c) => c.close);
       const len = closes.length;
       const currentClose = nifty ? nifty.value : closes[len - 1];
 
@@ -70,28 +73,37 @@ export class RegimeEngine {
       }
       if (returns.length > 0) {
         const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
-        const variance = returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / returns.length;
+        const variance =
+          returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) /
+          returns.length;
         niftyVolAnnualized = Math.sqrt(variance) * Math.sqrt(252);
       }
     }
 
     const isPanicVix = vixValue >= MODEL_CONFIG.REGIME.VIX_PANIC_THRESHOLD;
-    const isElevatedVix = vixValue >= MODEL_CONFIG.REGIME.VIX_ELEVATED_THRESHOLD;
-    const isHighVol = niftyVolAnnualized >= MODEL_CONFIG.REGIME.PANIC_VOLATILITY_ANNUALIZED;
+    const isElevatedVix =
+      vixValue >= MODEL_CONFIG.REGIME.VIX_ELEVATED_THRESHOLD;
+    const isHighVol =
+      niftyVolAnnualized >= MODEL_CONFIG.REGIME.PANIC_VOLATILITY_ANNUALIZED;
 
     // Classification Decision Tree
     if (isPanicVix || (isHighVol && !isAboveSma50)) {
       return {
         regime: 'PANIC',
-        confidence: 0.90,
+        confidence: 0.9,
         niftyTrend: 'BEARISH',
         niftyVolAnnualized,
         vixLevel: vixValue,
-        description: 'Elevated market panic: high volatility and liquidity discount active.',
+        description:
+          'Elevated market panic: high volatility and liquidity discount active.',
       };
     }
 
-    if (!isAboveSma50 && !isAboveSma20 && momentum20d < MODEL_CONFIG.REGIME.BEAR_MOMENTUM_20D_THRESHOLD) {
+    if (
+      !isAboveSma50 &&
+      !isAboveSma20 &&
+      momentum20d < MODEL_CONFIG.REGIME.BEAR_MOMENTUM_20D_THRESHOLD
+    ) {
       return {
         regime: 'BEAR_TREND',
         confidence: 0.85,
@@ -102,14 +114,19 @@ export class RegimeEngine {
       };
     }
 
-    if (isAboveSma50 && (isElevatedVix || niftyVolAnnualized > MODEL_CONFIG.REGIME.BULL_VOLATILITY_CEILING)) {
+    if (
+      isAboveSma50 &&
+      (isElevatedVix ||
+        niftyVolAnnualized > MODEL_CONFIG.REGIME.BULL_VOLATILITY_CEILING)
+    ) {
       return {
         regime: 'BULL_VOLATILE',
-        confidence: 0.80,
+        confidence: 0.8,
         niftyTrend: 'BULLISH',
         niftyVolAnnualized,
         vixLevel: vixValue,
-        description: 'Bullish trend with elevated volatility expansion and rotation.',
+        description:
+          'Bullish trend with elevated volatility expansion and rotation.',
       };
     }
 
@@ -120,7 +137,8 @@ export class RegimeEngine {
         niftyTrend: 'BULLISH',
         niftyVolAnnualized,
         vixLevel: vixValue,
-        description: 'Constructive bull market with orderly trend and subdued volatility.',
+        description:
+          'Constructive bull market with orderly trend and subdued volatility.',
       };
     }
 

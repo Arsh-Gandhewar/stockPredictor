@@ -8,7 +8,7 @@ export interface MarketQuote {
   dayLow: number;
   prevClose: number;
   open: number;
-  volume: number;
+  volume: number | null;
   marketCap?: number;
   pe?: number;
   weekHigh52?: number;
@@ -33,7 +33,13 @@ export interface OHLCVCandle {
 }
 
 export interface MarketStatus {
-  status: 'PRE_OPEN' | 'OPEN' | 'CLOSED' | 'HOLIDAY' | 'CALENDAR_STALE' | 'CALENDAR_CORRUPTED';
+  status:
+    | 'PRE_OPEN'
+    | 'OPEN'
+    | 'CLOSED'
+    | 'HOLIDAY'
+    | 'CALENDAR_STALE'
+    | 'CALENDAR_CORRUPTED';
   sessionType?:
     | 'REGULAR'
     | 'PRE_MARKET'
@@ -44,6 +50,7 @@ export interface MarketStatus {
     | 'CLOSED'
     | 'CALENDAR_STALE'
     | 'CALENDAR_CORRUPTED';
+  isTradable?: boolean;
   holidayName?: string;
   isCalendarStale?: boolean;
   calendarVersion?: string;

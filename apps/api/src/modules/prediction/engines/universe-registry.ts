@@ -3,7 +3,8 @@ import * as crypto from 'crypto';
 
 export interface UniverseCorporateEvent {
   ticker: string;
-  eventType: 'ADDITION' | 'DELETION' | 'DELISTING' | 'NAME_CHANGE' | 'SUSPENSION';
+  eventType:
+    'ADDITION' | 'DELETION' | 'DELISTING' | 'NAME_CHANGE' | 'SUSPENSION';
   effectiveDate: string; // ISO date YYYY-MM-DD
   terminalReturn?: number; // Realized return on delisting/exit
   oldTicker?: string;
@@ -75,7 +76,8 @@ export class UniverseRegistry {
       eventType: 'DELISTING',
       effectiveDate: '2021-06-14',
       terminalReturn: -1.0, // Total loss for equity holders on insolvency resolution
-      notes: 'Insolvency and Bankruptcy Code resolution; equity delisted with zero terminal value',
+      notes:
+        'Insolvency and Bankruptcy Code resolution; equity delisted with zero terminal value',
     },
     {
       ticker: 'YESBANK.NS',
@@ -88,12 +90,36 @@ export class UniverseRegistry {
 
   // Base index universe prior to dynamic events
   private static readonly BASE_UNIVERSE: string[] = [
-    'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS', 'ICICIBANK.NS',
-    'HINDUNILVR.NS', 'ITC.NS', 'SBIN.NS', 'BHARTIARTL.NS', 'KOTAKBANK.NS',
-    'LT.NS', 'AXISBANK.NS', 'ASIANPAINT.NS', 'MARUTI.NS', 'TITAN.NS',
-    'BAJFINANCE.NS', 'SUNPHARMA.NS', 'ULTRACEMCO.NS', 'TATASTEEL.NS', 'NTPC.NS',
-    'POWERGRID.NS', 'M&M.NS', 'WIPRO.NS', 'HCLTECH.NS', 'ONGC.NS',
-    'JSWSTEEL.NS', 'ADANIENT.NS', 'ADANIPORTS.NS', 'COALINDIA.NS', 'BAJAJFINSV.NS',
+    'RELIANCE.NS',
+    'TCS.NS',
+    'HDFCBANK.NS',
+    'INFY.NS',
+    'ICICIBANK.NS',
+    'HINDUNILVR.NS',
+    'ITC.NS',
+    'SBIN.NS',
+    'BHARTIARTL.NS',
+    'KOTAKBANK.NS',
+    'LT.NS',
+    'AXISBANK.NS',
+    'ASIANPAINT.NS',
+    'MARUTI.NS',
+    'TITAN.NS',
+    'BAJFINANCE.NS',
+    'SUNPHARMA.NS',
+    'ULTRACEMCO.NS',
+    'TATASTEEL.NS',
+    'NTPC.NS',
+    'POWERGRID.NS',
+    'M&M.NS',
+    'WIPRO.NS',
+    'HCLTECH.NS',
+    'ONGC.NS',
+    'JSWSTEEL.NS',
+    'ADANIENT.NS',
+    'ADANIPORTS.NS',
+    'COALINDIA.NS',
+    'BAJAJFINSV.NS',
   ];
 
   /**
@@ -101,7 +127,10 @@ export class UniverseRegistry {
    * Guarantees zero survivorship bias: delisted, added, and excluded stocks are strictly time-bound.
    */
   public getUniverseAt(date: string | Date): string[] {
-    const targetDate = typeof date === 'string' ? date.slice(0, 10) : date.toISOString().slice(0, 10);
+    const targetDate =
+      typeof date === 'string'
+        ? date.slice(0, 10)
+        : date.toISOString().slice(0, 10);
     const universe = new Set<string>(UniverseRegistry.BASE_UNIVERSE);
 
     // Apply corporate actions up to targetDate
@@ -109,9 +138,16 @@ export class UniverseRegistry {
       if (event.effectiveDate <= targetDate) {
         if (event.eventType === 'ADDITION') {
           universe.add(event.ticker);
-        } else if (event.eventType === 'DELETION' || event.eventType === 'DELISTING') {
+        } else if (
+          event.eventType === 'DELETION' ||
+          event.eventType === 'DELISTING'
+        ) {
           universe.delete(event.ticker);
-        } else if (event.eventType === 'NAME_CHANGE' && event.oldTicker && event.newTicker) {
+        } else if (
+          event.eventType === 'NAME_CHANGE' &&
+          event.oldTicker &&
+          event.newTicker
+        ) {
           universe.delete(event.oldTicker);
           universe.add(event.newTicker);
         }
@@ -122,7 +158,11 @@ export class UniverseRegistry {
           universe.delete(event.ticker);
         }
         // If a deletion happens in the future, ticker WAS still in the universe today
-        if (event.eventType === 'DELETION' && event.ticker !== 'DHFL.NS' && event.ticker !== 'YESBANK.NS') {
+        if (
+          event.eventType === 'DELETION' &&
+          event.ticker !== 'DHFL.NS' &&
+          event.ticker !== 'YESBANK.NS'
+        ) {
           universe.add(event.ticker);
         }
       }
@@ -143,7 +183,9 @@ export class UniverseRegistry {
   public getLineageHash(): string {
     const canonical = JSON.stringify({
       base: UniverseRegistry.BASE_UNIVERSE.sort(),
-      events: UniverseRegistry.CORPORATE_EVENTS.sort((a, b) => a.effectiveDate.localeCompare(b.effectiveDate)),
+      events: UniverseRegistry.CORPORATE_EVENTS.sort((a, b) =>
+        a.effectiveDate.localeCompare(b.effectiveDate),
+      ),
     });
     return crypto.createHash('sha256').update(canonical).digest('hex');
   }

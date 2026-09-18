@@ -23,6 +23,7 @@ describe('Tier 4: Auto-Sell Freshness & Stale Quote Rejection Spec', () => {
         position: {
           findUnique: jest.fn(),
           delete: jest.fn(),
+          deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
           update: jest.fn(),
         },
         transaction: {
@@ -161,6 +162,8 @@ describe('Tier 4: Auto-Sell Freshness & Stale Quote Rejection Spec', () => {
     mockDb.client.position.findUnique.mockResolvedValue({
       id: 'pos_auto_1',
       quantity: 10,
+      averagePrice: 2800.0,
+      updatedAt: new Date('2026-09-10T10:00:00.000Z'),
     });
 
     mockDb.client.transaction.create.mockResolvedValue({
@@ -184,7 +187,7 @@ describe('Tier 4: Auto-Sell Freshness & Stale Quote Rejection Spec', () => {
           orderType: OrderType.MARKET,
           reason: 'AUTO_STOP_LOSS',
         }),
-      })
+      }),
     );
   });
 
@@ -203,6 +206,8 @@ describe('Tier 4: Auto-Sell Freshness & Stale Quote Rejection Spec', () => {
     mockDb.client.position.findUnique.mockResolvedValue({
       id: 'pos_auto_1',
       quantity: 10,
+      averagePrice: 2800.0,
+      updatedAt: new Date('2026-09-10T10:00:00.000Z'),
     });
 
     mockDb.client.transaction.create.mockResolvedValue({
@@ -218,5 +223,31 @@ describe('Tier 4: Auto-Sell Freshness & Stale Quote Rejection Spec', () => {
     expect(result.executedTrades.length).toBe(1);
     expect(result.executedTrades[0].reason).toBe('AUTO_TARGET_PROFIT');
     expect(result.executedTrades[0].executionPrice).toBe(3150.0);
+  });
+
+  it('should abort auto-sell when position quantity or updatedAt mutated between signal and execution (OCC race condition)', async () => {
+    mockDb.client.portfolio.findFirst.mockResolvedValue(basePortfolio);
+    const freshDate = new Date(Date.now() - 30 * 1000).toISOString();
+
+    mockStockService.getQuotes.mockResolvedValue([
+      {
+        ticker: 'RELIANCE.NS',
+        price: 2550.0, // Below stop loss (2600)
+        sourceTimestamp: freshDate,
+      },
+    ]);
+
+    // Position was mutated concurrently between signal generation (qty=10) and execution (qty=5)
+    mockDb.client.position.findUnique.mockResolvedValue({
+      id: 'pos_auto_1',
+      quantity: 5, // Quantity changed from 10 to 5!
+      averagePrice: 2800.0,
+      updatedAt: new Date('2026-09-10T10:05:00.000Z'),
+    });
+
+    const result = await service.evaluateAndExecuteAutoSell('user_auto_sell');
+    expect(result.executedTrades.length).toBe(0);
+    expect(mockDb.client.position.deleteMany).not.toHaveBeenCalled();
+    expect(mockDb.client.transaction.create).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,10 @@
-import { ExecutionContext, UnauthorizedException, ForbiddenException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
+import {
+  ExecutionContext,
+  UnauthorizedException,
+  ForbiddenException,
+  ConflictException,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import * as crypto from 'crypto';
 import { AuthGuard } from '../../common/guards/auth.guard';
@@ -31,16 +37,26 @@ describe('Tier 2: Institutional Auth Matrix & Role Permutations Spec', () => {
     rolesGuard = new RolesGuard(reflector);
   });
 
-  function createSignedJwt(payload: Record<string, any>, secret: string = testSecret): string {
+  function createSignedJwt(
+    payload: Record<string, any>,
+    secret: string = testSecret,
+  ): string {
     const header = { alg: 'HS256', typ: 'JWT' };
     const hB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
     const pB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
     const signingInput = `${hB64}.${pB64}`;
-    const sig = crypto.createHmac('sha256', secret).update(signingInput).digest('base64url');
+    const sig = crypto
+      .createHmac('sha256', secret)
+      .update(signingInput)
+      .digest('base64url');
     return `${signingInput}.${sig}`;
   }
 
-  function mockContext(req: Record<string, any>, handler?: any, targetClass?: any): ExecutionContext {
+  function mockContext(
+    req: Record<string, any>,
+    handler?: any,
+    targetClass?: any,
+  ): ExecutionContext {
     return {
       switchToHttp: () => ({
         getRequest: () => req,
@@ -77,7 +93,7 @@ describe('Tier 2: Institutional Auth Matrix & Role Permutations Spec', () => {
           iat: Math.floor(Date.now() / 1000) - 10,
           exp: Math.floor(Date.now() / 1000) + 3600,
         },
-        'wrong_secret_tampered'
+        'wrong_secret_tampered',
       );
       const req = { headers: { authorization: `Bearer ${token}` } };
       const ctx = mockContext(req);
@@ -230,27 +246,38 @@ describe('Tier 2: Institutional Auth Matrix & Role Permutations Spec', () => {
       'getPrediction',
     ];
 
-    it.each(protectedMethods)('protected endpoint %s should require ADMIN or SERVICE role', (methodName) => {
-      const target = PredictionController.prototype[methodName];
-      expect(target).toBeDefined();
-      const requiredRoles = reflector.get(ROLES_KEY, target);
-      expect(requiredRoles).toBeDefined();
-      expect(requiredRoles).toEqual(expect.arrayContaining(['ADMIN', 'SERVICE']));
-    });
+    it.each(protectedMethods)(
+      'protected endpoint %s should require ADMIN or SERVICE role',
+      (methodName) => {
+        const target = PredictionController.prototype[methodName];
+        expect(target).toBeDefined();
+        const requiredRoles = reflector.get(ROLES_KEY, target);
+        expect(requiredRoles).toBeDefined();
+        expect(requiredRoles).toEqual(
+          expect.arrayContaining(['ADMIN', 'SERVICE']),
+        );
+      },
+    );
 
-    it.each(publicMethods)('public client endpoint %s should NOT require ADMIN or SERVICE role', (methodName) => {
-      const target = PredictionController.prototype[methodName];
-      expect(target).toBeDefined();
-      const requiredRoles = reflector.get(ROLES_KEY, target);
-      expect(requiredRoles).toBeUndefined();
-    });
+    it.each(publicMethods)(
+      'public client endpoint %s should NOT require ADMIN or SERVICE role',
+      (methodName) => {
+        const target = PredictionController.prototype[methodName];
+        expect(target).toBeDefined();
+        const requiredRoles = reflector.get(ROLES_KEY, target);
+        expect(requiredRoles).toBeUndefined();
+      },
+    );
 
     it('should reject concurrent training in the same process with 409 ConflictException', async () => {
       let resolveTraining: any;
       const mockService = {
-        trainPipeline: jest.fn().mockImplementation(() => new Promise((resolve) => {
-          resolveTraining = resolve;
-        })),
+        trainPipeline: jest.fn().mockImplementation(
+          () =>
+            new Promise((resolve) => {
+              resolveTraining = resolve;
+            }),
+        ),
       };
       const controller = new PredictionController(mockService as any);
       const promise1 = controller.trainModel();
@@ -271,10 +298,15 @@ describe('Tier 2: Institutional Auth Matrix & Role Permutations Spec', () => {
     it('should reject training with 409 ConflictException when distributed DB lock is already held by another instance', async () => {
       const mockService = { trainPipeline: jest.fn() };
       const mockLockService = {
-        acquireLock: jest.fn().mockResolvedValue({ acquired: false, ownerId: 'other-worker' }),
+        acquireLock: jest
+          .fn()
+          .mockResolvedValue({ acquired: false, ownerId: 'other-worker' }),
         releaseLock: jest.fn(),
       };
-      const controller = new PredictionController(mockService as any, mockLockService as any);
+      const controller = new PredictionController(
+        mockService as any,
+        mockLockService as any,
+      );
       let caughtError: any;
       try {
         await controller.trainModel();
@@ -289,12 +321,19 @@ describe('Tier 2: Institutional Auth Matrix & Role Permutations Spec', () => {
     it('should fail closed with 503 ServiceUnavailableException and never train if distributed lock provider errors', async () => {
       const mockService = { trainPipeline: jest.fn() };
       const mockLockService = {
-        acquireLock: jest.fn().mockRejectedValue(
-          new ServiceUnavailableException('DISTRIBUTED_LOCK_UNAVAILABLE: Database lock provider is unreachable.')
-        ),
+        acquireLock: jest
+          .fn()
+          .mockRejectedValue(
+            new ServiceUnavailableException(
+              'DISTRIBUTED_LOCK_UNAVAILABLE: Database lock provider is unreachable.',
+            ),
+          ),
         releaseLock: jest.fn(),
       };
-      const controller = new PredictionController(mockService as any, mockLockService as any);
+      const controller = new PredictionController(
+        mockService as any,
+        mockLockService as any,
+      );
       let caughtError: any;
       try {
         await controller.trainModel();

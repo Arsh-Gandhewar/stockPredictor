@@ -6,7 +6,8 @@ import { MODEL_CONFIG } from './model-config';
  * parameter lineage, calibration states, and model operational health.
  */
 
-export type ModelType = 'BASELINE_HEURISTIC' | 'LEARNED_LIGHTGBM' | 'ONNX_ENSEMBLE';
+export type ModelType =
+  'BASELINE_HEURISTIC' | 'LEARNED_LIGHTGBM' | 'ONNX_ENSEMBLE';
 
 export interface ModelMetadata {
   modelVersion: string;
@@ -32,12 +33,15 @@ export class ModelRegistry {
     calibrationVersion: MODEL_CONFIG.CALIBRATION_VERSION,
     featureSchemaVersion: MODEL_CONFIG.FEATURE_SCHEMA_VERSION,
     status: 'ACTIVE',
-    description: 'QuantX Institutional Multi-Horizon ONNX Ensemble Engine with Out-of-Sample Isotonic Calibration and Runtime Parity (v5.1.0)',
+    description:
+      'QuantX Institutional Multi-Horizon ONNX Ensemble Engine with Out-of-Sample Isotonic Calibration and Runtime Parity (v5.1.0)',
     trainingWindow: 'Rolling 24-month walk-forward train window',
-    validationWindow: 'Rolling 6-month calibration and hyperparameter validation window',
+    validationWindow:
+      'Rolling 6-month calibration and hyperparameter validation window',
     testWindow: 'Rolling 6-month out-of-sample forward step',
     holdoutWindow: 'Final 6-month untouched verification partition',
-    calibrationMethod: 'Monotonic Isotonic Regression (PAV) with Empirical-Bayes tail shrinkage fitted out-of-sample',
+    calibrationMethod:
+      'Monotonic Isotonic Regression (PAV) with Empirical-Bayes tail shrinkage fitted out-of-sample',
     registeredAt: '2026-08-22T08:00:00.000Z',
     activeFeatures: [
       'rsi_14',

@@ -46,9 +46,11 @@ export class AuthGuard implements CanActivate {
       // Caller authenticated as service principal. Strict non-impersonation:
       // Arbitrary caller-controlled identity selection via headers is completely disallowed.
       if (userIdHeader && userIdHeader !== 'quantx_service') {
-        this.logger.warn(`API_KEY_IMPERSONATION_BLOCKED: API key caller attempted to select x-user-id '${userIdHeader}'`);
+        this.logger.warn(
+          `API_KEY_IMPERSONATION_BLOCKED: API key caller attempted to select x-user-id '${userIdHeader}'`,
+        );
         throw new ForbiddenException(
-          'API_KEY_IMPERSONATION_BLOCKED: Service API key requests cannot select arbitrary user identity via headers'
+          'API_KEY_IMPERSONATION_BLOCKED: Service API key requests cannot select arbitrary user identity via headers',
         );
       }
       const targetUserId = 'quantx_service';
@@ -61,44 +63,70 @@ export class AuthGuard implements CanActivate {
     // 1. Extract Bearer token
     if (!authHeader.startsWith('Bearer ')) {
       // Check if running in explicit isolated test mode
-      if (process.env.NODE_ENV === 'test' && process.env.ALLOW_LOCAL_MOCK_AUTH === 'true') {
+      if (
+        process.env.NODE_ENV === 'test' &&
+        process.env.ALLOW_LOCAL_MOCK_AUTH === 'true'
+      ) {
         if (userIdHeader) {
-          const sanitized = String(userIdHeader).replace(/[^a-zA-Z0-9_-]/g, '').trim();
+          const sanitized = String(userIdHeader)
+            .replace(/[^a-zA-Z0-9_-]/g, '')
+            .trim();
           request.userId = sanitized;
           request.user = { id: sanitized, sub: sanitized, role: 'USER' };
           return true;
         }
       }
-      throw new UnauthorizedException('UNAUTHENTICATED: Bearer authentication token is required');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Bearer authentication token is required',
+      );
     }
 
     const token = authHeader.substring(7).trim();
     if (!token) {
-      throw new UnauthorizedException('UNAUTHENTICATED: Empty authorization bearer token');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Empty authorization bearer token',
+      );
     }
 
     // 2. Cryptographic Verification
     const payload = this.verifyToken(token);
     const authenticatedUserId = payload.sub || payload.userId;
 
-    if (!authenticatedUserId || typeof authenticatedUserId !== 'string' || authenticatedUserId.trim() === '') {
-      throw new UnauthorizedException('UNAUTHENTICATED: Token payload does not contain a valid user identifier (sub)');
+    if (
+      !authenticatedUserId ||
+      typeof authenticatedUserId !== 'string' ||
+      authenticatedUserId.trim() === ''
+    ) {
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Token payload does not contain a valid user identifier (sub)',
+      );
     }
 
     // 3. User Impersonation & Header Spoofing Protection
     if (userIdHeader) {
-      const declaredUserId = String(userIdHeader).replace(/[^a-zA-Z0-9_-]/g, '').trim();
-      if (declaredUserId && declaredUserId !== authenticatedUserId && payload.role !== 'ADMIN') {
-        this.logger.warn(`IDENTITY_MISMATCH: Caller declared x-user-id '${declaredUserId}' but token principal is '${authenticatedUserId}'`);
+      const declaredUserId = String(userIdHeader)
+        .replace(/[^a-zA-Z0-9_-]/g, '')
+        .trim();
+      if (
+        declaredUserId &&
+        declaredUserId !== authenticatedUserId &&
+        payload.role !== 'ADMIN'
+      ) {
+        this.logger.warn(
+          `IDENTITY_MISMATCH: Caller declared x-user-id '${declaredUserId}' but token principal is '${authenticatedUserId}'`,
+        );
         throw new ForbiddenException(
-          `IDENTITY_MISMATCH: Caller header identity '${declaredUserId}' does not match authenticated token principal '${authenticatedUserId}'`
+          `IDENTITY_MISMATCH: Caller header identity '${declaredUserId}' does not match authenticated token principal '${authenticatedUserId}'`,
         );
       }
     }
 
     // 4. Server-Side Role Authorization Contract
     // Tokens cannot elevate privileges without explicit server-side role whitelisting
-    const adminList = (process.env.ADMIN_USER_IDS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const adminList = (process.env.ADMIN_USER_IDS || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
     const isWhitelistedAdmin = adminList.includes(authenticatedUserId);
     const authorizedRole = isWhitelistedAdmin ? 'ADMIN' : 'USER';
 
@@ -116,7 +144,9 @@ export class AuthGuard implements CanActivate {
   public verifyToken(token: string): VerifiedJwtPayload {
     const parts = token.split('.');
     if (parts.length !== 3) {
-      throw new UnauthorizedException('UNAUTHENTICATED: Malformed JWT token format (expected 3 parts)');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Malformed JWT token format (expected 3 parts)',
+      );
     }
 
     const [headerB64, payloadB64, signatureB64] = parts;
@@ -126,89 +156,133 @@ export class AuthGuard implements CanActivate {
     let payload: VerifiedJwtPayload;
 
     try {
-      header = JSON.parse(Buffer.from(headerB64, 'base64url').toString('utf-8'));
-      payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8'));
+      header = JSON.parse(
+        Buffer.from(headerB64, 'base64url').toString('utf-8'),
+      );
+      payload = JSON.parse(
+        Buffer.from(payloadB64, 'base64url').toString('utf-8'),
+      );
     } catch {
-      throw new UnauthorizedException('UNAUTHENTICATED: Failed to parse JWT token components');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Failed to parse JWT token components',
+      );
     }
 
     // Item 3: Rigid Production Identity Contract.
     // In production, the cryptographic algorithm must be unambiguously configured and enforced.
     const isProd = process.env.NODE_ENV === 'production';
-    const mandatedAlg = process.env.AUTH_JWT_ALGORITHM || (process.env.CLERK_PEM_PUBLIC_KEY ? 'RS256' : 'HS256');
+    const mandatedAlg =
+      process.env.AUTH_JWT_ALGORITHM ||
+      (process.env.CLERK_PEM_PUBLIC_KEY ? 'RS256' : 'HS256');
     const alg = header.alg;
 
     if (isProd) {
       if (alg !== mandatedAlg) {
         throw new UnauthorizedException(
-          `UNAUTHENTICATED: Algorithm mismatch with rigid production contract. Mandated: '${mandatedAlg}', got: '${alg || 'none'}'`
+          `UNAUTHENTICATED: Algorithm mismatch with rigid production contract. Mandated: '${mandatedAlg}', got: '${alg || 'none'}'`,
         );
       }
     } else {
       const allowedAlgorithms = ['HS256', 'RS256'];
       if (!alg || !allowedAlgorithms.includes(alg)) {
-        throw new UnauthorizedException(`UNAUTHENTICATED: Unsupported or insecure JWT algorithm '${alg || 'none'}'`);
+        throw new UnauthorizedException(
+          `UNAUTHENTICATED: Unsupported or insecure JWT algorithm '${alg || 'none'}'`,
+        );
       }
     }
 
     const signingInput = `${headerB64}.${payloadB64}`;
 
     // Verify signature
-    const isSignatureValid = this.verifySignature(signingInput, signatureB64, alg);
+    const isSignatureValid = this.verifySignature(
+      signingInput,
+      signatureB64,
+      alg,
+    );
     if (!isSignatureValid) {
-      throw new UnauthorizedException('UNAUTHENTICATED: Cryptographic signature verification failed');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Cryptographic signature verification failed',
+      );
     }
 
     // Validate expiration (exp) - MANDATORY: reject any token without exp
     const nowSec = Math.floor(Date.now() / 1000);
-    if (payload.exp === undefined || typeof payload.exp !== 'number' || payload.exp <= nowSec) {
-      throw new UnauthorizedException('UNAUTHENTICATED: Authentication token is missing valid expiration (exp) or is expired');
+    if (
+      payload.exp === undefined ||
+      typeof payload.exp !== 'number' ||
+      payload.exp <= nowSec
+    ) {
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Authentication token is missing valid expiration (exp) or is expired',
+      );
     }
 
     // Validate issued-at (iat) - STRICTLY MANDATORY
     if (payload.iat === undefined || typeof payload.iat !== 'number') {
-      throw new UnauthorizedException('UNAUTHENTICATED: Authentication token is missing mandatory issued-at (iat) claim');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Authentication token is missing mandatory issued-at (iat) claim',
+      );
     }
     if (payload.iat > nowSec + 60) {
-      throw new UnauthorizedException('UNAUTHENTICATED: Token issued in the future (clock skew violation)');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Token issued in the future (clock skew violation)',
+      );
     }
     if (payload.iat > payload.exp) {
-      throw new UnauthorizedException('UNAUTHENTICATED: Token issued-at (iat) cannot be after expiration (exp)');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Token issued-at (iat) cannot be after expiration (exp)',
+      );
     }
 
     // Validate not-before (nbf)
     if (payload.nbf !== undefined) {
       if (typeof payload.nbf !== 'number' || payload.nbf > nowSec) {
-        throw new UnauthorizedException('UNAUTHENTICATED: Authentication token not yet valid (nbf)');
+        throw new UnauthorizedException(
+          'UNAUTHENTICATED: Authentication token not yet valid (nbf)',
+        );
       }
     }
 
     // Validate issuer - MANDATORY in production
-    const expectedIssuer = process.env.CLERK_JWT_ISSUER || process.env.JWT_ISSUER;
+    const expectedIssuer =
+      process.env.CLERK_JWT_ISSUER || process.env.JWT_ISSUER;
     if (isProd && !expectedIssuer) {
-      throw new UnauthorizedException('UNAUTHENTICATED: Mandatory JWT issuer configuration missing in production');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Mandatory JWT issuer configuration missing in production',
+      );
     }
     if (expectedIssuer) {
       if (!payload.iss || payload.iss !== expectedIssuer) {
-        throw new UnauthorizedException(`UNAUTHENTICATED: Invalid or missing token issuer '${payload.iss || 'none'}'`);
+        throw new UnauthorizedException(
+          `UNAUTHENTICATED: Invalid or missing token issuer '${payload.iss || 'none'}'`,
+        );
       }
     }
 
     // Validate audience - MANDATORY in production
-    const expectedAudience = process.env.CLERK_JWT_AUDIENCE || process.env.JWT_AUDIENCE;
+    const expectedAudience =
+      process.env.CLERK_JWT_AUDIENCE || process.env.JWT_AUDIENCE;
     if (isProd && !expectedAudience) {
-      throw new UnauthorizedException('UNAUTHENTICATED: Mandatory JWT audience configuration missing in production');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Mandatory JWT audience configuration missing in production',
+      );
     }
     if (expectedAudience) {
       if (!payload.aud || payload.aud !== expectedAudience) {
-        throw new UnauthorizedException(`UNAUTHENTICATED: Invalid or missing token audience '${payload.aud || 'none'}'`);
+        throw new UnauthorizedException(
+          `UNAUTHENTICATED: Invalid or missing token audience '${payload.aud || 'none'}'`,
+        );
       }
     }
 
     return payload;
   }
 
-  private verifySignature(signingInput: string, signatureB64: string, alg: string): boolean {
+  private verifySignature(
+    signingInput: string,
+    signatureB64: string,
+    alg: string,
+  ): boolean {
     const signatureBuffer = Buffer.from(signatureB64, 'base64url');
 
     // Secret resolution: Clerk PEM public key or HMAC secret
@@ -218,10 +292,14 @@ export class AuthGuard implements CanActivate {
     const jwtSecret = process.env.JWT_SECRET;
 
     if (isProd && !clerkPublicKey && !jwtSecret) {
-      throw new UnauthorizedException('UNAUTHENTICATED: Cryptographic secret not configured in production');
+      throw new UnauthorizedException(
+        'UNAUTHENTICATED: Cryptographic secret not configured in production',
+      );
     }
 
-    const effectiveSecret = jwtSecret || (isProd ? '' : 'quantx-dev-test-secret-key-do-not-use-in-prod');
+    const effectiveSecret =
+      jwtSecret ||
+      (isProd ? '' : 'quantx-dev-test-secret-key-do-not-use-in-prod');
     if (!effectiveSecret && !clerkPublicKey) {
       return false;
     }

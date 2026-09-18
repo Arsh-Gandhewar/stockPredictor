@@ -12,4 +12,3 @@ import { PredictionModule } from '../prediction/prediction.module';
   exports: [PortfolioService],
 })
 export class PortfolioModule {}
-

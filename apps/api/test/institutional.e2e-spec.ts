@@ -19,44 +19,79 @@ describe('Tier 2.5: Full-Chain HTTP E2E Pipeline (Supertest)', () => {
   const prevEnv = { ...process.env };
 
   const mockPredictionService = {
-    trainPipeline: jest.fn().mockResolvedValue({ success: true, message: 'Model trained successfully' }),
-    getProductionGovernanceStatus: jest.fn().mockReturnValue({ status: 'HEALTHY', activeArtifactId: 'art_123' }),
-    getProductionScorecard: jest.fn().mockReturnValue({ totalChecks: 18, passedChecks: 18 }),
-    getModelStatus: jest.fn().mockReturnValue({ isOnline: true, version: '5.1.0' }),
+    trainPipeline: jest.fn().mockResolvedValue({
+      success: true,
+      message: 'Model trained successfully',
+    }),
+    getProductionGovernanceStatus: jest
+      .fn()
+      .mockReturnValue({ status: 'HEALTHY', activeArtifactId: 'art_123' }),
+    getProductionScorecard: jest
+      .fn()
+      .mockReturnValue({ totalChecks: 18, passedChecks: 18 }),
+    getModelStatus: jest
+      .fn()
+      .mockReturnValue({ isOnline: true, version: '5.1.0' }),
     getModelPerformance: jest.fn().mockResolvedValue({ winRate: 0.72 }),
-    getPrediction: jest.fn().mockResolvedValue({ ticker: 'RELIANCE.NS', decision: 'STRONG_BUY' }),
+    getPrediction: jest
+      .fn()
+      .mockResolvedValue({ ticker: 'RELIANCE.NS', decision: 'STRONG_BUY' }),
   };
 
   const mockPortfolioService = {
-    getPortfolio: jest.fn().mockResolvedValue({ totalPortfolioValue: 1050000, availableCash: 950000, positions: [] }),
-    executeTrade: jest.fn().mockImplementation((userId, ticker, type, quantity, orderType, idempotencyKey, limitPrice) => {
-      return Promise.resolve({
-        success: true,
-        ticker,
-        type,
-        orderType,
-        executionModel: 'IMMEDIATE_OR_CANCEL',
-        orderStatus: 'FILLED',
-        quantity,
-      });
+    getPortfolio: jest.fn().mockResolvedValue({
+      totalPortfolioValue: 1050000,
+      availableCash: 950000,
+      positions: [],
     }),
+    executeTrade: jest
+      .fn()
+      .mockImplementation(
+        (
+          userId,
+          ticker,
+          type,
+          quantity,
+          orderType,
+          idempotencyKey,
+          limitPrice,
+        ) => {
+          return Promise.resolve({
+            success: true,
+            ticker,
+            type,
+            orderType,
+            executionModel: 'IMMEDIATE_OR_CANCEL',
+            orderStatus: 'FILLED',
+            quantity,
+          });
+        },
+      ),
     getAllTrades: jest.fn().mockResolvedValue([]),
     processAutoSell: jest.fn().mockResolvedValue({ executedTrades: [] }),
   };
 
   const mockDb = {
     client: {
-      $queryRawUnsafe: jest.fn().mockResolvedValue([{ pg_try_advisory_lock: true }]),
+      $queryRawUnsafe: jest
+        .fn()
+        .mockResolvedValue([{ pg_try_advisory_lock: true }]),
       portfolio: { findUnique: jest.fn() },
     },
   };
 
-  function createSignedJwt(payload: Record<string, any>, secret: string = testSecret): string {
+  function createSignedJwt(
+    payload: Record<string, any>,
+    secret: string = testSecret,
+  ): string {
     const header = { alg: 'HS256', typ: 'JWT' };
     const hB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
     const pB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
     const signingInput = `${hB64}.${pB64}`;
-    const sig = crypto.createHmac('sha256', secret).update(signingInput).digest('base64url');
+    const sig = crypto
+      .createHmac('sha256', secret)
+      .update(signingInput)
+      .digest('base64url');
     return `${signingInput}.${sig}`;
   }
 
@@ -113,7 +148,9 @@ describe('Tier 2.5: Full-Chain HTTP E2E Pipeline (Supertest)', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true }),
+    );
     await app.init();
   });
 
@@ -128,7 +165,9 @@ describe('Tier 2.5: Full-Chain HTTP E2E Pipeline (Supertest)', () => {
         .get('/portfolio')
         .expect(401);
 
-      expect(res.body.error.message).toContain('Bearer authentication token is required');
+      expect(res.body.error.message).toContain(
+        'Bearer authentication token is required',
+      );
     });
 
     it('GET /portfolio with expired Bearer token should return 401 Unauthorized', async () => {
@@ -147,7 +186,9 @@ describe('Tier 2.5: Full-Chain HTTP E2E Pipeline (Supertest)', () => {
         .expect(200);
 
       expect(res.body.totalPortfolioValue).toBe(1050000);
-      expect(mockPortfolioService.getPortfolio).toHaveBeenCalledWith('user_regular_123');
+      expect(mockPortfolioService.getPortfolio).toHaveBeenCalledWith(
+        'user_regular_123',
+      );
     });
 
     it('GET /prediction/governance without token should return 401 Unauthorized', async () => {

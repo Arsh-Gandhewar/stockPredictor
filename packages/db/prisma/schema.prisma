@@ -553,3 +553,14 @@ model ResearchEvidenceBundle {
   @@index([evidenceContentHash])
 }
 
+model DistributedLock {
+  lockKey        String    @id @map("lock_key") @db.VarChar(128)
+  ownerId        String    @map("owner_id") @db.VarChar(256)
+  acquiredAt     DateTime  @default(now()) @map("acquired_at") @db.Timestamptz()
+  leaseExpiresAt DateTime  @map("lease_expires_at") @db.Timestamptz()
+  fencingToken   BigInt    @default(1) @map("fencing_token")
+  releasedAt     DateTime? @map("released_at") @db.Timestamptz()
+
+  @@map("distributed_locks")
+}
+

@@ -55,7 +55,12 @@ export class LogisticRegressionModel implements IQuantitativeModel {
     });
   }
 
-  fit(samples: TrainingSample[], learningRate: number = 0.05, lambda: number = 0.01, epochs: number = 100): void {
+  fit(
+    samples: TrainingSample[],
+    learningRate: number = 0.05,
+    lambda: number = 0.01,
+    epochs: number = 100,
+  ): void {
     if (!samples || samples.length < 20) return;
 
     // 1. Calculate Feature Means and Standard Deviations from Training Samples Only
@@ -66,7 +71,9 @@ export class LogisticRegressionModel implements IQuantitativeModel {
 
       if (validVals.length > 0) {
         const mean = validVals.reduce((a, b) => a + b, 0) / validVals.length;
-        const variance = validVals.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / validVals.length;
+        const variance =
+          validVals.reduce((a, b) => a + Math.pow(b - mean, 2), 0) /
+          validVals.length;
         this.featureMeans[key] = mean;
         this.featureStdDevs[key] = Math.sqrt(variance) || 1.0;
       }
@@ -80,8 +87,12 @@ export class LogisticRegressionModel implements IQuantitativeModel {
       const row: number[] = [];
       this.featureKeys.forEach((key) => {
         const val = sample.features[key];
-        const num = val !== null && val !== undefined && !isNaN(val) ? val : this.featureMeans[key];
-        const normalized = (num - this.featureMeans[key]) / (this.featureStdDevs[key] || 1.0);
+        const num =
+          val !== null && val !== undefined && !isNaN(val)
+            ? val
+            : this.featureMeans[key];
+        const normalized =
+          (num - this.featureMeans[key]) / (this.featureStdDevs[key] || 1.0);
         row.push(normalized);
       });
       X.push(row);
@@ -131,8 +142,13 @@ export class LogisticRegressionModel implements IQuantitativeModel {
     let z = this.bias;
     this.featureKeys.forEach((key) => {
       const val = features[key];
-      const num = val !== null && val !== undefined && !isNaN(val) ? val : this.featureMeans[key] || 0;
-      const normalized = (num - (this.featureMeans[key] || 0)) / (this.featureStdDevs[key] || 1.0);
+      const num =
+        val !== null && val !== undefined && !isNaN(val)
+          ? val
+          : this.featureMeans[key] || 0;
+      const normalized =
+        (num - (this.featureMeans[key] || 0)) /
+        (this.featureStdDevs[key] || 1.0);
       z += (this.weights[key] || 0) * normalized;
     });
 

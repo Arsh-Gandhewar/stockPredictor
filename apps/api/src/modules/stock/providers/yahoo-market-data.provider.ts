@@ -9,15 +9,30 @@ import {
   UniverseStock,
 } from './market-data.provider.interface';
 import { TOP_300_INDIAN_UNIVERSE } from '../data/indian-universe.data';
-import { isNseHoliday, classifyTradingSession } from '../data/nse-holidays.data';
+import {
+  isNseHoliday,
+  classifyTradingSession,
+} from '../data/nse-holidays.data';
 
-export const VALID_CHART_RANGES = ['1d', '1w', '1mo', '3mo', '6mo', '1y', '2y', '5y', 'max'] as const;
-export type ValidChartRange = typeof VALID_CHART_RANGES[number];
+export const VALID_CHART_RANGES = [
+  '1d',
+  '1w',
+  '1mo',
+  '3mo',
+  '6mo',
+  '1y',
+  '2y',
+  '5y',
+  'max',
+] as const;
+export type ValidChartRange = (typeof VALID_CHART_RANGES)[number];
 
 @Injectable()
 export class YahooMarketDataProvider implements MarketDataProvider {
   private readonly logger = new Logger(YahooMarketDataProvider.name);
-  private readonly yf = new (YahooFinance as any)({ suppressNotices: ['yahooSurvey'] });
+  private readonly yf = new (YahooFinance as any)({
+    suppressNotices: ['yahooSurvey'],
+  });
   private universe: UniverseStock[] = TOP_300_INDIAN_UNIVERSE;
 
   /**
@@ -28,12 +43,15 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     const classification = classifyTradingSession(now);
 
     if (classification.isCalendarStale) {
-      this.logger.warn(`CALENDAR_STALE: Current date (${now.toISOString()}) is outside supported exchange calendar bounds.`);
+      this.logger.warn(
+        `CALENDAR_STALE: Current date (${now.toISOString()}) is outside supported exchange calendar bounds.`,
+      );
     }
 
     return {
       status: classification.status,
       sessionType: classification.sessionType,
+      isTradable: classification.isTradable,
       isCalendarStale: classification.isCalendarStale,
       calendarVersion: classification.calendarVersion,
       holidayName: classification.holidayName,
@@ -44,7 +62,11 @@ export class YahooMarketDataProvider implements MarketDataProvider {
   }
 
   private formatQuote(q: any, ticker: string): MarketQuote | null {
-    if (!q || typeof q.regularMarketPrice !== 'number' || q.regularMarketPrice <= 0) {
+    if (
+      !q ||
+      typeof q.regularMarketPrice !== 'number' ||
+      q.regularMarketPrice <= 0
+    ) {
       return null;
     }
     const marketStatus = this.getMarketStatus();
@@ -52,8 +74,10 @@ export class YahooMarketDataProvider implements MarketDataProvider {
 
     const price = q.regularMarketPrice;
     const prevClose = q.regularMarketPreviousClose || price;
-    const change = q.regularMarketChange ?? (price - prevClose);
-    const changePercent = q.regularMarketChangePercent ?? (prevClose > 0 ? (change / prevClose) * 100 : 0);
+    const change = q.regularMarketChange ?? price - prevClose;
+    const changePercent =
+      q.regularMarketChangePercent ??
+      (prevClose > 0 ? (change / prevClose) * 100 : 0);
 
     const rawHigh = q.regularMarketDayHigh || price;
     const rawLow = q.regularMarketDayLow || price;
@@ -64,8 +88,8 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       marketStatus.status === 'OPEN'
         ? 'LIVE'
         : marketStatus.status === 'PRE_OPEN'
-        ? 'DELAYED'
-        : 'CLOSED';
+          ? 'DELAYED'
+          : 'CLOSED';
 
     let sourceTimestamp: string | null = null;
     if (q.regularMarketTime) {
@@ -82,7 +106,8 @@ export class YahooMarketDataProvider implements MarketDataProvider {
 
     return {
       ticker,
-      name: meta?.name || q.shortName || q.longName || ticker.replace('.NS', ''),
+      name:
+        meta?.name || q.shortName || q.longName || ticker.replace('.NS', ''),
       price: parseFloat(price.toFixed(2)),
       change: parseFloat(change.toFixed(2)),
       changePercent: parseFloat(changePercent.toFixed(2)),
@@ -90,7 +115,11 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       dayLow: parseFloat(dayLow.toFixed(2)),
       prevClose: parseFloat(prevClose.toFixed(2)),
       open: parseFloat((q.regularMarketOpen || prevClose).toFixed(2)),
-      volume: q.regularMarketVolume || 100000,
+      volume:
+        typeof q.regularMarketVolume === 'number' &&
+        !isNaN(q.regularMarketVolume)
+          ? q.regularMarketVolume
+          : null,
       marketCap: q.marketCap,
       pe: q.trailingPE,
       weekHigh52: q.fiftyTwoWeekHigh,
@@ -128,7 +157,7 @@ export class YahooMarketDataProvider implements MarketDataProvider {
   async getQuote(rawTicker: string): Promise<MarketQuote> {
     const ticker = this.normalizeTicker(rawTicker);
     try {
-      const q = (await this.yf.quote(ticker)) as any;
+      const q = await this.yf.quote(ticker);
       const formatted = this.formatQuote(q, ticker);
       if (!formatted) {
         throw new Error(`Invalid market price received for ${ticker}`);
@@ -161,7 +190,9 @@ export class YahooMarketDataProvider implements MarketDataProvider {
           }
         }
       } catch (err: any) {
-        this.logger.warn(`Batch quote failed for ${batch.length} tickers: ${err.message}`);
+        this.logger.warn(
+          `Batch quote failed for ${batch.length} tickers: ${err.message}`,
+        );
         // Zero amplification: Do not trigger unthrottled concurrent fan-out storm
       }
     }
@@ -171,10 +202,13 @@ export class YahooMarketDataProvider implements MarketDataProvider {
   /**
    * Fetches authentic historical candlestick chart data from the National Stock Exchange
    */
-  async getHistoricalCandles(ticker: string, range: string): Promise<OHLCVCandle[]> {
+  async getHistoricalCandles(
+    ticker: string,
+    range: string,
+  ): Promise<OHLCVCandle[]> {
     if (!VALID_CHART_RANGES.includes(range as any)) {
       throw new BadRequestException(
-        `Invalid chart range '${range}'. Valid ranges: ${VALID_CHART_RANGES.join(', ')}`
+        `Invalid chart range '${range}'. Valid ranges: ${VALID_CHART_RANGES.join(', ')}`,
       );
     }
 
@@ -212,11 +246,11 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     }
 
     try {
-      const chartResult = (await this.yf.chart(ticker, {
+      const chartResult = await this.yf.chart(ticker, {
         period1: queryPeriod1,
         period2: now,
         interval,
-      })) as any;
+      });
 
       if (chartResult && chartResult.quotes && chartResult.quotes.length > 0) {
         const isIntraday = range === '1d' || range === '1w';
@@ -231,7 +265,7 @@ export class YahooMarketDataProvider implements MarketDataProvider {
               q.close != null &&
               q.high != null &&
               q.low != null &&
-              q.high >= q.low
+              q.high >= q.low,
           )
           .map((q: any) => {
             const d = new Date(q.date);
@@ -249,8 +283,10 @@ export class YahooMarketDataProvider implements MarketDataProvider {
             };
           })
           .sort((a: any, b: any) => {
-            const timeA = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
-            const timeB = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
+            const timeA =
+              typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
+            const timeB =
+              typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
             return timeA - timeB;
           })
           .filter((c: any) => {
@@ -281,13 +317,14 @@ export class YahooMarketDataProvider implements MarketDataProvider {
 
     const results = await Promise.allSettled(
       indices.map(async (idx) => {
-        const q = (await this.yf.quote(idx.symbol)) as any;
+        const q = await this.yf.quote(idx.symbol);
         const val = q?.regularMarketPrice;
         if (!val || typeof val !== 'number') {
           throw new Error(`Could not fetch index ${idx.name}`);
         }
         const change = q?.regularMarketChange ?? 0;
-        const changePercent = q?.regularMarketChangePercent ?? (val > 0 ? (change / val) * 100 : 0);
+        const changePercent =
+          q?.regularMarketChangePercent ?? (val > 0 ? (change / val) * 100 : 0);
 
         return {
           name: idx.name,
@@ -299,11 +336,14 @@ export class YahooMarketDataProvider implements MarketDataProvider {
           marketState: q?.marketState || 'REGULAR',
           timestamp: new Date().toISOString(),
         };
-      })
+      }),
     );
 
     return results
-      .filter((r): r is PromiseFulfilledResult<MarketIndexBenchmark> => r.status === 'fulfilled')
+      .filter(
+        (r): r is PromiseFulfilledResult<MarketIndexBenchmark> =>
+          r.status === 'fulfilled',
+      )
       .map((r) => r.value);
   }
 
@@ -327,7 +367,7 @@ export class YahooMarketDataProvider implements MarketDataProvider {
           s.ticker.toLowerCase().includes(q) ||
           s.name.toLowerCase().includes(q) ||
           (s.sector && s.sector.toLowerCase().includes(q)) ||
-          (s.industry && s.industry.toLowerCase().includes(q))
+          (s.industry && s.industry.toLowerCase().includes(q)),
       )
       .slice(0, 30);
   }
@@ -335,20 +375,40 @@ export class YahooMarketDataProvider implements MarketDataProvider {
   /**
    * Performs an authentic lightweight health check against the market provider
    */
-  async probeHealth(): Promise<{ status: 'UP' | 'DEGRADED' | 'DOWN'; latencyMs: number }> {
+  async probeHealth(): Promise<{
+    status: 'UP' | 'DEGRADED' | 'DOWN';
+    latencyMs: number;
+  }> {
     const t0 = Date.now();
     try {
-      const q = (await Promise.race([
-        this.yf.quote('^NSEI'),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Market provider probe timeout')), 3000)
+      const [nsei, reliance] = await Promise.race([
+        Promise.all([this.yf.quote('^NSEI'), this.yf.quote('RELIANCE.NS')]),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () => reject(new Error('Market provider probe timeout')),
+            3000,
+          ),
         ),
-      ])) as any;
+      ]);
       const latencyMs = Date.now() - t0;
-      if (q && typeof q.regularMarketPrice === 'number' && q.regularMarketPrice > 0) {
+      const nseiValid = Boolean(
+        nsei &&
+        typeof nsei.regularMarketPrice === 'number' &&
+        nsei.regularMarketPrice > 0,
+      );
+      const relianceValid = Boolean(
+        reliance &&
+        typeof reliance.regularMarketPrice === 'number' &&
+        reliance.regularMarketPrice > 0,
+      );
+
+      if (nseiValid && relianceValid) {
         return { status: 'UP', latencyMs };
       }
-      return { status: 'DEGRADED', latencyMs };
+      if (nseiValid || relianceValid) {
+        return { status: 'DEGRADED', latencyMs };
+      }
+      return { status: 'DOWN', latencyMs };
     } catch (err: any) {
       return { status: 'DOWN', latencyMs: Date.now() - t0 };
     }

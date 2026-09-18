@@ -43,7 +43,8 @@ export type MarketRegime =
 
 export type SignalQuality = 'HIGH' | 'MEDIUM' | 'LOW';
 export type DataQuality = 'HIGH' | 'MEDIUM' | 'LOW';
-export type PositionRiskState = 'NORMAL' | 'CAUTION' | 'HIGH_RISK' | 'EXIT' | 'EMERGENCY';
+export type PositionRiskState =
+  'NORMAL' | 'CAUTION' | 'HIGH_RISK' | 'EXIT' | 'EMERGENCY';
 
 export interface RiskAssessment {
   stopLossPrice: number | null;

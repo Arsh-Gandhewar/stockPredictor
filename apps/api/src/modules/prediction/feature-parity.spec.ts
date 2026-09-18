@@ -1,8 +1,14 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { FeatureEngine, ModelFeatureVector25 } from './engines/feature-engine';
-import { OnnxInferenceEngine, getCanonicalFeatureSchemaHash } from './engines/onnx-inference.engine';
-import { MarketQuote, OHLCVCandle } from '../stock/providers/market-data.provider.interface';
+import {
+  OnnxInferenceEngine,
+  getCanonicalFeatureSchemaHash,
+} from './engines/onnx-inference.engine';
+import {
+  MarketQuote,
+  OHLCVCandle,
+} from '../stock/providers/market-data.provider.interface';
 
 describe('FeatureEngine Mathematical Parity & Institutional Integrity Suite', () => {
   let featureEngine: FeatureEngine;
@@ -17,7 +23,7 @@ describe('FeatureEngine Mathematical Parity & Institutional Integrity Suite', ()
     featureEngine = new FeatureEngine();
     const goldenPath = path.resolve(
       __dirname,
-      '../../../../../packages/quant-engine/tests/golden_feature_vector.json'
+      '../../../../../packages/quant-engine/tests/golden_feature_vector.json',
     );
     if (!fs.existsSync(goldenPath)) {
       throw new Error(`Golden feature vector not found at ${goldenPath}`);
@@ -33,7 +39,10 @@ describe('FeatureEngine Mathematical Parity & Institutional Integrity Suite', ()
       name: 'Test Stock',
       price: lastCandle.close,
       change: lastCandle.close - candles[candles.length - 2].close,
-      changePercent: ((lastCandle.close - candles[candles.length - 2].close) / candles[candles.length - 2].close) * 100,
+      changePercent:
+        ((lastCandle.close - candles[candles.length - 2].close) /
+          candles[candles.length - 2].close) *
+        100,
       volume: lastCandle.volume,
       high: lastCandle.high,
       low: lastCandle.low,
@@ -42,7 +51,11 @@ describe('FeatureEngine Mathematical Parity & Institutional Integrity Suite', ()
       timestamp: lastCandle.timestamp,
     };
 
-    const res = featureEngine.calculateFeatures(quote, candles, goldenData.benchmarkCandles);
+    const res = featureEngine.calculateFeatures(
+      quote,
+      candles,
+      goldenData.benchmarkCandles,
+    );
 
     expect(res.isComplete).toBe(true);
     expect(res.dataQuality).toBe('SUFFICIENT');
@@ -85,7 +98,11 @@ describe('FeatureEngine Mathematical Parity & Institutional Integrity Suite', ()
       timestamp: lastCandle.timestamp,
     };
 
-    const res = featureEngine.calculateFeatures(quote, candles100, goldenData.benchmarkCandles);
+    const res = featureEngine.calculateFeatures(
+      quote,
+      candles100,
+      goldenData.benchmarkCandles,
+    );
 
     expect(res.isComplete).toBe(false);
     expect(res.features).toBeNull();
@@ -116,7 +133,11 @@ describe('FeatureEngine Mathematical Parity & Institutional Integrity Suite', ()
       timestamp: lastCandle.timestamp,
     };
 
-    const res = featureEngine.calculateFeatures(quote, candles, goldenData.benchmarkCandles);
+    const res = featureEngine.calculateFeatures(
+      quote,
+      candles,
+      goldenData.benchmarkCandles,
+    );
 
     expect(res.isComplete).toBe(false);
     expect(res.features).toBeNull();
@@ -125,7 +146,9 @@ describe('FeatureEngine Mathematical Parity & Institutional Integrity Suite', ()
 
   it('4. should reject missing/zero volume with INVALID_VOLUME_DATA and never substitute zero', () => {
     const candles = goldenData.stockCandles.map((c, idx) =>
-      idx === goldenData.stockCandles.length - 5 ? { ...c, volume: 0 } : { ...c }
+      idx === goldenData.stockCandles.length - 5
+        ? { ...c, volume: 0 }
+        : { ...c },
     );
 
     const lastCandle = candles[candles.length - 1];
@@ -143,7 +166,11 @@ describe('FeatureEngine Mathematical Parity & Institutional Integrity Suite', ()
       timestamp: lastCandle.timestamp,
     };
 
-    const res = featureEngine.calculateFeatures(quote, candles, goldenData.benchmarkCandles);
+    const res = featureEngine.calculateFeatures(
+      quote,
+      candles,
+      goldenData.benchmarkCandles,
+    );
 
     expect(res.isComplete).toBe(false);
     expect(res.features).toBeNull();
@@ -178,7 +205,11 @@ describe('FeatureEngine Mathematical Parity & Institutional Integrity Suite', ()
       previousClose: candles[candles.length - 2].close,
       timestamp: lastCandle.timestamp,
     };
-    const res = featureEngine.calculateFeatures(quote, candles, goldenData.benchmarkCandles);
+    const res = featureEngine.calculateFeatures(
+      quote,
+      candles,
+      goldenData.benchmarkCandles,
+    );
     expect(res.isComplete).toBe(true);
     expect(res.features).not.toBeNull();
 

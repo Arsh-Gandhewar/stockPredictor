@@ -1,8 +1,17 @@
-import { Injectable, Logger, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  Inject,
+  forwardRef,
+  Optional,
+  ConflictException,
+} from '@nestjs/common';
 import { StockService } from '../stock/stock.service';
 import { NewsService } from '../news/news.service';
 import { YahooMarketDataProvider } from '../stock/providers/yahoo-market-data.provider';
 import { DatabaseService } from '../../database/database.service';
+import { DistributedLockService } from './engines/distributed-lock.service';
 import { Money } from '../../common/utils/money.util';
 import {
   StockPrediction,
@@ -21,7 +30,11 @@ import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
 import { NewsFeatureEngine } from './engines/news-feature-engine';
 import { BacktestEngine } from './engines/backtest-engine';
-import { ModelArtifactService, ModelArtifact, STATISTICAL_GATES } from './engines/model-artifact.service';
+import {
+  ModelArtifactService,
+  ModelArtifact,
+  STATISTICAL_GATES,
+} from './engines/model-artifact.service';
 import { ProductionScorecardService } from './engines/production-scorecard';
 import { RuntimeVerificationService } from './engines/runtime-verification.service';
 import { MODEL_CONFIG } from './engines/model-config';
@@ -46,7 +59,10 @@ export interface ProductionGovernanceStatus {
 @Injectable()
 export class QuantPredictionService implements OnModuleInit {
   private readonly logger = new Logger(QuantPredictionService.name);
-  private cache = new Map<string, { data: StockPrediction; expiresAt: number }>();
+  private cache = new Map<
+    string,
+    { data: StockPrediction; expiresAt: number }
+  >();
   private isTrainingRunning: boolean = false;
   private activeArtifact: ModelArtifact | null = null;
   private artifactChecksum: string = '';
@@ -82,27 +98,33 @@ export class QuantPredictionService implements OnModuleInit {
     private readonly backtestEngine: BacktestEngine,
     private readonly artifactService: ModelArtifactService,
     private readonly scorecardService: ProductionScorecardService,
-    private readonly runtimeVerificationService: RuntimeVerificationService
+    private readonly runtimeVerificationService: RuntimeVerificationService,
+    @Optional()
+    private readonly distributedLockService?: DistributedLockService,
   ) {}
 
   private readonly universeRegistry = new UniverseRegistry();
   private inFlightUniversePromise: Promise<StockPrediction[]> | null = null;
 
   onModuleInit() {
-    this.logger.log('QuantPredictionService v5.0 initializing ONNX models & statistical governance...');
+    this.logger.log(
+      'QuantPredictionService v5.0 initializing ONNX models & statistical governance...',
+    );
     this.refreshArtifactGovernance();
 
     // Warm up universe predictions in background so initial web requests respond instantaneously
     setTimeout(() => {
       this.getUniversePredictions().catch((err) =>
-        this.logger.warn(`Initial universe predictions warmup: ${err.message}`)
+        this.logger.warn(`Initial universe predictions warmup: ${err.message}`),
       );
     }, 500);
 
     // Refresh universe predictions in background every 2 minutes
     setInterval(() => {
       this.getUniversePredictions().catch((err) =>
-        this.logger.warn(`Automated universe predictions refresh: ${err.message}`)
+        this.logger.warn(
+          `Automated universe predictions refresh: ${err.message}`,
+        ),
       );
     }, 120_000);
   }
@@ -117,25 +139,36 @@ export class QuantPredictionService implements OnModuleInit {
       this.activeArtifact = artifact;
       this.applyModelArtifact(artifact);
 
-      const runtimeReport = await this.runtimeVerificationService.runFullVerification(artifact);
-      const scorecard = this.scorecardService.evaluateScorecard(artifact, runtimeReport);
+      const runtimeReport =
+        await this.runtimeVerificationService.runFullVerification(artifact);
+      const scorecard = this.scorecardService.evaluateScorecard(
+        artifact,
+        runtimeReport,
+      );
 
       this.governanceStatus = {
         productionReady: scorecard.overallStatus === 'PRODUCTION_READY',
         modelStatus: 'ACTIVE',
-        calibrationStatus: (artifact.calibration?.['5d']?.status || 'FITTED_OUT_OF_SAMPLE') as any,
+        calibrationStatus:
+          artifact.calibration?.['5d']?.status || 'FITTED_OUT_OF_SAMPLE',
         artifactStatus: 'VALID_ACTIVE',
         dataSufficiencyStatus: 'SUFFICIENT',
-        walkForwardStatus: scorecard.criteria['WALK_FORWARD_VALIDITY']?.status === 'PASS' ? 'VERIFIED_OUT_OF_SAMPLE' : 'UNVERIFIED',
+        walkForwardStatus:
+          scorecard.criteria['WALK_FORWARD_VALIDITY']?.status === 'PASS'
+            ? 'VERIFIED_OUT_OF_SAMPLE'
+            : 'UNVERIFIED',
         holdoutStatus: 'UNTOUCHED_VERIFIED',
-        statisticalValidationStatus: scorecard.overallStatus === 'PRODUCTION_READY' ? 'PASSED' : 'FAILED',
+        statisticalValidationStatus:
+          scorecard.overallStatus === 'PRODUCTION_READY' ? 'PASSED' : 'FAILED',
         activeArtifactId: artifact.id,
         activeArtifactChecksum: artifact.checksum,
         lastValidatedAt: scorecard.evaluatedAt,
         blockingIssues: scorecard.blockingFailures,
       };
 
-      this.logger.log(`Verified active artifact loaded: ID ${artifact.id} (Checksum: ${artifact.checksum?.slice(0, 10)}..., Scorecard: ${scorecard.overallStatus})`);
+      this.logger.log(
+        `Verified active artifact loaded: ID ${artifact.id} (Checksum: ${artifact.checksum?.slice(0, 10)}..., Scorecard: ${scorecard.overallStatus})`,
+      );
     } else {
       this.activeArtifact = null;
       this.governanceStatus = {
@@ -148,24 +181,39 @@ export class QuantPredictionService implements OnModuleInit {
         holdoutStatus: 'UNVERIFIED',
         statisticalValidationStatus: 'FAILED',
         lastValidatedAt: new Date().toISOString(),
-        blockingIssues: validation.blockingReasons.length > 0 ? validation.blockingReasons : ['No valid active artifact found in canonical directory.'],
+        blockingIssues:
+          validation.blockingReasons.length > 0
+            ? validation.blockingReasons
+            : ['No valid active artifact found in canonical directory.'],
       };
-      this.logger.warn(`No valid active model artifact available. Operating in strict FAIL-CLOSED fallback mode.`);
+      this.logger.warn(
+        `No valid active model artifact available. Operating in strict FAIL-CLOSED fallback mode.`,
+      );
     }
   }
 
   async getProductionScorecard() {
-    const runtimeReport = await this.runtimeVerificationService.runFullVerification(this.activeArtifact);
-    return this.scorecardService.evaluateScorecard(this.activeArtifact, runtimeReport);
+    const runtimeReport =
+      await this.runtimeVerificationService.runFullVerification(
+        this.activeArtifact,
+      );
+    return this.scorecardService.evaluateScorecard(
+      this.activeArtifact,
+      runtimeReport,
+    );
   }
 
   private applyModelArtifact(artifact: ModelArtifact) {
     const applyKnots = (engine: CalibrationEngine, calibData: any) => {
-      if (calibData && calibData.knots && calibData.knots.length >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS) {
+      if (
+        calibData &&
+        calibData.knots &&
+        calibData.knots.length >= STATISTICAL_GATES.MIN_CALIBRATION_KNOTS
+      ) {
         engine.setKnots(
           calibData.knots,
           calibData.status === 'FITTED_OUT_OF_SAMPLE',
-          calibData.metrics
+          calibData.metrics,
         );
       }
     };
@@ -174,7 +222,10 @@ export class QuantPredictionService implements OnModuleInit {
     applyKnots(this.calibrationEngine, artifact.calibration?.['5d']);
     applyKnots(this.calib20d, artifact.calibration?.['20d']);
 
-    if (artifact.empiricalDistributions && Array.isArray(artifact.empiricalDistributions)) {
+    if (
+      artifact.empiricalDistributions &&
+      Array.isArray(artifact.empiricalDistributions)
+    ) {
       this.inferenceEngine.setEmpiricalBuckets(artifact.empiricalDistributions);
     }
 
@@ -185,7 +236,10 @@ export class QuantPredictionService implements OnModuleInit {
   /**
    * Retraining Lifecycle
    */
-  async trainPipeline(): Promise<{
+  async trainPipeline(fencingContext?: {
+    ownerId: string;
+    fencingToken?: number;
+  }): Promise<{
     success: boolean;
     modelVersion: string;
     calibrationStatus: string;
@@ -194,7 +248,9 @@ export class QuantPredictionService implements OnModuleInit {
     timestamp: string;
   }> {
     if (this.isTrainingRunning) {
-      this.logger.log('Training pipeline is already running. Skipping duplicate invocation.');
+      this.logger.log(
+        'Training pipeline is already running. Skipping duplicate invocation.',
+      );
       return {
         success: true,
         modelVersion: ModelRegistry.getModelVersion(),
@@ -206,16 +262,39 @@ export class QuantPredictionService implements OnModuleInit {
     }
 
     this.isTrainingRunning = true;
-    this.logger.log('Starting full walk-forward model training & calibration lifecycle...');
+    this.logger.log(
+      'Starting full walk-forward model training & calibration lifecycle...',
+    );
 
     try {
       const backtestResult = await this.backtestEngine.runFullBacktest();
+
+      // Fencing Token Ownership & Preemption Check:
+      // A worker whose lease expired or was preempted by a newer token must not commit results
+      if (
+        this.distributedLockService &&
+        fencingContext?.ownerId &&
+        fencingContext?.fencingToken !== undefined
+      ) {
+        const isValid = await this.distributedLockService.validateFencingToken(
+          'training_pipeline',
+          fencingContext.ownerId,
+          fencingContext.fencingToken,
+        );
+        if (!isValid) {
+          throw new ConflictException(
+            `FENCING_TOKEN_SUPERSEDED: Training lease expired or was preempted by a newer instance (token: ${fencingContext.fencingToken}). Result commitment aborted.`,
+          );
+        }
+      }
 
       // Refresh governance and apply new artifact
       this.refreshArtifactGovernance();
       await this.onnxEngine.loadActiveModels();
 
-      this.logger.log(`Training lifecycle complete. Governance status: ${this.governanceStatus.productionReady ? 'PRODUCTION_READY' : 'NOT_PRODUCTION_READY'}`);
+      this.logger.log(
+        `Training lifecycle complete. Governance status: ${this.governanceStatus.productionReady ? 'PRODUCTION_READY' : 'NOT_PRODUCTION_READY'}`,
+      );
 
       return {
         success: true,
@@ -245,7 +324,13 @@ export class QuantPredictionService implements OnModuleInit {
     const meta = universe.find((u) => u.ticker === ticker);
 
     // 1. Strict Fail-Closed Market Quote Validation
-    if (!quote || typeof quote.price !== 'number' || isNaN(quote.price) || !isFinite(quote.price) || quote.price <= 0) {
+    if (
+      !quote ||
+      typeof quote.price !== 'number' ||
+      isNaN(quote.price) ||
+      !isFinite(quote.price) ||
+      quote.price <= 0
+    ) {
       const failClosedPrediction: StockPrediction = {
         stock: {
           ticker,
@@ -256,9 +341,30 @@ export class QuantPredictionService implements OnModuleInit {
           changePercent: quote?.changePercent ?? null,
         },
         prediction: {
-          '1d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
-          '5d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
-          '20d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '1d': {
+            probability: null,
+            calibratedProbability: null,
+            expectedReturn: null,
+            confidenceInterval: null,
+            uncertainty: null,
+            estimationMethod: 'INSUFFICIENT_DATA',
+          },
+          '5d': {
+            probability: null,
+            calibratedProbability: null,
+            expectedReturn: null,
+            confidenceInterval: null,
+            uncertainty: null,
+            estimationMethod: 'INSUFFICIENT_DATA',
+          },
+          '20d': {
+            probability: null,
+            calibratedProbability: null,
+            expectedReturn: null,
+            confidenceInterval: null,
+            uncertainty: null,
+            estimationMethod: 'INSUFFICIENT_DATA',
+          },
         },
         risk: {
           stopLossPrice: null,
@@ -279,9 +385,27 @@ export class QuantPredictionService implements OnModuleInit {
           kellySuggestedWeight: null,
         },
         scenarios: {
-          bull: { targetPrice: null, expectedReturnPercent: null, percentile: 85, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
-          base: { targetPrice: null, expectedReturnPercent: null, percentile: 50, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
-          bear: { targetPrice: null, expectedReturnPercent: null, percentile: 15, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
+          bull: {
+            targetPrice: null,
+            expectedReturnPercent: null,
+            percentile: 85,
+            probability: null,
+            probabilityStatus: 'NOT_ESTIMATED',
+          },
+          base: {
+            targetPrice: null,
+            expectedReturnPercent: null,
+            percentile: 50,
+            probability: null,
+            probabilityStatus: 'NOT_ESTIMATED',
+          },
+          bear: {
+            targetPrice: null,
+            expectedReturnPercent: null,
+            percentile: 15,
+            probability: null,
+            probabilityStatus: 'NOT_ESTIMATED',
+          },
           probabilityStatus: 'NOT_ESTIMATED',
         },
         marketRegime: 'SIDEWAYS',
@@ -289,14 +413,16 @@ export class QuantPredictionService implements OnModuleInit {
         signalQuality: 'LOW',
         dataQuality: 'LOW',
         modelVersion: ModelRegistry.getModelVersion(),
-        calibrationVersion: this.activeArtifact?.calibrationVersion || 'UNAVAILABLE',
+        calibrationVersion:
+          this.activeArtifact?.calibrationVersion || 'UNAVAILABLE',
         predictionTime: new Date().toISOString(),
         dataTime: quote?.timestamp || new Date().toISOString(),
         isStale: true,
         evidence: [
           {
             type: 'TECHNICAL',
-            description: 'PRICE_DATA_UNAVAILABLE: Valid point-in-time market quote is missing. Model inference blocked.',
+            description:
+              'PRICE_DATA_UNAVAILABLE: Valid point-in-time market quote is missing. Model inference blocked.',
             weight: 1.0,
           },
         ],
@@ -310,29 +436,33 @@ export class QuantPredictionService implements OnModuleInit {
     const newsData = await this.newsService.getSentimentScoreForStock(
       ticker,
       meta?.sector || undefined,
-      meta?.name || quote.name
+      meta?.name || quote.name,
     );
 
     const structuredNews = this.newsFeatureEngine.extractFeatures(
       newsData.sentimentLabel,
       newsData.sentimentScore,
-      newsData.topHeadline
+      newsData.topHeadline,
     );
 
     let benchmarkCandles: any[] = [];
     try {
-      benchmarkCandles = await this.stockService.getChartData('^NSEI', '1y').catch(() => []);
+      benchmarkCandles = await this.stockService
+        .getChartData('^NSEI', '1y')
+        .catch(() => []);
     } catch {}
 
     const featureResult = this.featureEngine.calculateFeatures(
       quote,
       candles,
-      benchmarkCandles
+      benchmarkCandles,
     );
 
     // 2. Strict Fail-Closed Feature Availability & Lookback Check
     if (!featureResult.isComplete || !featureResult.features) {
-      const missingSummary = featureResult.missingFeatures.slice(0, 4).join(', ');
+      const missingSummary = featureResult.missingFeatures
+        .slice(0, 4)
+        .join(', ');
       const failClosedPrediction: StockPrediction = {
         stock: {
           ticker,
@@ -343,9 +473,30 @@ export class QuantPredictionService implements OnModuleInit {
           changePercent: quote.changePercent ?? null,
         },
         prediction: {
-          '1d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
-          '5d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
-          '20d': { probability: null, calibratedProbability: null, expectedReturn: null, confidenceInterval: null, uncertainty: null, estimationMethod: 'INSUFFICIENT_DATA' },
+          '1d': {
+            probability: null,
+            calibratedProbability: null,
+            expectedReturn: null,
+            confidenceInterval: null,
+            uncertainty: null,
+            estimationMethod: 'INSUFFICIENT_DATA',
+          },
+          '5d': {
+            probability: null,
+            calibratedProbability: null,
+            expectedReturn: null,
+            confidenceInterval: null,
+            uncertainty: null,
+            estimationMethod: 'INSUFFICIENT_DATA',
+          },
+          '20d': {
+            probability: null,
+            calibratedProbability: null,
+            expectedReturn: null,
+            confidenceInterval: null,
+            uncertainty: null,
+            estimationMethod: 'INSUFFICIENT_DATA',
+          },
         },
         risk: {
           stopLossPrice: null,
@@ -366,17 +517,39 @@ export class QuantPredictionService implements OnModuleInit {
           kellySuggestedWeight: null,
         },
         scenarios: {
-          bull: { targetPrice: null, expectedReturnPercent: null, percentile: 85, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
-          base: { targetPrice: null, expectedReturnPercent: null, percentile: 50, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
-          bear: { targetPrice: null, expectedReturnPercent: null, percentile: 15, probability: null, probabilityStatus: 'NOT_ESTIMATED' },
+          bull: {
+            targetPrice: null,
+            expectedReturnPercent: null,
+            percentile: 85,
+            probability: null,
+            probabilityStatus: 'NOT_ESTIMATED',
+          },
+          base: {
+            targetPrice: null,
+            expectedReturnPercent: null,
+            percentile: 50,
+            probability: null,
+            probabilityStatus: 'NOT_ESTIMATED',
+          },
+          bear: {
+            targetPrice: null,
+            expectedReturnPercent: null,
+            percentile: 15,
+            probability: null,
+            probabilityStatus: 'NOT_ESTIMATED',
+          },
           probabilityStatus: 'NOT_ESTIMATED',
         },
         marketRegime: 'SIDEWAYS',
         decision: 'NO_TRADE',
         signalQuality: 'LOW',
-        dataQuality: featureResult.dataQuality === 'INSUFFICIENT_BENCHMARK' ? 'MEDIUM' : 'LOW',
+        dataQuality:
+          featureResult.dataQuality === 'INSUFFICIENT_BENCHMARK'
+            ? 'MEDIUM'
+            : 'LOW',
         modelVersion: ModelRegistry.getModelVersion(),
-        calibrationVersion: this.activeArtifact?.calibrationVersion || 'UNAVAILABLE',
+        calibrationVersion:
+          this.activeArtifact?.calibrationVersion || 'UNAVAILABLE',
         predictionTime: new Date().toISOString(),
         dataTime: quote.timestamp || new Date().toISOString(),
         isStale: false,
@@ -412,64 +585,102 @@ export class QuantPredictionService implements OnModuleInit {
     const assetVolatility = features.atr_percent;
 
     // Hierarchical Empirical Return Estimations with volatility scaling
-    const est1d = this.inferenceEngine.estimateExpectedReturn(pred1d, '1d', assetVolatility);
-    const est5d = this.inferenceEngine.estimateExpectedReturn(pred5d, '5d', assetVolatility);
-    const est20d = this.inferenceEngine.estimateExpectedReturn(pred20d, '20d', assetVolatility);
+    const est1d = this.inferenceEngine.estimateExpectedReturn(
+      pred1d,
+      '1d',
+      assetVolatility,
+    );
+    const est5d = this.inferenceEngine.estimateExpectedReturn(
+      pred5d,
+      '5d',
+      assetVolatility,
+    );
+    const est20d = this.inferenceEngine.estimateExpectedReturn(
+      pred20d,
+      '20d',
+      assetVolatility,
+    );
 
     const regime = this.regimeEngine.detectRegime(indices, benchmarkCandles);
 
     const downsideProb = parseFloat(
       Math.min(
         MODEL_CONFIG.RISK.DOWNSIDE_PROBABILITY_BOUNDS.MAX,
-        Math.max(MODEL_CONFIG.RISK.DOWNSIDE_PROBABILITY_BOUNDS.MIN, 1 - pred20d)
-      ).toFixed(4)
+        Math.max(
+          MODEL_CONFIG.RISK.DOWNSIDE_PROBABILITY_BOUNDS.MIN,
+          1 - pred20d,
+        ),
+      ).toFixed(4),
     );
 
     const risk = this.riskEngine.calculateRisk(
       quote,
       features,
       downsideProb,
-      candles ? candles.map((c) => c.close) : undefined
+      candles ? candles.map((c) => c.close) : undefined,
     );
 
     const signalQuality: SignalQuality =
       pred20d >= 0.65 || pred20d <= 0.35
         ? 'HIGH'
         : pred20d >= 0.58 || pred20d <= 0.42
-        ? 'MEDIUM'
-        : 'LOW';
+          ? 'MEDIUM'
+          : 'LOW';
 
     const decision = this.decisionEngine.makeDecision(
       pred20d,
       risk,
       regime,
       dataQuality,
-      signalQuality
+      signalQuality,
     );
 
     // Scenario Analysis: Empirical conditional return quantiles (85th Bull, 50th Base, 15th Bear)
-    const scenarioQuantiles = this.onnxEngine.estimateScenarioReturns('20d', pred20d, regime, assetVolatility);
-    const bullReturnPercent = scenarioQuantiles.bull85th !== null ? parseFloat((scenarioQuantiles.bull85th * 100).toFixed(2)) : null;
-    const baseReturnPercent = scenarioQuantiles.base50th !== null ? parseFloat((scenarioQuantiles.base50th * 100).toFixed(2)) : null;
-    const bearReturnPercent = scenarioQuantiles.bear15th !== null ? parseFloat((scenarioQuantiles.bear15th * 100).toFixed(2)) : null;
+    const scenarioQuantiles = this.onnxEngine.estimateScenarioReturns(
+      '20d',
+      pred20d,
+      regime,
+      assetVolatility,
+    );
+    const bullReturnPercent =
+      scenarioQuantiles.bull85th !== null
+        ? parseFloat((scenarioQuantiles.bull85th * 100).toFixed(2))
+        : null;
+    const baseReturnPercent =
+      scenarioQuantiles.base50th !== null
+        ? parseFloat((scenarioQuantiles.base50th * 100).toFixed(2))
+        : null;
+    const bearReturnPercent =
+      scenarioQuantiles.bear15th !== null
+        ? parseFloat((scenarioQuantiles.bear15th * 100).toFixed(2))
+        : null;
 
     const scenarios = {
       bull: {
-        targetPrice: bullReturnPercent !== null ? Money.round(quote.price * (1 + bullReturnPercent / 100)) : null,
+        targetPrice:
+          bullReturnPercent !== null
+            ? Money.round(quote.price * (1 + bullReturnPercent / 100))
+            : null,
         expectedReturnPercent: bullReturnPercent,
         percentile: 85,
         probability: null,
         probabilityStatus: 'NOT_ESTIMATED' as const,
       },
       base: {
-        targetPrice: baseReturnPercent !== null ? Money.round(quote.price * (1 + baseReturnPercent / 100)) : null,
+        targetPrice:
+          baseReturnPercent !== null
+            ? Money.round(quote.price * (1 + baseReturnPercent / 100))
+            : null,
         expectedReturnPercent: baseReturnPercent,
         percentile: 50,
         probability: null,
         probabilityStatus: 'NOT_ESTIMATED' as const,
       },
       bear: {
-        targetPrice: bearReturnPercent !== null ? Money.round(quote.price * (1 + bearReturnPercent / 100)) : null,
+        targetPrice:
+          bearReturnPercent !== null
+            ? Money.round(quote.price * (1 + bearReturnPercent / 100))
+            : null,
         expectedReturnPercent: bearReturnPercent,
         percentile: 15,
         probability: null,
@@ -486,7 +697,7 @@ export class QuantPredictionService implements OnModuleInit {
         description: `[${structuredNews.category}] ${structuredNews.topHeadline} (Sentiment: ${
           structuredNews.score > 0 ? '+' : ''
         }${structuredNews.score}, Severity: ${structuredNews.eventSeverity})`,
-        weight: 0.30,
+        weight: 0.3,
       });
     }
 
@@ -498,29 +709,37 @@ export class QuantPredictionService implements OnModuleInit {
           rsi > 70
             ? 'Overbought momentum expansion'
             : rsi < 30
-            ? 'Oversold mean-reversion setup'
-            : 'Constructive balanced consolidation'
+              ? 'Oversold mean-reversion setup'
+              : 'Constructive balanced consolidation'
         }`,
         weight: 0.25,
       });
     }
 
-    if (features['sma_50_dist'] !== null && features['sma_50_dist'] !== undefined) {
+    if (
+      features['sma_50_dist'] !== null &&
+      features['sma_50_dist'] !== undefined
+    ) {
       const dist = features['sma_50_dist'] * 100;
       evidence.push({
         type: 'TREND',
         description: `Price trading ${dist >= 0 ? '+' : ''}${dist.toFixed(1)}% relative to 50-day moving average`,
-        weight: 0.20,
+        weight: 0.2,
       });
     }
 
-    if (features['volume_z_score'] !== null && features['volume_z_score'] !== undefined) {
+    if (
+      features['volume_z_score'] !== null &&
+      features['volume_z_score'] !== undefined
+    ) {
       const z = features['volume_z_score'];
       if (Math.abs(z) > 1.0) {
         evidence.push({
           type: 'LIQUIDITY',
           description: `Volume Z-score is ${z >= 0 ? '+' : ''}${z.toFixed(1)}σ (${
-            z > 1.5 ? 'Significant institutional accumulation' : 'Above-average turnover'
+            z > 1.5
+              ? 'Significant institutional accumulation'
+              : 'Above-average turnover'
           })`,
           weight: 0.15,
         });
@@ -530,16 +749,18 @@ export class QuantPredictionService implements OnModuleInit {
     evidence.push({
       type: 'REGIME',
       description: `Indian market benchmark regime classified as ${regime}`,
-      weight: 0.10,
+      weight: 0.1,
     });
 
-    const featureContributions = this.inferenceEngine.calculateFeatureContributions(features);
+    const featureContributions =
+      this.inferenceEngine.calculateFeatureContributions(features);
 
     const invalidationConditions: string[] = [
       risk.stopLossPrice !== null
-        ? `Price close below trailing ATR stop-loss level of ₹${risk.stopLossPrice.toFixed(2)} (${(
-            -(((quote.price - risk.stopLossPrice) / quote.price) * 100)
-          ).toFixed(1)}%)`
+        ? `Price close below trailing ATR stop-loss level of ₹${risk.stopLossPrice.toFixed(2)} (${(-(
+            ((quote.price - risk.stopLossPrice) / quote.price) *
+            100
+          )).toFixed(1)}%)`
         : `Volatility surge or trailing stop loss breach`,
       `Loss of structural 50-day SMA baseline support near ₹${
         features['sma_50_dist']
@@ -615,7 +836,10 @@ export class QuantPredictionService implements OnModuleInit {
       invalidationConditions,
     };
 
-    this.cache.set(`${this.artifactChecksum}:${ticker}`, { data: prediction, expiresAt: Date.now() + 45_000 });
+    this.cache.set(`${this.artifactChecksum}:${ticker}`, {
+      data: prediction,
+      expiresAt: Date.now() + 45_000,
+    });
     return prediction;
   }
 
@@ -632,9 +856,18 @@ export class QuantPredictionService implements OnModuleInit {
 
     // Circuit breaker: If repeated upstream failures, back off before retry
     const now = Date.now();
-    if (this.universeFailureCount >= 3 && now - this.lastUniverseFailureTime < 30_000) {
-      if (this.lastValidUniverseSnapshot && this.lastValidUniverseSnapshot.length > 0) {
-        return this.lastValidUniverseSnapshot.map((p) => ({ ...p, isStale: true }));
+    if (
+      this.universeFailureCount >= 3 &&
+      now - this.lastUniverseFailureTime < 30_000
+    ) {
+      if (
+        this.lastValidUniverseSnapshot &&
+        this.lastValidUniverseSnapshot.length > 0
+      ) {
+        return this.lastValidUniverseSnapshot.map((p) => ({
+          ...p,
+          isStale: true,
+        }));
       }
     }
 
@@ -655,7 +888,7 @@ export class QuantPredictionService implements OnModuleInit {
         for (let i = 0; i < scanList.length; i += batchSize) {
           const batch = scanList.slice(i, i + batchSize);
           const results = await Promise.allSettled(
-            batch.map((ticker) => this.getPrediction(ticker))
+            batch.map((ticker) => this.getPrediction(ticker)),
           );
           for (const r of results) {
             if (r.status === 'fulfilled' && r.value) {
@@ -667,13 +900,15 @@ export class QuantPredictionService implements OnModuleInit {
         predictions.sort(
           (a, b) =>
             (b.prediction['20d'].calibratedProbability ?? -1) -
-            (a.prediction['20d'].calibratedProbability ?? -1)
+            (a.prediction['20d'].calibratedProbability ?? -1),
         );
 
         predictions.forEach((p, idx) => {
           p.ranking = {
             rank: idx + 1,
-            percentile: parseFloat((100 - (idx / predictions.length) * 100).toFixed(1)),
+            percentile: parseFloat(
+              (100 - (idx / predictions.length) * 100).toFixed(1),
+            ),
             universeSize: predictions.length,
           };
         });
@@ -689,16 +924,28 @@ export class QuantPredictionService implements OnModuleInit {
         } else {
           this.universeFailureCount++;
           this.lastUniverseFailureTime = Date.now();
-          if (this.lastValidUniverseSnapshot && this.lastValidUniverseSnapshot.length > 0) {
-            return this.lastValidUniverseSnapshot.map((p) => ({ ...p, isStale: true }));
+          if (
+            this.lastValidUniverseSnapshot &&
+            this.lastValidUniverseSnapshot.length > 0
+          ) {
+            return this.lastValidUniverseSnapshot.map((p) => ({
+              ...p,
+              isStale: true,
+            }));
           }
           return [];
         }
       } catch (err) {
         this.universeFailureCount++;
         this.lastUniverseFailureTime = Date.now();
-        if (this.lastValidUniverseSnapshot && this.lastValidUniverseSnapshot.length > 0) {
-          return this.lastValidUniverseSnapshot.map((p) => ({ ...p, isStale: true }));
+        if (
+          this.lastValidUniverseSnapshot &&
+          this.lastValidUniverseSnapshot.length > 0
+        ) {
+          return this.lastValidUniverseSnapshot.map((p) => ({
+            ...p,
+            isStale: true,
+          }));
         }
         return [];
       } finally {
@@ -709,19 +956,29 @@ export class QuantPredictionService implements OnModuleInit {
     return this.inFlightUniversePromise;
   }
 
-  async getTopRankedStocks(horizon: '5d' | '20d' = '5d'): Promise<StockPrediction[]> {
+  async getTopRankedStocks(
+    horizon: '5d' | '20d' = '5d',
+  ): Promise<StockPrediction[]> {
     const all = await this.getUniversePredictions();
 
     let defensiveCandidates = all.filter((p) => {
       const isNotSell = p.decision !== 'SELL' && p.decision !== 'STRONG_SELL';
-      const downsideOk = (p.risk.downsideProbability ?? 1.0) <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_DOWNSIDE_PROBABILITY;
-      const atrOk = (p.risk.volatility ?? 1.0) <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_ATR_PERCENT;
-      const drawdownOk = (p.risk.maxDrawdown60d || 0) <= MODEL_CONFIG.RANKING.LOW_RISK.MAX_MAX_DRAWDOWN;
+      const downsideOk =
+        (p.risk.downsideProbability ?? 1.0) <=
+        MODEL_CONFIG.RANKING.LOW_RISK.MAX_DOWNSIDE_PROBABILITY;
+      const atrOk =
+        (p.risk.volatility ?? 1.0) <=
+        MODEL_CONFIG.RANKING.LOW_RISK.MAX_ATR_PERCENT;
+      const drawdownOk =
+        (p.risk.maxDrawdown60d || 0) <=
+        MODEL_CONFIG.RANKING.LOW_RISK.MAX_MAX_DRAWDOWN;
       return isNotSell && downsideOk && atrOk && drawdownOk;
     });
 
     if (defensiveCandidates.length < 5) {
-      defensiveCandidates = all.filter((p) => p.decision !== 'SELL' && p.decision !== 'STRONG_SELL');
+      defensiveCandidates = all.filter(
+        (p) => p.decision !== 'SELL' && p.decision !== 'STRONG_SELL',
+      );
     }
     if (defensiveCandidates.length === 0) {
       defensiveCandidates = all;
@@ -733,19 +990,19 @@ export class QuantPredictionService implements OnModuleInit {
         typeof p.prediction[horizon]?.expectedReturn === 'number' &&
         typeof p.stock.price === 'number' &&
         p.stock.price > 0 &&
-        p.risk.stopLossPrice !== null
+        p.risk.stopLossPrice !== null,
     );
 
     // Sort by calibrated probability to assign empirical cross-sectional rank percentile
     validCandidates.sort(
       (a, b) =>
         (b.prediction[horizon]?.calibratedProbability || 0) -
-        (a.prediction[horizon]?.calibratedProbability || 0)
+        (a.prediction[horizon]?.calibratedProbability || 0),
     );
     const totalCount = validCandidates.length;
 
     const scoredList = validCandidates.map((p, idx) => {
-      const pred = p.prediction[horizon]!;
+      const pred = p.prediction[horizon];
       const rankPct = totalCount > 1 ? (totalCount - idx) / totalCount : 1.0;
       const expectedExcess = pred.expectedReturn!;
       const statutoryFriction = 0.0013; // 13 bps institutional round-trip friction
@@ -754,9 +1011,13 @@ export class QuantPredictionService implements OnModuleInit {
       const clampedIR = Math.max(-0.5, Math.min(0.5, infoRatio));
 
       // Canonical AlphaScore = rankPct * [1 + clip((expectedExcess - friction) / vol, -0.5, 0.5)]
-      const compositeScore = parseFloat((rankPct * (1.0 + clampedIR)).toFixed(4));
+      const compositeScore = parseFloat(
+        (rankPct * (1.0 + clampedIR)).toFixed(4),
+      );
       const expectedValue = expectedExcess;
-      const sortino = expectedValue / Math.max(0.01, p.risk.downsideDeviation || assetVol * 0.7);
+      const sortino =
+        expectedValue /
+        Math.max(0.01, p.risk.downsideDeviation || assetVol * 0.7);
 
       const breakdown: RankingScoreBreakdown = {
         expectedValue: parseFloat((expectedValue * 100).toFixed(2)),
@@ -804,7 +1065,7 @@ export class QuantPredictionService implements OnModuleInit {
     const topDefensive = selected.map((item, idx) => {
       item.prediction.ranking!.rank = idx + 1;
       item.prediction.ranking!.percentile = parseFloat(
-        (100 - (idx / Math.max(1, scoredList.length)) * 100).toFixed(1)
+        (100 - (idx / Math.max(1, scoredList.length)) * 100).toFixed(1),
       );
       return item.prediction;
     });
@@ -817,13 +1078,19 @@ export class QuantPredictionService implements OnModuleInit {
 
     let highBetaCandidates = all.filter((p) => {
       const isNotSell = p.decision !== 'SELL' && p.decision !== 'STRONG_SELL';
-      const hasVol = (p.risk.volatility || 0) >= MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_ATR_PERCENT;
-      const hasRR = (p.risk.rewardRiskRatio || 0) >= MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_REWARD_RISK_RATIO;
+      const hasVol =
+        (p.risk.volatility || 0) >=
+        MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_ATR_PERCENT;
+      const hasRR =
+        (p.risk.rewardRiskRatio || 0) >=
+        MODEL_CONFIG.RANKING.HIGH_ALPHA.MIN_REWARD_RISK_RATIO;
       return isNotSell && (hasVol || hasRR);
     });
 
     if (highBetaCandidates.length < 5) {
-      highBetaCandidates = all.filter((p) => p.decision !== 'SELL' && p.decision !== 'STRONG_SELL');
+      highBetaCandidates = all.filter(
+        (p) => p.decision !== 'SELL' && p.decision !== 'STRONG_SELL',
+      );
     }
     if (highBetaCandidates.length === 0) {
       highBetaCandidates = all;
@@ -837,68 +1104,89 @@ export class QuantPredictionService implements OnModuleInit {
           typeof p.stock.price === 'number' &&
           p.stock.price > 0 &&
           p.risk.stopLossPrice !== null &&
-          p.risk.targetPrice !== null
+          p.risk.targetPrice !== null,
       )
       .map((p) => {
         const pred = p.prediction['5d'];
         const pUp = pred.calibratedProbability!;
         const pDown = p.risk.downsideProbability!;
-        const expGain = pred.expectedGainConditionalUp || Math.max(0.01, (p.risk.targetPrice! - p.stock.price!) / p.stock.price!);
-        const expLoss = pred.expectedLossConditionalDown || Math.max(0.01, (p.stock.price! - p.risk.stopLossPrice!) / p.stock.price!);
+        const expGain =
+          pred.expectedGainConditionalUp ||
+          Math.max(
+            0.01,
+            (p.risk.targetPrice! - p.stock.price!) / p.stock.price!,
+          );
+        const expLoss =
+          pred.expectedLossConditionalDown ||
+          Math.max(
+            0.01,
+            (p.stock.price! - p.risk.stopLossPrice!) / p.stock.price!,
+          );
 
         const expectedValue = pUp * expGain - pDown * expLoss;
         const payoffAsymmetry = expLoss > 0 ? expGain / expLoss : 2.0;
         const rrRatio = p.risk.rewardRiskRatio || 2.0;
         const relStrength = (p.risk.betaNifty || 1.0) >= 1.1 ? 1.0 : 0.6;
 
-      const annualizedVol = p.risk.annualizedVolatility || 0.30;
-      const excessiveVolPenalty = annualizedVol > 0.45 ? (annualizedVol - 0.45) * 1.5 : 0;
-      const drawdownPenalty = (p.risk.maxDrawdown60d || 0) > 0.15 ? ((p.risk.maxDrawdown60d || 0) - 0.15) * 1.2 : 0;
+        const annualizedVol = p.risk.annualizedVolatility || 0.3;
+        const excessiveVolPenalty =
+          annualizedVol > 0.45 ? (annualizedVol - 0.45) * 1.5 : 0;
+        const drawdownPenalty =
+          (p.risk.maxDrawdown60d || 0) > 0.15
+            ? ((p.risk.maxDrawdown60d || 0) - 0.15) * 1.2
+            : 0;
 
-      const normEv = Math.min(1.0, Math.max(0, (expectedValue + 0.01) / 0.08));
-      const normRR = Math.min(1.0, Math.max(0, rrRatio / 4.0));
-      const normAsymmetry = Math.min(1.0, Math.max(0, payoffAsymmetry / 3.0));
-      const normRS = relStrength;
+        const normEv = Math.min(
+          1.0,
+          Math.max(0, (expectedValue + 0.01) / 0.08),
+        );
+        const normRR = Math.min(1.0, Math.max(0, rrRatio / 4.0));
+        const normAsymmetry = Math.min(1.0, Math.max(0, payoffAsymmetry / 3.0));
+        const normRS = relStrength;
 
-      const cfg = MODEL_CONFIG.RANKING.HIGH_ALPHA;
-      const compositeScore = parseFloat(
-        (
-          cfg.WEIGHT_EXPECTED_VALUE * normEv +
-          cfg.WEIGHT_REWARD_RISK * normRR +
-          cfg.WEIGHT_ASYMMETRY * normAsymmetry +
-          cfg.WEIGHT_RELATIVE_STRENGTH * normRS -
-          excessiveVolPenalty -
-          drawdownPenalty
-        ).toFixed(4)
-      );
+        const cfg = MODEL_CONFIG.RANKING.HIGH_ALPHA;
+        const compositeScore = parseFloat(
+          (
+            cfg.WEIGHT_EXPECTED_VALUE * normEv +
+            cfg.WEIGHT_REWARD_RISK * normRR +
+            cfg.WEIGHT_ASYMMETRY * normAsymmetry +
+            cfg.WEIGHT_RELATIVE_STRENGTH * normRS -
+            excessiveVolPenalty -
+            drawdownPenalty
+          ).toFixed(4),
+        );
 
-      const breakdown: RankingScoreBreakdown = {
-        expectedValue: parseFloat((expectedValue * 100).toFixed(2)),
-        sortinoRatio: parseFloat((expectedValue / Math.max(0.01, p.risk.downsideDeviation || 0.02)).toFixed(2)),
-        riskScore: p.risk.compositeRiskScore || 50,
-        liquidityScore: p.risk.liquidityFlag ? 0.5 : 1.0,
-        payoffAsymmetry: parseFloat(payoffAsymmetry.toFixed(2)),
-        relativeStrength: parseFloat((p.risk.betaNifty || 1.0).toFixed(2)),
-        compositeScore,
-        explanation: `Asymmetric upside expansion with ${payoffAsymmetry.toFixed(1)}:1 payoff ratio, R:R of 1:${rrRatio.toFixed(1)}, and Beta of ${(p.risk.betaNifty || 1.0).toFixed(2)}`,
-      };
+        const breakdown: RankingScoreBreakdown = {
+          expectedValue: parseFloat((expectedValue * 100).toFixed(2)),
+          sortinoRatio: parseFloat(
+            (
+              expectedValue / Math.max(0.01, p.risk.downsideDeviation || 0.02)
+            ).toFixed(2),
+          ),
+          riskScore: p.risk.compositeRiskScore || 50,
+          liquidityScore: p.risk.liquidityFlag ? 0.5 : 1.0,
+          payoffAsymmetry: parseFloat(payoffAsymmetry.toFixed(2)),
+          relativeStrength: parseFloat((p.risk.betaNifty || 1.0).toFixed(2)),
+          compositeScore,
+          explanation: `Asymmetric upside expansion with ${payoffAsymmetry.toFixed(1)}:1 payoff ratio, R:R of 1:${rrRatio.toFixed(1)}, and Beta of ${(p.risk.betaNifty || 1.0).toFixed(2)}`,
+        };
 
-      p.ranking = {
-        rank: 0,
-        percentile: 0,
-        universeSize: highBetaCandidates.length,
-        breakdown,
-      };
+        p.ranking = {
+          rank: 0,
+          percentile: 0,
+          universeSize: highBetaCandidates.length,
+          breakdown,
+        };
 
-      return { prediction: p, compositeScore };
-    });
+        return { prediction: p, compositeScore };
+      });
 
     scoredList.sort((a, b) => b.compositeScore - a.compositeScore);
 
     const topAlpha = scoredList.slice(0, 5).map((item, idx) => {
       item.prediction.ranking!.rank = idx + 1;
       item.prediction.ranking!.percentile = parseFloat(
-        (100 - (idx / Math.max(1, scoredList.length)) * 100).toFixed(1)
+        (100 - (idx / Math.max(1, scoredList.length)) * 100).toFixed(1),
       );
       return item.prediction;
     });
@@ -910,7 +1198,10 @@ export class QuantPredictionService implements OnModuleInit {
     const indices = await this.stockService.getMarketSummary().catch(() => []);
     let benchmarkCandles: any[] = [];
     try {
-      benchmarkCandles = await this.marketProvider.getHistoricalCandles('^NSEI', '6mo');
+      benchmarkCandles = await this.marketProvider.getHistoricalCandles(
+        '^NSEI',
+        '6mo',
+      );
     } catch {}
     return this.regimeEngine.detectRegime(indices, benchmarkCandles);
   }
@@ -920,20 +1211,32 @@ export class QuantPredictionService implements OnModuleInit {
     return {
       version: this.activeArtifact?.modelVersion || '5.0.0',
       modelType: this.activeArtifact?.modelType || 'LEARNED_LIGHTGBM',
-      calibration: this.activeArtifact?.calibration?.['5d']?.status || 'FITTED_OUT_OF_SAMPLE',
+      calibration:
+        this.activeArtifact?.calibration?.['5d']?.status ||
+        'FITTED_OUT_OF_SAMPLE',
       calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
       isCalibrated: this.calibrationEngine.getIsCalibrated(),
       calibrationQuality: this.calibrationEngine.getCalibrationQuality(),
-      calibrationSampleCount: this.calibrationEngine.getCalibrationSampleCount(),
+      calibrationSampleCount:
+        this.calibrationEngine.getCalibrationSampleCount(),
       status: this.governanceStatus.productionReady ? 'ACTIVE' : 'FALLBACK',
       activeModel: this.activeArtifact?.modelVersion || '5.0.0',
       description: model.description,
       featureCount: this.activeArtifact?.featureSchema?.length || 25,
-      calibrationMethod: 'Monotonic Isotonic Regression (PAV) with Empirical-Bayes shrinkage',
-      trainingWindow: this.activeArtifact ? `${this.activeArtifact.trainingStart} to ${this.activeArtifact.trainingEnd}` : model.trainingWindow,
-      validationWindow: this.activeArtifact ? `${this.activeArtifact.validationStart} to ${this.activeArtifact.validationEnd}` : model.validationWindow,
-      testWindow: this.activeArtifact ? `${this.activeArtifact.testStart} to ${this.activeArtifact.testEnd}` : model.testWindow,
-      holdoutWindow: this.activeArtifact ? `${this.activeArtifact.holdoutStart} to ${this.activeArtifact.holdoutEnd}` : model.holdoutWindow,
+      calibrationMethod:
+        'Monotonic Isotonic Regression (PAV) with Empirical-Bayes shrinkage',
+      trainingWindow: this.activeArtifact
+        ? `${this.activeArtifact.trainingStart} to ${this.activeArtifact.trainingEnd}`
+        : model.trainingWindow,
+      validationWindow: this.activeArtifact
+        ? `${this.activeArtifact.validationStart} to ${this.activeArtifact.validationEnd}`
+        : model.validationWindow,
+      testWindow: this.activeArtifact
+        ? `${this.activeArtifact.testStart} to ${this.activeArtifact.testEnd}`
+        : model.testWindow,
+      holdoutWindow: this.activeArtifact
+        ? `${this.activeArtifact.holdoutStart} to ${this.activeArtifact.holdoutEnd}`
+        : model.holdoutWindow,
       governance: this.governanceStatus,
       checksum: this.activeArtifact?.checksum,
     };
@@ -944,7 +1247,12 @@ export class QuantPredictionService implements OnModuleInit {
   }
 
   getArtifactDetails() {
-    return this.activeArtifact || { status: 'UNAVAILABLE', message: 'No active artifact loaded' };
+    return (
+      this.activeArtifact || {
+        status: 'UNAVAILABLE',
+        message: 'No active artifact loaded',
+      }
+    );
   }
 
   getWalkForwardFolds() {
@@ -974,7 +1282,8 @@ export class QuantPredictionService implements OnModuleInit {
     return {
       scorecard,
       artifactChecksum: this.activeArtifact?.checksum,
-      survivorshipStatus: this.activeArtifact?.survivorshipStatus || 'NOT_FULLY_RESOLVED',
+      survivorshipStatus:
+        this.activeArtifact?.survivorshipStatus || 'NOT_FULLY_RESOLVED',
       survivorshipDisclosure: this.activeArtifact?.survivorshipDisclosure,
       governance: this.governanceStatus,
     };
@@ -992,66 +1301,207 @@ export class QuantPredictionService implements OnModuleInit {
     const response = {
       modelVersion: artifact?.modelVersion || result.modelVersion,
       modelType: 'LEARNED_LIGHTGBM' as const,
-      calibrationVersion: this.calibrationEngine.getVersion() || 'v5.0.0-isotonic',
+      calibrationVersion:
+        this.calibrationEngine.getVersion() || 'v5.0.0-isotonic',
       calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
       isCalibrated: this.calibrationEngine.getIsCalibrated(),
-      status: this.governanceStatus.productionReady ? ('HEALTHY' as const) : ('DEGRADED' as const),
-      calibrationMethod: 'Walk-Forward Out-Of-Sample Empirical Evaluation (With NSE Friction Modeling)',
+      status: this.governanceStatus.productionReady
+        ? ('HEALTHY' as const)
+        : ('DEGRADED' as const),
+      calibrationMethod:
+        'Walk-Forward Out-Of-Sample Empirical Evaluation (With NSE Friction Modeling)',
       lastTrained: result.lastBacktestDate,
       governance: this.governanceStatus,
       horizons: {
         '1d': {
-          accuracy: artifact?.horizons?.['1d']?.winRate != null ? artifact.horizons['1d'].winRate / 100 : result.horizons['1d']?.winRate != null ? result.horizons['1d'].winRate / 100 : null,
-          winRate: artifact?.horizons?.['1d']?.winRate != null ? artifact.horizons['1d'].winRate / 100 : result.horizons['1d']?.winRate != null ? result.horizons['1d'].winRate / 100 : null,
-          brierScore: artifact?.horizons?.['1d']?.brierScore ?? result.horizons['1d']?.brierScore ?? null,
-          expectedReturn: result.horizons['1d']?.avgReturn != null ? result.horizons['1d'].avgReturn / 100 : null,
-          realizedReturn: result.horizons['1d']?.avgReturn != null ? result.horizons['1d'].avgReturn / 100 : null,
-          sharpeRatio: artifact?.horizons?.['1d']?.sharpeRatio ?? result.horizons['1d']?.sharpeRatio ?? null,
-          sortinoRatio: artifact?.horizons?.['1d']?.sortinoRatio ?? result.horizons['1d']?.sortinoRatio ?? null,
-          calmarRatio: artifact?.horizons?.['1d']?.calmarRatio ?? result.horizons['1d']?.calmarRatio ?? null,
-          cagr: artifact?.horizons?.['1d']?.cagr ?? result.horizons['1d']?.cagr ?? null,
-          profitFactor: artifact?.horizons?.['1d']?.profitFactor ?? result.horizons['1d']?.profitFactor ?? null,
-          maxDrawdown: artifact?.horizons?.['1d']?.maxDrawdown != null ? artifact.horizons['1d'].maxDrawdown / 100 : result.horizons['1d']?.maxDrawdown != null ? result.horizons['1d'].maxDrawdown / 100 : null,
-          tradesCount: artifact?.horizons?.['1d']?.totalTrades ?? result.horizons['1d']?.totalTrades ?? 0,
+          accuracy:
+            artifact?.horizons?.['1d']?.winRate != null
+              ? artifact.horizons['1d'].winRate / 100
+              : result.horizons['1d']?.winRate != null
+                ? result.horizons['1d'].winRate / 100
+                : null,
+          winRate:
+            artifact?.horizons?.['1d']?.winRate != null
+              ? artifact.horizons['1d'].winRate / 100
+              : result.horizons['1d']?.winRate != null
+                ? result.horizons['1d'].winRate / 100
+                : null,
+          brierScore:
+            artifact?.horizons?.['1d']?.brierScore ??
+            result.horizons['1d']?.brierScore ??
+            null,
+          expectedReturn:
+            result.horizons['1d']?.avgReturn != null
+              ? result.horizons['1d'].avgReturn / 100
+              : null,
+          realizedReturn:
+            result.horizons['1d']?.avgReturn != null
+              ? result.horizons['1d'].avgReturn / 100
+              : null,
+          sharpeRatio:
+            artifact?.horizons?.['1d']?.sharpeRatio ??
+            result.horizons['1d']?.sharpeRatio ??
+            null,
+          sortinoRatio:
+            artifact?.horizons?.['1d']?.sortinoRatio ??
+            result.horizons['1d']?.sortinoRatio ??
+            null,
+          calmarRatio:
+            artifact?.horizons?.['1d']?.calmarRatio ??
+            result.horizons['1d']?.calmarRatio ??
+            null,
+          cagr:
+            artifact?.horizons?.['1d']?.cagr ??
+            result.horizons['1d']?.cagr ??
+            null,
+          profitFactor:
+            artifact?.horizons?.['1d']?.profitFactor ??
+            result.horizons['1d']?.profitFactor ??
+            null,
+          maxDrawdown:
+            artifact?.horizons?.['1d']?.maxDrawdown != null
+              ? artifact.horizons['1d'].maxDrawdown / 100
+              : result.horizons['1d']?.maxDrawdown != null
+                ? result.horizons['1d'].maxDrawdown / 100
+                : null,
+          tradesCount:
+            artifact?.horizons?.['1d']?.totalTrades ??
+            result.horizons['1d']?.totalTrades ??
+            0,
         },
         '5d': {
-          accuracy: artifact?.horizons?.['5d']?.winRate != null ? artifact.horizons['5d'].winRate / 100 : result.horizons['5d']?.winRate != null ? result.horizons['5d'].winRate / 100 : null,
-          winRate: artifact?.horizons?.['5d']?.winRate != null ? artifact.horizons['5d'].winRate / 100 : result.horizons['5d']?.winRate != null ? result.horizons['5d'].winRate / 100 : null,
-          brierScore: artifact?.horizons?.['5d']?.brierScore ?? result.horizons['5d']?.brierScore ?? null,
-          expectedReturn: result.horizons['5d']?.avgReturn != null ? result.horizons['5d'].avgReturn / 100 : null,
-          realizedReturn: result.horizons['5d']?.avgReturn != null ? result.horizons['5d'].avgReturn / 100 : null,
-          sharpeRatio: artifact?.horizons?.['5d']?.sharpeRatio ?? result.horizons['5d']?.sharpeRatio ?? null,
-          sortinoRatio: artifact?.horizons?.['5d']?.sortinoRatio ?? result.horizons['5d']?.sortinoRatio ?? null,
-          calmarRatio: artifact?.horizons?.['5d']?.calmarRatio ?? result.horizons['5d']?.calmarRatio ?? null,
-          cagr: artifact?.horizons?.['5d']?.cagr ?? result.horizons['5d']?.cagr ?? null,
-          profitFactor: artifact?.horizons?.['5d']?.profitFactor ?? result.horizons['5d']?.profitFactor ?? null,
-          maxDrawdown: artifact?.horizons?.['5d']?.maxDrawdown != null ? artifact.horizons['5d'].maxDrawdown / 100 : result.horizons['5d']?.maxDrawdown != null ? result.horizons['5d'].maxDrawdown / 100 : null,
-          tradesCount: artifact?.horizons?.['5d']?.totalTrades ?? result.horizons['5d']?.totalTrades ?? 0,
+          accuracy:
+            artifact?.horizons?.['5d']?.winRate != null
+              ? artifact.horizons['5d'].winRate / 100
+              : result.horizons['5d']?.winRate != null
+                ? result.horizons['5d'].winRate / 100
+                : null,
+          winRate:
+            artifact?.horizons?.['5d']?.winRate != null
+              ? artifact.horizons['5d'].winRate / 100
+              : result.horizons['5d']?.winRate != null
+                ? result.horizons['5d'].winRate / 100
+                : null,
+          brierScore:
+            artifact?.horizons?.['5d']?.brierScore ??
+            result.horizons['5d']?.brierScore ??
+            null,
+          expectedReturn:
+            result.horizons['5d']?.avgReturn != null
+              ? result.horizons['5d'].avgReturn / 100
+              : null,
+          realizedReturn:
+            result.horizons['5d']?.avgReturn != null
+              ? result.horizons['5d'].avgReturn / 100
+              : null,
+          sharpeRatio:
+            artifact?.horizons?.['5d']?.sharpeRatio ??
+            result.horizons['5d']?.sharpeRatio ??
+            null,
+          sortinoRatio:
+            artifact?.horizons?.['5d']?.sortinoRatio ??
+            result.horizons['5d']?.sortinoRatio ??
+            null,
+          calmarRatio:
+            artifact?.horizons?.['5d']?.calmarRatio ??
+            result.horizons['5d']?.calmarRatio ??
+            null,
+          cagr:
+            artifact?.horizons?.['5d']?.cagr ??
+            result.horizons['5d']?.cagr ??
+            null,
+          profitFactor:
+            artifact?.horizons?.['5d']?.profitFactor ??
+            result.horizons['5d']?.profitFactor ??
+            null,
+          maxDrawdown:
+            artifact?.horizons?.['5d']?.maxDrawdown != null
+              ? artifact.horizons['5d'].maxDrawdown / 100
+              : result.horizons['5d']?.maxDrawdown != null
+                ? result.horizons['5d'].maxDrawdown / 100
+                : null,
+          tradesCount:
+            artifact?.horizons?.['5d']?.totalTrades ??
+            result.horizons['5d']?.totalTrades ??
+            0,
         },
         '20d': {
-          accuracy: artifact?.horizons?.['20d']?.winRate != null ? artifact.horizons['20d'].winRate / 100 : result.horizons['20d']?.winRate != null ? result.horizons['20d'].winRate / 100 : null,
-          winRate: artifact?.horizons?.['20d']?.winRate != null ? artifact.horizons['20d'].winRate / 100 : result.horizons['20d']?.winRate != null ? result.horizons['20d'].winRate / 100 : null,
-          brierScore: artifact?.horizons?.['20d']?.brierScore ?? result.horizons['20d']?.brierScore ?? null,
-          expectedReturn: result.horizons['20d']?.avgReturn != null ? result.horizons['20d'].avgReturn / 100 : null,
-          realizedReturn: result.horizons['20d']?.avgReturn != null ? result.horizons['20d'].avgReturn / 100 : null,
-          sharpeRatio: artifact?.horizons?.['20d']?.sharpeRatio ?? result.horizons['20d']?.sharpeRatio ?? null,
-          sortinoRatio: artifact?.horizons?.['20d']?.sortinoRatio ?? result.horizons['20d']?.sortinoRatio ?? null,
-          calmarRatio: artifact?.horizons?.['20d']?.calmarRatio ?? result.horizons['20d']?.calmarRatio ?? null,
-          cagr: artifact?.horizons?.['20d']?.cagr ?? result.horizons['20d']?.cagr ?? null,
-          profitFactor: artifact?.horizons?.['20d']?.profitFactor ?? result.horizons['20d']?.profitFactor ?? null,
-          maxDrawdown: artifact?.horizons?.['20d']?.maxDrawdown != null ? artifact.horizons['20d'].maxDrawdown / 100 : result.horizons['20d']?.maxDrawdown != null ? result.horizons['20d'].maxDrawdown / 100 : null,
-          tradesCount: artifact?.horizons?.['20d']?.totalTrades ?? result.horizons['20d']?.totalTrades ?? 0,
+          accuracy:
+            artifact?.horizons?.['20d']?.winRate != null
+              ? artifact.horizons['20d'].winRate / 100
+              : result.horizons['20d']?.winRate != null
+                ? result.horizons['20d'].winRate / 100
+                : null,
+          winRate:
+            artifact?.horizons?.['20d']?.winRate != null
+              ? artifact.horizons['20d'].winRate / 100
+              : result.horizons['20d']?.winRate != null
+                ? result.horizons['20d'].winRate / 100
+                : null,
+          brierScore:
+            artifact?.horizons?.['20d']?.brierScore ??
+            result.horizons['20d']?.brierScore ??
+            null,
+          expectedReturn:
+            result.horizons['20d']?.avgReturn != null
+              ? result.horizons['20d'].avgReturn / 100
+              : null,
+          realizedReturn:
+            result.horizons['20d']?.avgReturn != null
+              ? result.horizons['20d'].avgReturn / 100
+              : null,
+          sharpeRatio:
+            artifact?.horizons?.['20d']?.sharpeRatio ??
+            result.horizons['20d']?.sharpeRatio ??
+            null,
+          sortinoRatio:
+            artifact?.horizons?.['20d']?.sortinoRatio ??
+            result.horizons['20d']?.sortinoRatio ??
+            null,
+          calmarRatio:
+            artifact?.horizons?.['20d']?.calmarRatio ??
+            result.horizons['20d']?.calmarRatio ??
+            null,
+          cagr:
+            artifact?.horizons?.['20d']?.cagr ??
+            result.horizons['20d']?.cagr ??
+            null,
+          profitFactor:
+            artifact?.horizons?.['20d']?.profitFactor ??
+            result.horizons['20d']?.profitFactor ??
+            null,
+          maxDrawdown:
+            artifact?.horizons?.['20d']?.maxDrawdown != null
+              ? artifact.horizons['20d'].maxDrawdown / 100
+              : result.horizons['20d']?.maxDrawdown != null
+                ? result.horizons['20d'].maxDrawdown / 100
+                : null,
+          tradesCount:
+            artifact?.horizons?.['20d']?.totalTrades ??
+            result.horizons['20d']?.totalTrades ??
+            0,
         },
       },
       ece: artifact?.calibration?.['5d']?.metrics?.ece ?? result.ece ?? null,
-      overallBrierScore: artifact?.calibration?.['5d']?.metrics?.brierScore ?? result.overallBrierScore ?? null,
+      overallBrierScore:
+        artifact?.calibration?.['5d']?.metrics?.brierScore ??
+        result.overallBrierScore ??
+        null,
       overallSharpe: artifact?.backtest?.sharpe ?? result.overallSharpe ?? null,
-      overallSortino: artifact?.backtest?.sortino ?? result.overallSortino ?? null,
-      overallMaxDrawdown: artifact?.backtest?.maxDrawdown != null ? artifact.backtest.maxDrawdown / 100 : result.horizons['5d']?.maxDrawdown != null ? result.horizons['5d'].maxDrawdown / 100 : null,
-      overallWinRate: artifact?.backtest?.winRate ?? result.overallWinRate ?? null,
+      overallSortino:
+        artifact?.backtest?.sortino ?? result.overallSortino ?? null,
+      overallMaxDrawdown:
+        artifact?.backtest?.maxDrawdown != null
+          ? artifact.backtest.maxDrawdown / 100
+          : result.horizons['5d']?.maxDrawdown != null
+            ? result.horizons['5d'].maxDrawdown / 100
+            : null,
+      overallWinRate:
+        artifact?.backtest?.winRate ?? result.overallWinRate ?? null,
       overallAvgReturn: result.overallAvgReturn ?? null,
       overallRiskRewardRatio: result.overallRiskRewardRatio ?? null,
-      annualizedReturn: artifact?.backtest?.cagr ?? result.annualizedReturn ?? null,
+      annualizedReturn:
+        artifact?.backtest?.cagr ?? result.annualizedReturn ?? null,
       nifty50AnnualReturn: result.nifty50AnnualReturn ?? null,
       totalTrades: artifact?.backtest?.totalTrades ?? result.totalTrades ?? 0,
       stocksEvaluated: result.stocksEvaluated ?? 0,
@@ -1064,9 +1514,13 @@ export class QuantPredictionService implements OnModuleInit {
       baselineComparisons: [
         {
           name: 'QuantX LightGBM Institutional Engine (v5.0)',
-          annualReturn: (artifact?.backtest?.cagr || result.annualizedReturn) / 100,
-          sharpeRatio: artifact?.backtest?.sharpe || result.overallSharpe || 1.12,
-          maxDrawdown: (artifact?.backtest?.maxDrawdown || result.horizons['5d'].maxDrawdown) / 100,
+          annualReturn:
+            (artifact?.backtest?.cagr || result.annualizedReturn) / 100,
+          sharpeRatio:
+            artifact?.backtest?.sharpe || result.overallSharpe || 1.12,
+          maxDrawdown:
+            (artifact?.backtest?.maxDrawdown ||
+              result.horizons['5d'].maxDrawdown) / 100,
           winRate: (artifact?.backtest?.winRate || result.overallWinRate) / 100,
           isPrimary: true,
         },

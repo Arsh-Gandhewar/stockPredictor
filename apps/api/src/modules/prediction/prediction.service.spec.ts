@@ -4,10 +4,20 @@ import { CalibrationEngine } from './engines/calibration-engine';
 import { RegimeEngine } from './engines/regime-engine';
 import { RiskEngine } from './engines/risk-engine';
 import { DecisionEngine } from './engines/decision-engine';
-import { ModelArtifactService, ModelArtifact, STATISTICAL_GATES } from './engines/model-artifact.service';
+import {
+  ModelArtifactService,
+  ModelArtifact,
+  STATISTICAL_GATES,
+} from './engines/model-artifact.service';
 import { getCanonicalFeatureSchemaHash } from './engines/onnx-inference.engine';
-import { LogisticRegressionModel, TrainingSample } from './engines/learned-model';
-import { MarketQuote, OHLCVCandle } from '../stock/providers/market-data.provider.interface';
+import {
+  LogisticRegressionModel,
+  TrainingSample,
+} from './engines/learned-model';
+import {
+  MarketQuote,
+  OHLCVCandle,
+} from '../stock/providers/market-data.provider.interface';
 
 describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
   let featureEngine: FeatureEngine;
@@ -47,7 +57,10 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
         fittingMethod: 'PAV',
         parameters: {},
         calibrationVersion: 'v4.0.0-isotonic',
-        calibrationKnots: [[0.3, 0.05], [0.7, 0.95]],
+        calibrationKnots: [
+          [0.3, 0.05],
+          [0.7, 0.95],
+        ],
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
         calibrationMetrics: {
           brierScore: 0.18,
@@ -70,7 +83,11 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
 
       const result = artifactService.validateArtifact(invalidArtifact);
       expect(result.isValid).toBe(false);
-      expect(result.blockingReasons.some((r) => r.includes('Insufficient calibration samples'))).toBe(true);
+      expect(
+        result.blockingReasons.some((r) =>
+          r.includes('Insufficient calibration samples'),
+        ),
+      ).toBe(true);
     });
 
     it('should reject artifacts with corrupted checksum', () => {
@@ -91,7 +108,11 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
         fittingMethod: 'PAV',
         parameters: {},
         calibrationVersion: 'v4.0.0-isotonic',
-        calibrationKnots: [[0.1, 0.12], [0.5, 0.48], [0.9, 0.88]],
+        calibrationKnots: [
+          [0.1, 0.12],
+          [0.5, 0.48],
+          [0.9, 0.88],
+        ],
         calibrationStatus: 'FITTED_OUT_OF_SAMPLE',
         calibrationMetrics: {
           brierScore: 0.15,
@@ -128,7 +149,9 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
 
       const result = artifactService.validateArtifact(artifact);
       expect(result.isValid).toBe(false);
-      expect(result.blockingReasons.some((r) => r.includes('Checksum mismatch'))).toBe(true);
+      expect(
+        result.blockingReasons.some((r) => r.includes('Checksum mismatch')),
+      ).toBe(true);
     });
   });
 
@@ -137,23 +160,23 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
       // 20 validation samples
       const samples = [
         { prob: 0.15, outcome: 0 },
-        { prob: 0.20, outcome: 0 },
+        { prob: 0.2, outcome: 0 },
         { prob: 0.25, outcome: 0 },
-        { prob: 0.30, outcome: 0 },
+        { prob: 0.3, outcome: 0 },
         { prob: 0.35, outcome: 0 },
-        { prob: 0.40, outcome: 0 },
+        { prob: 0.4, outcome: 0 },
         { prob: 0.45, outcome: 0 },
-        { prob: 0.50, outcome: 0 },
+        { prob: 0.5, outcome: 0 },
         { prob: 0.52, outcome: 1 },
         { prob: 0.55, outcome: 1 },
-        { prob: 0.60, outcome: 1 },
+        { prob: 0.6, outcome: 1 },
         { prob: 0.65, outcome: 1 },
-        { prob: 0.70, outcome: 1 },
+        { prob: 0.7, outcome: 1 },
         { prob: 0.75, outcome: 1 },
-        { prob: 0.80, outcome: 1 },
+        { prob: 0.8, outcome: 1 },
         { prob: 0.85, outcome: 1 },
         { prob: 0.88, outcome: 1 },
-        { prob: 0.90, outcome: 1 },
+        { prob: 0.9, outcome: 1 },
         { prob: 0.92, outcome: 1 },
         { prob: 0.95, outcome: 1 },
       ];
@@ -172,7 +195,11 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
   describe('3. Mathematical Uncertainty Separation (Req #8, 9)', () => {
     it('should separate estimation uncertainty from asset return volatility', () => {
       // With no empirical buckets loaded, it fails closed returning INSUFFICIENT_DATA
-      const estimation = inferenceEngine.estimateExpectedReturn(0.60, '5d', 0.025);
+      const estimation = inferenceEngine.estimateExpectedReturn(
+        0.6,
+        '5d',
+        0.025,
+      );
 
       expect(estimation.method).toBe('INSUFFICIENT_DATA');
       expect(estimation.expectedReturn).toBeNull();
@@ -182,13 +209,13 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
 
   describe('4. Independent Backtest Invariant Reconciliations (Req #14, 15)', () => {
     it('should reconcile compounded trade returns with reported equity curve', () => {
-      const tradeReturns = [0.025, -0.012, 0.038, 0.015, -0.020, 0.045];
+      const tradeReturns = [0.025, -0.012, 0.038, 0.015, -0.02, 0.045];
 
       let equity = 100;
       let compoundedMultiplier = 1.0;
       for (const ret of tradeReturns) {
-        equity *= (1 + ret);
-        compoundedMultiplier *= (1 + ret);
+        equity *= 1 + ret;
+        compoundedMultiplier *= 1 + ret;
       }
 
       const totalEquityReturn = (equity - 100) / 100;
@@ -284,55 +311,93 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
   describe('6. End-to-End Walk-Forward Training -> Canonical Serialization -> Reload -> Inference (Req #10, 11, 19)', () => {
     it('should complete full lifecycle with canonical artifact persistence and valid checksum', () => {
       // Step A: Fit Learned Model
-      const trainSamples: TrainingSample[] = Array.from({ length: 50 }, (_, i) => ({
-        features: { rsi_14: 30 + (i % 30), sma_50_dist: 0.02, annualized_volatility: 0.18 },
-        outcome: i % 2 === 0 ? 1 : 0,
-      }));
+      const trainSamples: TrainingSample[] = Array.from(
+        { length: 50 },
+        (_, i) => ({
+          features: {
+            rsi_14: 30 + (i % 30),
+            sma_50_dist: 0.02,
+            annualized_volatility: 0.18,
+          },
+          outcome: i % 2 === 0 ? 1 : 0,
+        }),
+      );
       const model = new LogisticRegressionModel();
       model.fit(trainSamples);
 
       // Step B: Fit PAV Calibration on 40 Validation observations
       const valPredictions = [
-        { prob: 0.22, outcome: 0 }, { prob: 0.25, outcome: 0 }, { prob: 0.28, outcome: 0 }, { prob: 0.30, outcome: 1 },
-        { prob: 0.32, outcome: 0 }, { prob: 0.35, outcome: 0 }, { prob: 0.38, outcome: 1 }, { prob: 0.40, outcome: 0 },
-        { prob: 0.42, outcome: 0 }, { prob: 0.45, outcome: 1 }, { prob: 0.46, outcome: 0 }, { prob: 0.48, outcome: 1 },
-        { prob: 0.50, outcome: 1 }, { prob: 0.52, outcome: 0 }, { prob: 0.54, outcome: 1 }, { prob: 0.55, outcome: 1 },
-        { prob: 0.58, outcome: 1 }, { prob: 0.60, outcome: 1 }, { prob: 0.62, outcome: 0 }, { prob: 0.64, outcome: 1 },
-        { prob: 0.66, outcome: 1 }, { prob: 0.68, outcome: 1 }, { prob: 0.70, outcome: 1 }, { prob: 0.72, outcome: 1 },
-        { prob: 0.74, outcome: 1 }, { prob: 0.76, outcome: 1 }, { prob: 0.78, outcome: 1 }, { prob: 0.80, outcome: 1 },
-        { prob: 0.24, outcome: 0 }, { prob: 0.29, outcome: 0 }, { prob: 0.34, outcome: 0 }, { prob: 0.39, outcome: 1 },
-        { prob: 0.44, outcome: 0 }, { prob: 0.49, outcome: 1 }, { prob: 0.53, outcome: 1 }, { prob: 0.57, outcome: 1 },
-        { prob: 0.63, outcome: 1 }, { prob: 0.67, outcome: 1 }, { prob: 0.73, outcome: 1 }, { prob: 0.77, outcome: 1 },
+        { prob: 0.22, outcome: 0 },
+        { prob: 0.25, outcome: 0 },
+        { prob: 0.28, outcome: 0 },
+        { prob: 0.3, outcome: 1 },
+        { prob: 0.32, outcome: 0 },
+        { prob: 0.35, outcome: 0 },
+        { prob: 0.38, outcome: 1 },
+        { prob: 0.4, outcome: 0 },
+        { prob: 0.42, outcome: 0 },
+        { prob: 0.45, outcome: 1 },
+        { prob: 0.46, outcome: 0 },
+        { prob: 0.48, outcome: 1 },
+        { prob: 0.5, outcome: 1 },
+        { prob: 0.52, outcome: 0 },
+        { prob: 0.54, outcome: 1 },
+        { prob: 0.55, outcome: 1 },
+        { prob: 0.58, outcome: 1 },
+        { prob: 0.6, outcome: 1 },
+        { prob: 0.62, outcome: 0 },
+        { prob: 0.64, outcome: 1 },
+        { prob: 0.66, outcome: 1 },
+        { prob: 0.68, outcome: 1 },
+        { prob: 0.7, outcome: 1 },
+        { prob: 0.72, outcome: 1 },
+        { prob: 0.74, outcome: 1 },
+        { prob: 0.76, outcome: 1 },
+        { prob: 0.78, outcome: 1 },
+        { prob: 0.8, outcome: 1 },
+        { prob: 0.24, outcome: 0 },
+        { prob: 0.29, outcome: 0 },
+        { prob: 0.34, outcome: 0 },
+        { prob: 0.39, outcome: 1 },
+        { prob: 0.44, outcome: 0 },
+        { prob: 0.49, outcome: 1 },
+        { prob: 0.53, outcome: 1 },
+        { prob: 0.57, outcome: 1 },
+        { prob: 0.63, outcome: 1 },
+        { prob: 0.67, outcome: 1 },
+        { prob: 0.73, outcome: 1 },
+        { prob: 0.77, outcome: 1 },
       ];
       const knots = calibrationEngine.fitPAV(valPredictions);
-      const calibMetrics = calibrationEngine.getCalibrationGateMetrics(valPredictions);
+      const calibMetrics =
+        calibrationEngine.getCalibrationGateMetrics(valPredictions);
 
       // Step C: Fit Empirical Return Distributions on 25 Validation trades
       const valTrades = [
-        { prob: 0.30, horizon: '5d' as const, actualReturn: -0.022 },
+        { prob: 0.3, horizon: '5d' as const, actualReturn: -0.022 },
         { prob: 0.35, horizon: '5d' as const, actualReturn: -0.018 },
         { prob: 0.38, horizon: '5d' as const, actualReturn: 0.015 },
         { prob: 0.42, horizon: '5d' as const, actualReturn: -0.012 },
-        { prob: 0.45, horizon: '5d' as const, actualReturn: 0.020 },
+        { prob: 0.45, horizon: '5d' as const, actualReturn: 0.02 },
         { prob: 0.48, horizon: '5d' as const, actualReturn: -0.014 },
-        { prob: 0.50, horizon: '5d' as const, actualReturn: 0.025 },
+        { prob: 0.5, horizon: '5d' as const, actualReturn: 0.025 },
         { prob: 0.52, horizon: '5d' as const, actualReturn: 0.028 },
         { prob: 0.55, horizon: '5d' as const, actualReturn: 0.032 },
-        { prob: 0.58, horizon: '5d' as const, actualReturn: -0.010 },
-        { prob: 0.60, horizon: '5d' as const, actualReturn: 0.036 },
+        { prob: 0.58, horizon: '5d' as const, actualReturn: -0.01 },
+        { prob: 0.6, horizon: '5d' as const, actualReturn: 0.036 },
         { prob: 0.62, horizon: '5d' as const, actualReturn: 0.038 },
         { prob: 0.65, horizon: '5d' as const, actualReturn: 0.042 },
         { prob: 0.68, horizon: '5d' as const, actualReturn: 0.045 },
-        { prob: 0.70, horizon: '5d' as const, actualReturn: 0.048 },
+        { prob: 0.7, horizon: '5d' as const, actualReturn: 0.048 },
         { prob: 0.72, horizon: '5d' as const, actualReturn: 0.051 },
         { prob: 0.75, horizon: '5d' as const, actualReturn: 0.055 },
         { prob: 0.78, horizon: '5d' as const, actualReturn: 0.058 },
         { prob: 0.32, horizon: '5d' as const, actualReturn: -0.025 },
         { prob: 0.46, horizon: '5d' as const, actualReturn: 0.018 },
-        { prob: 0.54, horizon: '5d' as const, actualReturn: 0.030 },
-        { prob: 0.63, horizon: '5d' as const, actualReturn: 0.040 },
+        { prob: 0.54, horizon: '5d' as const, actualReturn: 0.03 },
+        { prob: 0.63, horizon: '5d' as const, actualReturn: 0.04 },
         { prob: 0.67, horizon: '5d' as const, actualReturn: 0.044 },
-        { prob: 0.71, horizon: '5d' as const, actualReturn: 0.050 },
+        { prob: 0.71, horizon: '5d' as const, actualReturn: 0.05 },
         { prob: 0.76, horizon: '5d' as const, actualReturn: 0.056 },
       ];
       inferenceEngine.fitEmpiricalDistributions(valTrades);
@@ -341,14 +406,24 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
       const fs = require('fs');
       const path = require('path');
       const getArtifactPath = (filename: string) => {
-        const p1 = path.resolve(__dirname, '../../../data/artifacts/active', filename);
+        const p1 = path.resolve(
+          __dirname,
+          '../../../data/artifacts/active',
+          filename,
+        );
         if (fs.existsSync(p1)) return p1;
-        const p2 = path.resolve(__dirname, '../../../../apps/api/data/artifacts/active', filename);
+        const p2 = path.resolve(
+          __dirname,
+          '../../../../apps/api/data/artifacts/active',
+          filename,
+        );
         if (fs.existsSync(p2)) return p2;
         return p1;
       };
       const activePath = getArtifactPath('model-artifact.json');
-      const originalContent = fs.existsSync(activePath) ? fs.readFileSync(activePath, 'utf8') : null;
+      const originalContent = fs.existsSync(activePath)
+        ? fs.readFileSync(activePath, 'utf8')
+        : null;
       const originalJson = originalContent ? JSON.parse(originalContent) : {};
 
       try {
@@ -361,9 +436,24 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
           featureSchemaHash: getCanonicalFeatureSchemaHash(),
           featureSchema: FeatureEngine.CANONICAL_FEATURE_KEYS,
           onnxModels: originalJson.onnxModels || {
-            '1d': { filename: 'model_1d.onnx', sha256: 'e2ba796cfec92eeb73a367932aeccdbcf388521c68bf33766a55626678a4b682', status: 'VALID' },
-            '5d': { filename: 'model_5d.onnx', sha256: '219244e3c64f10df121f79f05c709b1b809d4eab27995bcfe10b019ba5c959e8', status: 'VALID' },
-            '20d': { filename: 'model_20d.onnx', sha256: '38a1e862f89d04499e1ab7fb168c6606e21cb2dd6e5299d97b441221ce8cba57', status: 'VALID' },
+            '1d': {
+              filename: 'model_1d.onnx',
+              sha256:
+                'e2ba796cfec92eeb73a367932aeccdbcf388521c68bf33766a55626678a4b682',
+              status: 'VALID',
+            },
+            '5d': {
+              filename: 'model_5d.onnx',
+              sha256:
+                '219244e3c64f10df121f79f05c709b1b809d4eab27995bcfe10b019ba5c959e8',
+              status: 'VALID',
+            },
+            '20d': {
+              filename: 'model_20d.onnx',
+              sha256:
+                '38a1e862f89d04499e1ab7fb168c6606e21cb2dd6e5299d97b441221ce8cba57',
+              status: 'VALID',
+            },
           },
           trainingStart: '2025-08-22',
           trainingEnd: '2026-02-15',
@@ -388,7 +478,7 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
               status: 'FITTED_OUT_OF_SAMPLE',
               knots: knots,
               metrics: {
-                brierScore: 0.20,
+                brierScore: 0.2,
                 rawBrier: 0.24,
                 ece: 0.04,
                 rawECE: 0.08,
@@ -398,10 +488,46 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
             },
           },
           walkForwardFolds: [
-            { fold: 1, trainStart: '2021-01-01', trainEnd: '2023-01-01', valStart: '2023-01-02', valEnd: '2023-06-01', testStart: '2023-06-02', testEnd: '2023-12-31', testSamples: 100 },
-            { fold: 2, trainStart: '2021-06-01', trainEnd: '2023-06-01', valStart: '2023-06-02', valEnd: '2023-12-01', testStart: '2023-12-02', testEnd: '2024-06-30', testSamples: 100 },
-            { fold: 3, trainStart: '2022-01-01', trainEnd: '2024-01-01', valStart: '2024-01-02', valEnd: '2024-06-01', testStart: '2024-06-02', testEnd: '2024-12-31', testSamples: 100 },
-            { fold: 4, trainStart: '2022-06-01', trainEnd: '2024-06-01', valStart: '2024-06-02', valEnd: '2024-12-01', testStart: '2024-12-02', testEnd: '2025-06-30', testSamples: 100 },
+            {
+              fold: 1,
+              trainStart: '2021-01-01',
+              trainEnd: '2023-01-01',
+              valStart: '2023-01-02',
+              valEnd: '2023-06-01',
+              testStart: '2023-06-02',
+              testEnd: '2023-12-31',
+              testSamples: 100,
+            },
+            {
+              fold: 2,
+              trainStart: '2021-06-01',
+              trainEnd: '2023-06-01',
+              valStart: '2023-06-02',
+              valEnd: '2023-12-01',
+              testStart: '2023-12-02',
+              testEnd: '2024-06-30',
+              testSamples: 100,
+            },
+            {
+              fold: 3,
+              trainStart: '2022-01-01',
+              trainEnd: '2024-01-01',
+              valStart: '2024-01-02',
+              valEnd: '2024-06-01',
+              testStart: '2024-06-02',
+              testEnd: '2024-12-31',
+              testSamples: 100,
+            },
+            {
+              fold: 4,
+              trainStart: '2022-06-01',
+              trainEnd: '2024-06-01',
+              valStart: '2024-06-02',
+              valEnd: '2024-12-01',
+              testStart: '2024-12-02',
+              testEnd: '2025-06-30',
+              testSamples: 100,
+            },
           ],
           empiricalDistributions: inferenceEngine.getEmpiricalBuckets(),
           empiricalQuantiles: {
@@ -419,7 +545,8 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
             dailyEquitySeries: [],
           },
           survivorshipStatus: 'RESOLVED',
-          survivorshipDisclosure: 'Historical dynamic index membership reconstructed; point-in-time universe fully resolved.',
+          survivorshipDisclosure:
+            'Historical dynamic index membership reconstructed; point-in-time universe fully resolved.',
           statisticalGatePassed: true,
           gateDetails: {
             sampleSufficiency: true,
@@ -431,12 +558,14 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
           createdAt: new Date().toISOString(),
         };
 
-        const { success, artifactId } = artifactService.saveArtifact(artifactData);
+        const { success, artifactId } =
+          artifactService.saveArtifact(artifactData);
         expect(success).toBe(true);
         expect(artifactId).toBeDefined();
 
         // Step E: Load and Verify from Canonical Location
-        const { artifact: loadedArtifact, validation } = artifactService.loadActiveArtifact();
+        const { artifact: loadedArtifact, validation } =
+          artifactService.loadActiveArtifact();
         expect(validation.isValid).toBe(true);
         expect(loadedArtifact).not.toBeNull();
         expect(loadedArtifact!.checksum).toBeDefined();
@@ -445,20 +574,37 @@ describe('QuantX Quantitative Model Final Hardening & Governance Suite', () => {
         const freshCalibrationEngine = new CalibrationEngine();
         const freshInferenceEngine = new ModelInferenceEngine();
 
-        freshCalibrationEngine.setKnots(loadedArtifact!.calibrationKnots!, loadedArtifact!.calibrationStatus === 'FITTED_OUT_OF_SAMPLE');
-        freshInferenceEngine.setEmpiricalBuckets(loadedArtifact!.empiricalDistributions!);
+        freshCalibrationEngine.setKnots(
+          loadedArtifact!.calibrationKnots!,
+          loadedArtifact!.calibrationStatus === 'FITTED_OUT_OF_SAMPLE',
+        );
+        freshInferenceEngine.setEmpiricalBuckets(
+          loadedArtifact!.empiricalDistributions!,
+        );
 
-        expect(freshCalibrationEngine.getCalibrationStatus()).toBe('FITTED_OUT_OF_SAMPLE');
-        const calibratedProb = freshCalibrationEngine.apply(0.60);
+        expect(freshCalibrationEngine.getCalibrationStatus()).toBe(
+          'FITTED_OUT_OF_SAMPLE',
+        );
+        const calibratedProb = freshCalibrationEngine.apply(0.6);
         expect(calibratedProb).toBeGreaterThan(0);
 
-        const estimation = freshInferenceEngine.estimateExpectedReturn(calibratedProb, '5d', 0.02);
+        const estimation = freshInferenceEngine.estimateExpectedReturn(
+          calibratedProb,
+          '5d',
+          0.02,
+        );
         expect(estimation.method).not.toBe('INSUFFICIENT_DATA');
         expect(estimation.sampleCount).toBeGreaterThan(0);
       } finally {
-        const canonicalBackup = getArtifactPath('model-artifact.canonical.json');
+        const canonicalBackup = getArtifactPath(
+          'model-artifact.canonical.json',
+        );
         if (fs.existsSync(canonicalBackup)) {
-          fs.writeFileSync(activePath, fs.readFileSync(canonicalBackup, 'utf8'), 'utf8');
+          fs.writeFileSync(
+            activePath,
+            fs.readFileSync(canonicalBackup, 'utf8'),
+            'utf8',
+          );
         } else if (originalContent) {
           fs.writeFileSync(activePath, originalContent, 'utf8');
         }

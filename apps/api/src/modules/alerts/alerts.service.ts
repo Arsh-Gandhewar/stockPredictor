@@ -1,4 +1,9 @@
-import { Injectable, Logger, BadRequestException, Optional } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  Optional,
+} from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 import { YahooMarketDataProvider } from '../stock/providers/yahoo-market-data.provider';
 
@@ -17,7 +22,7 @@ export class AlertsService {
 
   constructor(
     private readonly db: DatabaseService,
-    @Optional() private readonly marketProvider?: YahooMarketDataProvider
+    @Optional() private readonly marketProvider?: YahooMarketDataProvider,
   ) {}
 
   private validateTicker(ticker: string): string {
@@ -30,7 +35,9 @@ export class AlertsService {
     }
     // Semantic universe check: verify symbol exists in supported universe
     if (this.marketProvider && !this.marketProvider.isSupportedTicker(clean)) {
-      throw new BadRequestException(`Unsupported stock ticker: '${ticker}'. Symbol not found in market universe.`);
+      throw new BadRequestException(
+        `Unsupported stock ticker: '${ticker}'. Symbol not found in market universe.`,
+      );
     }
     return clean;
   }
@@ -40,10 +47,17 @@ export class AlertsService {
       return await this.db.client.user.upsert({
         where: { clerkId: userId },
         update: {},
-        create: { clerkId: userId, email: `${userId}@quantx.internal`, firstName: 'QuantX', lastName: 'Trader' },
+        create: {
+          clerkId: userId,
+          email: `${userId}@quantx.internal`,
+          firstName: 'QuantX',
+          lastName: 'Trader',
+        },
       });
     } catch {
-      return await this.db.client.user.findUniqueOrThrow({ where: { clerkId: userId } });
+      return await this.db.client.user.findUniqueOrThrow({
+        where: { clerkId: userId },
+      });
     }
   }
 
@@ -66,7 +80,9 @@ export class AlertsService {
         isActive: a.isActive,
       }));
     } catch (err: any) {
-      this.logger.error(`Failed to fetch alerts from DB for ${userId}: ${err.message}`);
+      this.logger.error(
+        `Failed to fetch alerts from DB for ${userId}: ${err.message}`,
+      );
       throw err;
     }
   }
@@ -75,11 +91,13 @@ export class AlertsService {
     userId: string,
     rawTicker: string,
     targetPrice: number,
-    condition: 'ABOVE' | 'BELOW'
+    condition: 'ABOVE' | 'BELOW',
   ): Promise<AlertItem> {
     const ticker = this.validateTicker(rawTicker);
     if (typeof targetPrice !== 'number' || targetPrice <= 0) {
-      throw new BadRequestException('Alert target price must be a positive number');
+      throw new BadRequestException(
+        'Alert target price must be a positive number',
+      );
     }
 
     const user = await this.getOrCreateUser(userId);
@@ -117,8 +135,13 @@ export class AlertsService {
     };
   }
 
-  async deleteAlert(userId: string, alertId: string): Promise<{ success: boolean }> {
-    const user = await this.db.client.user.findUnique({ where: { clerkId: userId } });
+  async deleteAlert(
+    userId: string,
+    alertId: string,
+  ): Promise<{ success: boolean }> {
+    const user = await this.db.client.user.findUnique({
+      where: { clerkId: userId },
+    });
     if (user) {
       await this.db.client.alert.deleteMany({
         where: { id: alertId, userId: user.id },

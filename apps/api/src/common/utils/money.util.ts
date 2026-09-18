@@ -43,7 +43,10 @@ export class Money {
   /**
    * Calculates profit/loss return percentage safely.
    */
-  static calculateReturnPercent(currentValue: number, investedValue: number): number {
+  static calculateReturnPercent(
+    currentValue: number,
+    investedValue: number,
+  ): number {
     if (!investedValue || investedValue <= 0) return 0;
     const pnl = currentValue - investedValue;
     const pct = (pnl / investedValue) * 100;
@@ -57,13 +60,13 @@ export class Money {
     existingQty: number,
     existingAvgPrice: number,
     addedQty: number,
-    executionPrice: number
+    executionPrice: number,
   ): number {
     const totalQty = existingQty + addedQty;
     if (totalQty <= 0) return 0;
     const totalInvested = Money.add(
       Money.multiply(existingQty, existingAvgPrice),
-      Money.multiply(addedQty, executionPrice)
+      Money.multiply(addedQty, executionPrice),
     );
     return Math.round((totalInvested / totalQty + Number.EPSILON) * 100) / 100;
   }

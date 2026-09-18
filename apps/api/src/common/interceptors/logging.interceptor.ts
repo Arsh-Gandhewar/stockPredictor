@@ -30,16 +30,16 @@ export class LoggingInterceptor implements NestInterceptor {
           const duration = Date.now() - startTime;
           const statusCode = res.statusCode;
           this.logger.log(
-            `[${requestId}] ${method} ${url} ${statusCode} +${duration}ms`
+            `[${requestId}] ${method} ${url} ${statusCode} +${duration}ms`,
           );
         },
         error: (err) => {
           const duration = Date.now() - startTime;
           this.logger.error(
-            `[${requestId}] ${method} ${url} ERR +${duration}ms - ${err.message}`
+            `[${requestId}] ${method} ${url} ERR +${duration}ms - ${err.message}`,
           );
         },
-      })
+      }),
     );
   }
 }

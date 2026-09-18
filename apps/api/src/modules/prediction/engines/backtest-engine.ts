@@ -7,7 +7,11 @@ import { RiskEngine } from './risk-engine';
 import { DecisionEngine } from './decision-engine';
 import { RegimeEngine } from './regime-engine';
 import { ModelArtifactService, ModelArtifact } from './model-artifact.service';
-import { OHLCVCandle, MarketQuote, MarketIndexBenchmark } from '../../stock/providers/market-data.provider.interface';
+import {
+  OHLCVCandle,
+  MarketQuote,
+  MarketIndexBenchmark,
+} from '../../stock/providers/market-data.provider.interface';
 import { MODEL_CONFIG } from './model-config';
 import { ModelRegistry } from './model-registry';
 import { TrainingSample } from './learned-model';
@@ -119,7 +123,12 @@ export interface BacktestResult {
   overallSortino: number;
   overallBrierScore: number;
   ece: number;
-  regimePerformance: Array<{ regime: string; winRate: number; avgReturn: number; tradesCount: number }>;
+  regimePerformance: Array<{
+    regime: string;
+    winRate: number;
+    avgReturn: number;
+    tradesCount: number;
+  }>;
   partitionPerformance: PartitionPerformanceBreakdown[];
   rollingWindowSummary?: RollingWindowSummary;
   holdoutPerformance: {
@@ -134,7 +143,11 @@ export interface BacktestResult {
     sortinoRatio: number;
   };
   modelComparison: {
-    baselineHeuristic: { brierScore: number; winRate: number; avgReturn: number };
+    baselineHeuristic: {
+      brierScore: number;
+      winRate: number;
+      avgReturn: number;
+    };
     learnedBaseline: { brierScore: number; winRate: number; avgReturn: number };
   };
   auditDisclosures: {
@@ -149,9 +162,21 @@ export class BacktestEngine {
   private readonly logger = new Logger(BacktestEngine.name);
 
   static readonly BACKTEST_TICKERS = [
-    'RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'ITC.NS', 'BHARTIARTL.NS',
-    'TATAMOTORS.NS', 'SUNPHARMA.NS', 'LT.NS', 'TATASTEEL.NS', 'ADANIENT.NS',
-    'TITAN.NS', 'BAJFINANCE.NS', 'COALINDIA.NS', 'DIXON.NS', 'BHEL.NS',
+    'RELIANCE.NS',
+    'TCS.NS',
+    'HDFCBANK.NS',
+    'ITC.NS',
+    'BHARTIARTL.NS',
+    'TATAMOTORS.NS',
+    'SUNPHARMA.NS',
+    'LT.NS',
+    'TATASTEEL.NS',
+    'ADANIENT.NS',
+    'TITAN.NS',
+    'BAJFINANCE.NS',
+    'COALINDIA.NS',
+    'DIXON.NS',
+    'BHEL.NS',
   ];
 
   constructor(
@@ -162,7 +187,7 @@ export class BacktestEngine {
     private readonly decisionEngine: DecisionEngine,
     private readonly regimeEngine: RegimeEngine,
     private readonly artifactService: ModelArtifactService,
-    private readonly marketProvider: YahooMarketDataProvider
+    private readonly marketProvider: YahooMarketDataProvider,
   ) {}
 
   private roundTo1(num: number): number {
@@ -174,25 +199,37 @@ export class BacktestEngine {
   }
 
   async runFullBacktest(): Promise<BacktestResult> {
-    this.logger.log('Executing point-in-time walk-forward backtest across train, validation, test, and holdout partitions...');
+    this.logger.log(
+      'Executing point-in-time walk-forward backtest across train, validation, test, and holdout partitions...',
+    );
 
     let benchmarkCandles: OHLCVCandle[] = [];
     try {
-      benchmarkCandles = await this.marketProvider.getHistoricalCandles('^NSEI', '1y');
+      benchmarkCandles = await this.marketProvider.getHistoricalCandles(
+        '^NSEI',
+        '1y',
+      );
     } catch {
       this.logger.warn('Failed to load NIFTY benchmark candles for backtest');
     }
 
     const results = await Promise.allSettled(
       BacktestEngine.BACKTEST_TICKERS.map(async (ticker, idx) => {
-        this.logger.log(`Backtesting ${ticker}... (${idx + 1}/${BacktestEngine.BACKTEST_TICKERS.length})`);
-        const candles = await this.marketProvider.getHistoricalCandles(ticker, '1y');
+        this.logger.log(
+          `Backtesting ${ticker}... (${idx + 1}/${BacktestEngine.BACKTEST_TICKERS.length})`,
+        );
+        const candles = await this.marketProvider.getHistoricalCandles(
+          ticker,
+          '1y',
+        );
         if (candles.length < MODEL_CONFIG.BACKTEST.MIN_CANDLES_REQUIRED) {
-          this.logger.warn(`Skipping ${ticker} due to insufficient candle count (${candles.length})`);
+          this.logger.warn(
+            `Skipping ${ticker} due to insufficient candle count (${candles.length})`,
+          );
           return { trades: [], trainingSamples: [] };
         }
         return this.runSingleStockBacktest(ticker, candles, benchmarkCandles);
-      })
+      }),
     );
 
     let allTrades: BacktestTrade[] = [];
@@ -202,10 +239,14 @@ export class BacktestEngine {
     results.forEach((res, idx) => {
       if (res.status === 'fulfilled' && res.value.trades.length > 0) {
         allTrades = allTrades.concat(res.value.trades);
-        allTrainingSamples = allTrainingSamples.concat(res.value.trainingSamples);
+        allTrainingSamples = allTrainingSamples.concat(
+          res.value.trainingSamples,
+        );
         stocksEvaluated++;
       } else if (res.status === 'rejected') {
-        this.logger.warn(`Failed to backtest ${BacktestEngine.BACKTEST_TICKERS[idx]}: ${res.reason}`);
+        this.logger.warn(
+          `Failed to backtest ${BacktestEngine.BACKTEST_TICKERS[idx]}: ${res.reason}`,
+        );
       }
     });
 
@@ -248,7 +289,8 @@ export class BacktestEngine {
       prob: t.predictedProb,
       outcome: t.directionCorrect ? 1 : 0,
     }));
-    const calibrationMetrics = this.calibrationEngine.getCalibrationGateMetrics(valSamples);
+    const calibrationMetrics =
+      this.calibrationEngine.getCalibrationGateMetrics(valSamples);
 
     const artifactData: Omit<ModelArtifact, 'checksum' | 'id'> = {
       modelVersion: ModelRegistry.getModelVersion(),
@@ -261,9 +303,13 @@ export class BacktestEngine {
       testStart: testDates[0] || '2026-05-16',
       testEnd: testDates[testDates.length - 1] || '2026-07-15',
       holdoutStart: holdoutDates[0] || '2026-07-16',
-      holdoutEnd: holdoutDates[holdoutDates.length - 1] || dates[dates.length - 1] || '2026-08-22',
+      holdoutEnd:
+        holdoutDates[holdoutDates.length - 1] ||
+        dates[dates.length - 1] ||
+        '2026-08-22',
       horizon: '5d',
-      fittingMethod: 'Isotonic Regression (PAV) + Trimmed Two-Stage Conditional Return Estimation',
+      fittingMethod:
+        'Isotonic Regression (PAV) + Trimmed Two-Stage Conditional Return Estimation',
       parameters: learnedModel.getWeights(),
       calibrationVersion: this.calibrationEngine.getVersion(),
       calibrationKnots: this.calibrationEngine.getKnots(),
@@ -273,7 +319,8 @@ export class BacktestEngine {
       statisticalGatePassed: this.calibrationEngine.getIsCalibrated(),
       gateDetails: {
         sampleSufficiency: valTrades.length >= 20,
-        calibrationQuality: calibrationMetrics.isMonotonic && calibrationMetrics.ece <= 0.18,
+        calibrationQuality:
+          calibrationMetrics.isMonotonic && calibrationMetrics.ece <= 0.18,
         versionCompatibility: true,
         dateRangeIntegrity: true,
       },
@@ -293,19 +340,33 @@ export class BacktestEngine {
     // 6. Overall Metrics
     const overallWinRate =
       allTrades.length > 0
-        ? (allTrades.filter((t) => t.directionCorrect).length / allTrades.length) * 100
+        ? (allTrades.filter((t) => t.directionCorrect).length /
+            allTrades.length) *
+          100
         : 0;
 
     const overallAvgReturn =
       allTrades.length > 0
-        ? (allTrades.reduce((sum, t) => sum + t.netReturn, 0) / allTrades.length) * 100
+        ? (allTrades.reduce((sum, t) => sum + t.netReturn, 0) /
+            allTrades.length) *
+          100
         : 0;
 
     let overallRiskRewardRatio = 0;
     const winningTrades = allTrades.filter((t) => t.netReturn > 0);
     const losingTrades = allTrades.filter((t) => t.netReturn <= 0);
-    const avgWin = winningTrades.length > 0 ? winningTrades.reduce((sum, t) => sum + t.netReturn, 0) / winningTrades.length : 0;
-    const avgLoss = losingTrades.length > 0 ? Math.abs(losingTrades.reduce((sum, t) => sum + t.netReturn, 0) / losingTrades.length) : 0;
+    const avgWin =
+      winningTrades.length > 0
+        ? winningTrades.reduce((sum, t) => sum + t.netReturn, 0) /
+          winningTrades.length
+        : 0;
+    const avgLoss =
+      losingTrades.length > 0
+        ? Math.abs(
+            losingTrades.reduce((sum, t) => sum + t.netReturn, 0) /
+              losingTrades.length,
+          )
+        : 0;
     if (avgLoss > 0) {
       overallRiskRewardRatio = avgWin / avgLoss;
     }
@@ -317,9 +378,10 @@ export class BacktestEngine {
     if (benchmarkCandles.length >= 2) {
       const firstClose = benchmarkCandles[0].close;
       const lastClose = benchmarkCandles[benchmarkCandles.length - 1].close;
-      const totalReturn = (lastClose / firstClose) - 1;
+      const totalReturn = lastClose / firstClose - 1;
       const tradingDays = benchmarkCandles.length;
-      nifty50AnnualReturn = ((Math.pow(1 + totalReturn, 252 / tradingDays)) - 1) * 100;
+      nifty50AnnualReturn =
+        (Math.pow(1 + totalReturn, 252 / tradingDays) - 1) * 100;
     }
 
     // Overall Calibration Metrics
@@ -327,7 +389,8 @@ export class BacktestEngine {
       prob: t.predictedProb,
       outcome: t.directionCorrect ? 1 : 0,
     }));
-    const overallBrierScore = this.calibrationEngine.calculateBrierScore(calibrationPairs);
+    const overallBrierScore =
+      this.calibrationEngine.calculateBrierScore(calibrationPairs);
     const ece = this.calibrationEngine.calculateECE(calibrationPairs);
 
     // Regime Performance Breakdown
@@ -338,53 +401,73 @@ export class BacktestEngine {
       regimeGroups.set(trade.regime, list);
     }
 
-    const regimePerformance = Array.from(regimeGroups.entries()).map(([regime, trades]) => {
-      const winCount = trades.filter((t) => t.directionCorrect).length;
-      const avgRet = trades.reduce((s, t) => s + t.netReturn, 0) / trades.length;
-      return {
-        regime,
-        winRate: this.roundTo2(winCount / trades.length),
-        avgReturn: this.roundTo2(avgRet * 100),
-        tradesCount: trades.length,
-      };
-    });
+    const regimePerformance = Array.from(regimeGroups.entries()).map(
+      ([regime, trades]) => {
+        const winCount = trades.filter((t) => t.directionCorrect).length;
+        const avgRet =
+          trades.reduce((s, t) => s + t.netReturn, 0) / trades.length;
+        return {
+          regime,
+          winRate: this.roundTo2(winCount / trades.length),
+          avgReturn: this.roundTo2(avgRet * 100),
+          tradesCount: trades.length,
+        };
+      },
+    );
 
     // Partition Performance Breakdown with Exact Date Boundaries
-    const partitionDefs: { partition: WalkForwardPartition; datesList: string[] }[] = [
+    const partitionDefs: {
+      partition: WalkForwardPartition;
+      datesList: string[];
+    }[] = [
       { partition: 'TRAIN', datesList: trainDates },
       { partition: 'VALIDATION', datesList: valDates },
       { partition: 'TEST', datesList: testDates },
       { partition: 'HOLDOUT', datesList: holdoutDates },
     ];
 
-    const partitionPerformance: PartitionPerformanceBreakdown[] = partitionDefs.map(({ partition, datesList }) => {
-      const pTrades = allTrades.filter((t) => t.partition === partition && t.horizon === '5d');
-      const metrics = this.computeDirectHorizonMetrics(pTrades, '5d');
+    const partitionPerformance: PartitionPerformanceBreakdown[] =
+      partitionDefs.map(({ partition, datesList }) => {
+        const pTrades = allTrades.filter(
+          (t) => t.partition === partition && t.horizon === '5d',
+        );
+        const metrics = this.computeDirectHorizonMetrics(pTrades, '5d');
 
-      return {
-        partition,
-        startDate: datesList[0] || 'N/A',
-        endDate: datesList[datesList.length - 1] || 'N/A',
-        tradesCount: pTrades.length,
-        winRate: metrics.winRate,
-        avgReturn: metrics.avgReturn,
-        cagr: metrics.cagr,
-        sharpeRatio: metrics.sharpeRatio,
-        sortinoRatio: metrics.sortinoRatio,
-        maxDrawdown: metrics.maxDrawdown,
-        profitFactor: metrics.profitFactor,
-        brierScore: metrics.brierScore,
-      };
-    });
+        return {
+          partition,
+          startDate: datesList[0] || 'N/A',
+          endDate: datesList[datesList.length - 1] || 'N/A',
+          tradesCount: pTrades.length,
+          winRate: metrics.winRate,
+          avgReturn: metrics.avgReturn,
+          cagr: metrics.cagr,
+          sharpeRatio: metrics.sharpeRatio,
+          sortinoRatio: metrics.sortinoRatio,
+          maxDrawdown: metrics.maxDrawdown,
+          profitFactor: metrics.profitFactor,
+          brierScore: metrics.brierScore,
+        };
+      });
 
-    const holdoutMetrics = partitionPerformance.find((p) => p.partition === 'HOLDOUT');
+    const holdoutMetrics = partitionPerformance.find(
+      (p) => p.partition === 'HOLDOUT',
+    );
 
     // Rolling Window Robustness Analysis (3 Chronological Windows)
     const rollingWindows: RollingWindowMetric[] = [];
     const windowPairs: [string[], string[]][] = [
-      [trainDates.slice(0, Math.floor(trainDates.length * 0.7)), trainDates.slice(Math.floor(trainDates.length * 0.7))],
-      [valDates.slice(0, Math.floor(valDates.length * 0.7)), valDates.slice(Math.floor(valDates.length * 0.7))],
-      [testDates.slice(0, Math.floor(testDates.length * 0.7)), testDates.slice(Math.floor(testDates.length * 0.7))],
+      [
+        trainDates.slice(0, Math.floor(trainDates.length * 0.7)),
+        trainDates.slice(Math.floor(trainDates.length * 0.7)),
+      ],
+      [
+        valDates.slice(0, Math.floor(valDates.length * 0.7)),
+        valDates.slice(Math.floor(valDates.length * 0.7)),
+      ],
+      [
+        testDates.slice(0, Math.floor(testDates.length * 0.7)),
+        testDates.slice(Math.floor(testDates.length * 0.7)),
+      ],
     ];
 
     windowPairs.forEach(([wTrain, wTest], idx) => {
@@ -392,7 +475,10 @@ export class BacktestEngine {
       const endTr = wTrain[wTrain.length - 1] || 'N/A';
       const startTe = wTest[0] || 'N/A';
       const endTe = wTest[wTest.length - 1] || 'N/A';
-      const wTrades = allTrades.filter((t) => t.entryDate >= startTe && t.entryDate <= endTe && t.horizon === '5d');
+      const wTrades = allTrades.filter(
+        (t) =>
+          t.entryDate >= startTe && t.entryDate <= endTe && t.horizon === '5d',
+      );
       const m = this.computeDirectHorizonMetrics(wTrades, '5d');
 
       rollingWindows.push({
@@ -413,7 +499,8 @@ export class BacktestEngine {
     const winRates = rollingWindows.map((w) => w.winRate);
     const cagrs = rollingWindows.map((w) => w.cagr);
 
-    const calcMean = (arr: number[]) => (arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0);
+    const calcMean = (arr: number[]) =>
+      arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0;
     const calcMedian = (arr: number[]) => {
       if (!arr.length) return 0;
       const s = [...arr].sort((a, b) => a - b);
@@ -423,7 +510,9 @@ export class BacktestEngine {
     const calcStd = (arr: number[]) => {
       if (arr.length < 2) return 0;
       const m = calcMean(arr);
-      return Math.sqrt(arr.reduce((s, x) => s + Math.pow(x - m, 2), 0) / (arr.length - 1));
+      return Math.sqrt(
+        arr.reduce((s, x) => s + Math.pow(x - m, 2), 0) / (arr.length - 1),
+      );
     };
 
     const rollingWindowSummary: RollingWindowSummary = {
@@ -445,10 +534,23 @@ export class BacktestEngine {
 
     // Comparative Model Evaluation on TEST Partition
     const test5dTrades = testTrades.filter((t) => t.horizon === '5d');
-    const testPairs = test5dTrades.map((t) => ({ prob: t.predictedProb, outcome: t.directionCorrect ? 1 : 0 }));
+    const testPairs = test5dTrades.map((t) => ({
+      prob: t.predictedProb,
+      outcome: t.directionCorrect ? 1 : 0,
+    }));
     const baselineBrier = this.calibrationEngine.calculateBrierScore(testPairs);
-    const baselineWinRate = test5dTrades.length > 0 ? (test5dTrades.filter((t) => t.directionCorrect).length / test5dTrades.length) * 100 : 0;
-    const baselineAvgRet = test5dTrades.length > 0 ? (test5dTrades.reduce((s, t) => s + t.netReturn, 0) / test5dTrades.length) * 100 : 0;
+    const baselineWinRate =
+      test5dTrades.length > 0
+        ? (test5dTrades.filter((t) => t.directionCorrect).length /
+            test5dTrades.length) *
+          100
+        : 0;
+    const baselineAvgRet =
+      test5dTrades.length > 0
+        ? (test5dTrades.reduce((s, t) => s + t.netReturn, 0) /
+            test5dTrades.length) *
+          100
+        : 0;
 
     return {
       lastBacktestDate: new Date().toISOString(),
@@ -497,9 +599,12 @@ export class BacktestEngine {
         },
       },
       auditDisclosures: {
-        sameCandleCollisionRule: 'Conservative: When high touches target and low touches stop on the same candle, stop-loss execution is assumed to trigger first.',
-        frictionModeling: '0.13% round-trip institutional friction (0.03% brokerage, 0.10% STT on sell side, 5 bps execution slippage applied to entry and exit).',
-        leakagePrevention: 'Strict point-in-time candle slicing. Features, volatility, and benchmark alignment truncated to entry timestamp.',
+        sameCandleCollisionRule:
+          'Conservative: When high touches target and low touches stop on the same candle, stop-loss execution is assumed to trigger first.',
+        frictionModeling:
+          '0.13% round-trip institutional friction (0.03% brokerage, 0.10% STT on sell side, 5 bps execution slippage applied to entry and exit).',
+        leakagePrevention:
+          'Strict point-in-time candle slicing. Features, volatility, and benchmark alignment truncated to entry timestamp.',
       },
     };
   }
@@ -507,7 +612,7 @@ export class BacktestEngine {
   private runSingleStockBacktest(
     ticker: string,
     candles: OHLCVCandle[],
-    benchmarkCandles: OHLCVCandle[]
+    benchmarkCandles: OHLCVCandle[],
   ): { trades: BacktestTrade[]; trainingSamples: TrainingSample[] } {
     const trades: BacktestTrade[] = [];
     const trainingSamples: TrainingSample[] = [];
@@ -518,7 +623,8 @@ export class BacktestEngine {
     const sttSell = MODEL_CONFIG.COSTS.STT_SELL_PCT;
 
     const totalWalkForwardCandles = candles.length - 21 - warmup;
-    if (totalWalkForwardCandles <= 0) return { trades: [], trainingSamples: [] };
+    if (totalWalkForwardCandles <= 0)
+      return { trades: [], trainingSamples: [] };
 
     for (let i = warmup; i <= candles.length - 21; i += step) {
       const historicalCandles = candles.slice(0, i + 1);
@@ -546,20 +652,30 @@ export class BacktestEngine {
         freshness: 'CLOSED' as const,
       };
 
-      const benchSlice = benchmarkCandles.slice(0, Math.min(i + 1, benchmarkCandles.length));
+      const benchSlice = benchmarkCandles.slice(
+        0,
+        Math.min(i + 1, benchmarkCandles.length),
+      );
       if (benchSlice.length < 61) {
         throw new Error(
-          'INSUFFICIENT_DATA: Historical benchmark candles for ^NSEI are missing; cannot substitute stock price as benchmark.'
+          'INSUFFICIENT_DATA: Historical benchmark candles for ^NSEI are missing; cannot substitute stock price as benchmark.',
         );
       }
-      const featResult = this.featureEngine.calculateFeatures(quote, historicalCandles, benchSlice);
+      const featResult = this.featureEngine.calculateFeatures(
+        quote,
+        historicalCandles,
+        benchSlice,
+      );
       if (!featResult.isComplete || !featResult.features) {
         continue;
       }
       const features = featResult.features;
 
       const benchCurr = benchSlice[benchSlice.length - 1].close;
-      const benchPrev = benchSlice.length > 1 ? benchSlice[benchSlice.length - 2].close : benchCurr;
+      const benchPrev =
+        benchSlice.length > 1
+          ? benchSlice[benchSlice.length - 2].close
+          : benchCurr;
       const benchDelta = benchCurr - benchPrev;
       const benchDeltaPct = benchPrev > 0 ? (benchDelta / benchPrev) * 100 : 0;
 
@@ -575,22 +691,26 @@ export class BacktestEngine {
           timestamp: String(candles[i].time),
         },
       ];
-      const regime = this.regimeEngine.detectRegime(benchmarkIndices, benchSlice);
+      const regime = this.regimeEngine.detectRegime(
+        benchmarkIndices,
+        benchSlice,
+      );
 
       // Assign Walk-Forward Partition
       const progressFraction = (i - warmup) / totalWalkForwardCandles;
       const partition: WalkForwardPartition =
-        progressFraction < 0.50
+        progressFraction < 0.5
           ? 'TRAIN'
           : progressFraction < 0.75
-          ? 'VALIDATION'
-          : progressFraction < 0.90
-          ? 'TEST'
-          : 'HOLDOUT';
+            ? 'VALIDATION'
+            : progressFraction < 0.9
+              ? 'TEST'
+              : 'HOLDOUT';
 
       // Record training samples from TRAIN partition only for learned model fitting
       if (partition === 'TRAIN' && i + 5 < candles.length) {
-        const fwdReturn = (candles[i + 5].close - candles[i].close) / candles[i].close;
+        const fwdReturn =
+          (candles[i + 5].close - candles[i].close) / candles[i].close;
         trainingSamples.push({
           features: { ...features },
           outcome: fwdReturn > 0 ? 1 : 0,
@@ -605,7 +725,10 @@ export class BacktestEngine {
 
         let downsideProb = 1 - calibProb;
         if (horizon !== '20d') {
-          const pred20d_raw = this.inferenceEngine.evaluate(features as any, '20d');
+          const pred20d_raw = this.inferenceEngine.evaluate(
+            features as any,
+            '20d',
+          );
           const pred20d_calib = this.calibrationEngine.apply(pred20d_raw);
           downsideProb = 1 - pred20d_calib;
         }
@@ -613,22 +736,22 @@ export class BacktestEngine {
         const risk = this.riskEngine.calculateRisk(
           quote,
           features,
-          Math.min(0.95, Math.max(0.05, downsideProb))
+          Math.min(0.95, Math.max(0.05, downsideProb)),
         );
 
         const signalQuality =
           calibProb >= 0.65 || calibProb <= 0.35
             ? 'HIGH'
             : calibProb >= 0.58 || calibProb <= 0.42
-            ? 'MEDIUM'
-            : 'LOW';
+              ? 'MEDIUM'
+              : 'LOW';
 
         const decision = this.decisionEngine.makeDecision(
           calibProb,
           risk,
           regime,
           'HIGH',
-          signalQuality
+          signalQuality,
         );
 
         const isLong = ['BUY', 'STRONG_BUY'].includes(decision);
@@ -722,11 +845,13 @@ export class BacktestEngine {
           if (positionType === 'LONG') {
             grossReturn = (exitPrice - quote.price) / quote.price;
             const effectiveEntry = quote.price * (1 + slippage + brokerage);
-            const effectiveExit = exitPrice * (1 - slippage - brokerage - sttSell);
+            const effectiveExit =
+              exitPrice * (1 - slippage - brokerage - sttSell);
             netReturn = (effectiveExit - effectiveEntry) / effectiveEntry;
           } else {
             grossReturn = (quote.price - exitPrice) / quote.price;
-            const effectiveEntry = quote.price * (1 - slippage - brokerage - sttSell);
+            const effectiveEntry =
+              quote.price * (1 - slippage - brokerage - sttSell);
             const effectiveExit = exitPrice * (1 + slippage + brokerage);
             netReturn = (effectiveEntry - effectiveExit) / quote.price;
           }
@@ -767,7 +892,7 @@ export class BacktestEngine {
    */
   private computeDirectHorizonMetrics(
     trades: BacktestTrade[],
-    horizon: '1d' | '5d' | '20d'
+    horizon: '1d' | '5d' | '20d',
   ): HorizonBacktestResult {
     if (trades.length === 0) {
       return {
@@ -789,19 +914,34 @@ export class BacktestEngine {
       };
     }
 
-    const winRate = (trades.filter((t) => t.directionCorrect).length / trades.length) * 100;
+    const winRate =
+      (trades.filter((t) => t.directionCorrect).length / trades.length) * 100;
     const wins = trades.filter((t) => t.netReturn > 0);
     const losses = trades.filter((t) => t.netReturn <= 0);
 
-    const avgGainPercent = wins.length > 0 ? (wins.reduce((sum, t) => sum + t.netReturn, 0) / wins.length) * 100 : 0;
-    const avgLossPercent = losses.length > 0 ? (losses.reduce((sum, t) => sum + t.netReturn, 0) / losses.length) * 100 : 0;
+    const avgGainPercent =
+      wins.length > 0
+        ? (wins.reduce((sum, t) => sum + t.netReturn, 0) / wins.length) * 100
+        : 0;
+    const avgLossPercent =
+      losses.length > 0
+        ? (losses.reduce((sum, t) => sum + t.netReturn, 0) / losses.length) *
+          100
+        : 0;
 
     const sumWins = wins.reduce((sum, t) => sum + t.netReturn, 0);
     const sumLosses = losses.reduce((sum, t) => sum + t.netReturn, 0);
-    const profitFactor = Math.abs(sumLosses) > 0 ? sumWins / Math.abs(sumLosses) : sumWins > 0 ? 'NOT_MEANINGFUL' : 0;
+    const profitFactor =
+      Math.abs(sumLosses) > 0
+        ? sumWins / Math.abs(sumLosses)
+        : sumWins > 0
+          ? 'NOT_MEANINGFUL'
+          : 0;
 
     // 1. Build Time-Aligned Daily Equity Curve
-    const sortedTrades = [...trades].sort((a, b) => a.exitDate.localeCompare(b.exitDate));
+    const sortedTrades = [...trades].sort((a, b) =>
+      a.exitDate.localeCompare(b.exitDate),
+    );
     let equity = 100;
     let peak = 100;
     let maxDrawdown = 0;
@@ -809,7 +949,7 @@ export class BacktestEngine {
 
     for (const trade of sortedTrades) {
       const prevEquity = equity;
-      equity *= (1 + trade.netReturn);
+      equity *= 1 + trade.netReturn;
       const ret = (equity - prevEquity) / prevEquity;
       dailyReturns.push(ret);
 
@@ -819,21 +959,29 @@ export class BacktestEngine {
     }
     maxDrawdown = maxDrawdown * 100;
 
-    const avgReturn = (trades.reduce((sum, t) => sum + t.netReturn, 0) / trades.length) * 100;
-    const targetHitRate = (trades.filter((t) => t.targetHit).length / trades.length) * 100;
+    const avgReturn =
+      (trades.reduce((sum, t) => sum + t.netReturn, 0) / trades.length) * 100;
+    const targetHitRate =
+      (trades.filter((t) => t.targetHit).length / trades.length) * 100;
 
     // 2. Direct CAGR Calculation: ((Final / Initial)^(252 / N) - 1) * 100
     const firstDate = new Date(sortedTrades[0].entryDate).getTime();
-    const lastDate = new Date(sortedTrades[sortedTrades.length - 1].exitDate).getTime();
+    const lastDate = new Date(
+      sortedTrades[sortedTrades.length - 1].exitDate,
+    ).getTime();
     const elapsedMs = Math.max(86400000, lastDate - firstDate);
     const elapsedYears = elapsedMs / (1000 * 60 * 60 * 24 * 365.25);
     const totalReturn = (equity - 100) / 100;
-    const cagr = ((Math.pow(Math.max(0.01, 1 + totalReturn), 1 / elapsedYears)) - 1) * 100;
+    const cagr =
+      (Math.pow(Math.max(0.01, 1 + totalReturn), 1 / elapsedYears) - 1) * 100;
 
     // 3. Direct Sharpe Ratio from Actual Daily Return Series (vs 6.5% Indian Risk-Free Rate)
     const rfDaily = 0.065 / 252;
-    const meanDaily = dailyReturns.reduce((s, r) => s + r, 0) / dailyReturns.length;
-    const varDaily = dailyReturns.reduce((s, r) => s + Math.pow(r - meanDaily, 2), 0) / dailyReturns.length;
+    const meanDaily =
+      dailyReturns.reduce((s, r) => s + r, 0) / dailyReturns.length;
+    const varDaily =
+      dailyReturns.reduce((s, r) => s + Math.pow(r - meanDaily, 2), 0) /
+      dailyReturns.length;
     const stdDaily = Math.sqrt(varDaily);
     const annVol = stdDaily * Math.sqrt(252);
 
@@ -843,16 +991,22 @@ export class BacktestEngine {
     const negativeDaily = dailyReturns.filter((r) => r < 0);
     const downsideVar =
       negativeDaily.length > 0
-        ? negativeDaily.reduce((s, r) => s + Math.pow(r, 2), 0) / dailyReturns.length
+        ? negativeDaily.reduce((s, r) => s + Math.pow(r, 2), 0) /
+          dailyReturns.length
         : 0;
     const annDownsideVol = Math.sqrt(downsideVar) * Math.sqrt(252);
-    const sortinoRatio = annDownsideVol > 0 ? (cagr / 100 - 0.065) / annDownsideVol : 0;
+    const sortinoRatio =
+      annDownsideVol > 0 ? (cagr / 100 - 0.065) / annDownsideVol : 0;
 
     // 5. Calmar Ratio: CAGR / |MaxDrawdown|
-    const calmarRatio = Math.abs(maxDrawdown) > 0 ? Math.abs(cagr / maxDrawdown) : 0;
+    const calmarRatio =
+      Math.abs(maxDrawdown) > 0 ? Math.abs(cagr / maxDrawdown) : 0;
 
     // 6. Brier Score & ECE
-    const pairs = trades.map((t) => ({ prob: t.predictedProb, outcome: t.directionCorrect ? 1 : 0 }));
+    const pairs = trades.map((t) => ({
+      prob: t.predictedProb,
+      outcome: t.directionCorrect ? 1 : 0,
+    }));
     const brierScore = this.calibrationEngine.calculateBrierScore(pairs);
     const ece = this.calibrationEngine.calculateECE(pairs);
 
@@ -862,7 +1016,10 @@ export class BacktestEngine {
       winRate: this.roundTo1(winRate),
       avgGainPercent: this.roundTo1(avgGainPercent),
       avgLossPercent: this.roundTo1(avgLossPercent),
-      profitFactor: profitFactor === 'NOT_MEANINGFUL' ? 'NOT_MEANINGFUL' : this.roundTo2(profitFactor as number),
+      profitFactor:
+        profitFactor === 'NOT_MEANINGFUL'
+          ? 'NOT_MEANINGFUL'
+          : this.roundTo2(profitFactor),
       maxDrawdown: this.roundTo1(maxDrawdown),
       avgReturn: this.roundTo1(avgReturn),
       targetHitRate: this.roundTo1(targetHitRate),

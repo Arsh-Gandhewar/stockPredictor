@@ -1,5 +1,9 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
 import { PortfolioService } from './portfolio.service';
@@ -29,6 +33,7 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
           findUnique: jest.fn(),
           upsert: jest.fn(),
           update: jest.fn(),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
         stock: {
           findFirst: jest.fn(),
@@ -37,6 +42,8 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
         position: {
           findUnique: jest.fn(),
           update: jest.fn(),
+          updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+          deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
           create: jest.fn(),
           delete: jest.fn(),
         },
@@ -129,7 +136,10 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
     });
 
     it('should validate GetTradesDto pagination constraints', async () => {
-      const validDto = plainToInstance(GetTradesDto, { page: '2', limit: '25' });
+      const validDto = plainToInstance(GetTradesDto, {
+        page: '2',
+        limit: '25',
+      });
       const errors = await validate(validDto);
       expect(errors.length).toBe(0);
       expect(validDto.page).toBe(2);
@@ -148,11 +158,25 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
   describe('PortfolioService Limit Order Semantics', () => {
     it('should reject LIMIT order if limitPrice is missing or <= 0', async () => {
       await expect(
-        service.executeTrade('user_123', 'INFY.NS', TransactionType.BUY, 10, OrderType.LIMIT)
+        service.executeTrade(
+          'user_123',
+          'INFY.NS',
+          TransactionType.BUY,
+          10,
+          OrderType.LIMIT,
+        ),
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        service.executeTrade('user_123', 'INFY.NS', TransactionType.BUY, 10, OrderType.LIMIT, undefined, -50)
+        service.executeTrade(
+          'user_123',
+          'INFY.NS',
+          TransactionType.BUY,
+          10,
+          OrderType.LIMIT,
+          undefined,
+          -50,
+        ),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -160,6 +184,7 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
       mockStockService.getQuote.mockResolvedValue({
         ticker: 'INFY.NS',
         price: 1850.0,
+        sourceTimestamp: new Date().toISOString(),
       });
 
       await expect(
@@ -170,8 +195,8 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
           10,
           OrderType.LIMIT,
           undefined,
-          1800.0 // limit price is 1800, but market is 1850
-        )
+          1800.0, // limit price is 1800, but market is 1850
+        ),
       ).rejects.toThrow(/LIMIT_UNFILLED.*exceeds limit buy price/);
     });
 
@@ -179,6 +204,7 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
       mockStockService.getQuote.mockResolvedValue({
         ticker: 'INFY.NS',
         price: 1750.0,
+        sourceTimestamp: new Date().toISOString(),
       });
 
       await expect(
@@ -189,8 +215,8 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
           10,
           OrderType.LIMIT,
           undefined,
-          1800.0 // limit price is 1800, but market is 1750
-        )
+          1800.0, // limit price is 1800, but market is 1750
+        ),
       ).rejects.toThrow(/LIMIT_UNFILLED.*below limit sell price/);
     });
 
@@ -199,10 +225,18 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
         ticker: 'INFY.NS',
         name: 'Infosys Limited',
         price: 1780.0,
+        sourceTimestamp: new Date().toISOString(),
       });
 
-      mockDb.client.user.findUnique.mockResolvedValue({ id: 'db_user_1', clerkId: 'user_123' });
-      mockDb.client.stock.findFirst.mockResolvedValue({ id: 'stock_1', ticker: 'INFY.NS', name: 'Infosys' });
+      mockDb.client.user.findUnique.mockResolvedValue({
+        id: 'db_user_1',
+        clerkId: 'user_123',
+      });
+      mockDb.client.stock.findFirst.mockResolvedValue({
+        id: 'stock_1',
+        ticker: 'INFY.NS',
+        name: 'Infosys',
+      });
       mockDb.client.portfolio.findUnique.mockResolvedValue({
         id: 'port_1',
         userId: 'db_user_1',
@@ -224,7 +258,7 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
         10,
         OrderType.LIMIT,
         undefined,
-        1800.0
+        1800.0,
       );
 
       expect(result.success).toBe(true);
@@ -237,7 +271,7 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
             orderType: OrderType.LIMIT,
             price: 1780.0,
           }),
-        })
+        }),
       );
     });
 
@@ -246,10 +280,18 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
         ticker: 'TCS.NS',
         name: 'Tata Consultancy Services',
         price: 3950.0,
+        sourceTimestamp: new Date().toISOString(),
       });
 
-      mockDb.client.user.findUnique.mockResolvedValue({ id: 'db_user_1', clerkId: 'user_123' });
-      mockDb.client.stock.findFirst.mockResolvedValue({ id: 'stock_2', ticker: 'TCS.NS', name: 'TCS' });
+      mockDb.client.user.findUnique.mockResolvedValue({
+        id: 'db_user_1',
+        clerkId: 'user_123',
+      });
+      mockDb.client.stock.findFirst.mockResolvedValue({
+        id: 'stock_2',
+        ticker: 'TCS.NS',
+        name: 'TCS',
+      });
       mockDb.client.portfolio.findUnique.mockResolvedValue({
         id: 'port_1',
         userId: 'db_user_1',
@@ -279,7 +321,7 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
         10,
         OrderType.LIMIT,
         undefined,
-        3900.0 // limit is 3900, market is 3950 (favorable)
+        3900.0, // limit is 3900, market is 3950 (favorable)
       );
 
       expect(result.success).toBe(true);
@@ -294,19 +336,32 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
       mockStockService.getQuote.mockResolvedValue({
         ticker: 'RELIANCE.NS',
         price: 3000.0,
+        sourceTimestamp: new Date().toISOString(),
       });
-      mockDb.client.user.findUnique.mockResolvedValue({ id: 'db_user_1', clerkId: 'user_123' });
-      mockDb.client.stock.findFirst.mockResolvedValue({ id: 'stock_3', ticker: 'RELIANCE.NS' });
+      mockDb.client.user.findUnique.mockResolvedValue({
+        id: 'db_user_1',
+        clerkId: 'user_123',
+      });
+      mockDb.client.stock.findFirst.mockResolvedValue({
+        id: 'stock_3',
+        ticker: 'RELIANCE.NS',
+      });
       mockDb.client.portfolio.findUnique.mockResolvedValue({
         id: 'port_1',
         userId: 'db_user_1',
         availableCash: 5000, // Only 5,000 available
         positions: [],
       });
+      mockDb.client.portfolio.updateMany.mockResolvedValue({ count: 0 });
 
       // Attempting to buy 10 shares @ 3000 = 30,000 required
       await expect(
-        service.executeTrade('user_123', 'RELIANCE.NS', TransactionType.BUY, 10)
+        service.executeTrade(
+          'user_123',
+          'RELIANCE.NS',
+          TransactionType.BUY,
+          10,
+        ),
       ).rejects.toThrow(/Insufficient virtual capital/);
     });
 
@@ -314,9 +369,16 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
       mockStockService.getQuote.mockResolvedValue({
         ticker: 'RELIANCE.NS',
         price: 3000.0,
+        sourceTimestamp: new Date().toISOString(),
       });
-      mockDb.client.user.findUnique.mockResolvedValue({ id: 'db_user_1', clerkId: 'user_123' });
-      mockDb.client.stock.findFirst.mockResolvedValue({ id: 'stock_3', ticker: 'RELIANCE.NS' });
+      mockDb.client.user.findUnique.mockResolvedValue({
+        id: 'db_user_1',
+        clerkId: 'user_123',
+      });
+      mockDb.client.stock.findFirst.mockResolvedValue({
+        id: 'stock_3',
+        ticker: 'RELIANCE.NS',
+      });
       mockDb.client.portfolio.findUnique.mockResolvedValue({
         id: 'port_1',
         userId: 'db_user_1',
@@ -334,7 +396,12 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
 
       // Attempting to sell 20 shares
       await expect(
-        service.executeTrade('user_123', 'RELIANCE.NS', TransactionType.SELL, 20)
+        service.executeTrade(
+          'user_123',
+          'RELIANCE.NS',
+          TransactionType.SELL,
+          20,
+        ),
       ).rejects.toThrow(/Insufficient shares to sell.*only hold 5/);
     });
   });
@@ -357,7 +424,10 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
         orderType: OrderType.MARKET,
         limitPrice: null,
       });
-      const canonicalPayloadHash = crypto.createHash('sha256').update(expectedPayloadStr).digest('hex');
+      const canonicalPayloadHash = crypto
+        .createHash('sha256')
+        .update(expectedPayloadStr)
+        .digest('hex');
 
       mockDb.client.idempotencyRecord.findUnique.mockResolvedValue({
         idempotencyKey: 'idem_key_001',
@@ -372,7 +442,7 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
         TransactionType.BUY,
         10,
         OrderType.MARKET,
-        'idem_key_001'
+        'idem_key_001',
       );
 
       expect(result.isDuplicate).toBe(true);
@@ -393,9 +463,101 @@ describe('Tier 3: Trading State Machine & Limit Order Execution Spec', () => {
           TransactionType.BUY,
           10,
           OrderType.MARKET,
-          'idem_key_001'
-        )
+          'idem_key_001',
+        ),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('Authoritative Source Timestamp Enforcement (P0 Invariant)', () => {
+    beforeEach(() => {
+      mockDb.client.user.findUnique.mockResolvedValue({
+        id: 'db_user_1',
+        clerkId: 'user_123',
+      });
+      mockDb.client.stock.findFirst.mockResolvedValue({
+        id: 'stock_1',
+        ticker: 'INFY.NS',
+        name: 'Infosys',
+      });
+      mockDb.client.portfolio.findUnique.mockResolvedValue({
+        id: 'port_1',
+        userId: 'db_user_1',
+        availableCash: 500000,
+        positions: [],
+      });
+    });
+
+    it('should reject trade with 400 when quote sourceTimestamp is missing', async () => {
+      mockStockService.getQuote.mockResolvedValue({
+        ticker: 'INFY.NS',
+        price: 1800.0,
+      });
+
+      await expect(
+        service.executeTrade('user_123', 'INFY.NS', TransactionType.BUY, 10),
+      ).rejects.toThrow(/QUOTE_SOURCE_TIMESTAMP_REQUIRED/);
+
+      expect(mockDb.client.transaction.create).not.toHaveBeenCalled();
+      expect(mockDb.client.portfolio.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('should reject trade with 400 when quote sourceTimestamp is null', async () => {
+      mockStockService.getQuote.mockResolvedValue({
+        ticker: 'INFY.NS',
+        price: 1800.0,
+        sourceTimestamp: null,
+      });
+
+      await expect(
+        service.executeTrade('user_123', 'INFY.NS', TransactionType.BUY, 10),
+      ).rejects.toThrow(/QUOTE_SOURCE_TIMESTAMP_REQUIRED/);
+
+      expect(mockDb.client.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject trade with 400 when quote sourceTimestamp is malformed/invalid date', async () => {
+      mockStockService.getQuote.mockResolvedValue({
+        ticker: 'INFY.NS',
+        price: 1800.0,
+        sourceTimestamp: 'invalid-non-iso-timestamp',
+      });
+
+      await expect(
+        service.executeTrade('user_123', 'INFY.NS', TransactionType.BUY, 10),
+      ).rejects.toThrow(/QUOTE_TIMESTAMP_INVALID/);
+
+      expect(mockDb.client.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject trade with 400 when quote sourceTimestamp is in future (> 60s)', async () => {
+      const futureTime = new Date(Date.now() + 120_000).toISOString();
+      mockStockService.getQuote.mockResolvedValue({
+        ticker: 'INFY.NS',
+        price: 1800.0,
+        sourceTimestamp: futureTime,
+      });
+
+      await expect(
+        service.executeTrade('user_123', 'INFY.NS', TransactionType.BUY, 10),
+      ).rejects.toThrow(/QUOTE_CLOCK_ANOMALY/);
+
+      expect(mockDb.client.transaction.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject trade with 400 when quote sourceTimestamp is stale (> 15m)', async () => {
+      const staleTime = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+      mockStockService.getQuote.mockResolvedValue({
+        ticker: 'INFY.NS',
+        price: 1800.0,
+        sourceTimestamp: staleTime,
+      });
+
+      await expect(
+        service.executeTrade('user_123', 'INFY.NS', TransactionType.BUY, 10),
+      ).rejects.toThrow(/QUOTE_STALE/);
+
+      expect(mockDb.client.transaction.create).not.toHaveBeenCalled();
     });
   });
 });

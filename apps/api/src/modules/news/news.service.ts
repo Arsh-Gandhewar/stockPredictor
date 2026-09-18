@@ -12,14 +12,16 @@ export class NewsService implements OnModuleDestroy {
 
   constructor() {
     this.refreshNewsFeed(true).catch((err) =>
-      this.logger.warn(`Initial news ingestion failed: ${err.message}`)
+      this.logger.warn(`Initial news ingestion failed: ${err.message}`),
     );
 
     // Automatically trigger fresh news ingestion every 5 minutes (300,000ms)
     this.refreshTimer = setInterval(() => {
-      this.logger.log('Executing automated 5-minute live news refresh and sentiment update...');
+      this.logger.log(
+        'Executing automated 5-minute live news refresh and sentiment update...',
+      );
       this.refreshNewsFeed(true).catch((err) =>
-        this.logger.warn(`Automated 5-min news refresh failed: ${err.message}`)
+        this.logger.warn(`Automated 5-min news refresh failed: ${err.message}`),
       );
     }, 300_000);
   }
@@ -27,8 +29,14 @@ export class NewsService implements OnModuleDestroy {
   /**
    * Refreshes Indian market news from verified live financial RSS sources (every 5 minutes)
    */
-  async refreshNewsFeed(forceRefresh: boolean = false): Promise<MarketNewsArticle[]> {
-    if (!forceRefresh && Date.now() - this.lastFetchedAt < this.CACHE_TTL && this.cachedNews.length > 0) {
+  async refreshNewsFeed(
+    forceRefresh: boolean = false,
+  ): Promise<MarketNewsArticle[]> {
+    if (
+      !forceRefresh &&
+      Date.now() - this.lastFetchedAt < this.CACHE_TTL &&
+      this.cachedNews.length > 0
+    ) {
       return this.cachedNews;
     }
 
@@ -80,7 +88,9 @@ export class NewsService implements OnModuleDestroy {
       const pubDateMatch = /<pubDate>([\s\S]*?)<\/pubDate>/.exec(itemContent);
       const sourceMatch = /<source[^>]*>([\s\S]*?)<\/source>/.exec(itemContent);
 
-      let rawTitle = titleMatch ? titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim() : '';
+      let rawTitle = titleMatch
+        ? titleMatch[1].replace(/<!\[CDATA\[(.*?)\]\]>/g, '$1').trim()
+        : '';
       const url = linkMatch ? linkMatch[1].trim() : '';
       const pubDate = pubDateMatch ? new Date(pubDateMatch[1]) : new Date();
       let source = sourceMatch ? sourceMatch[1].trim() : 'Financial Express';
@@ -123,21 +133,52 @@ export class NewsService implements OnModuleDestroy {
     return articles;
   }
 
-  private detectCategory(title: string): 'Markets' | 'Corporate' | 'Results' | 'Macro' {
+  private detectCategory(
+    title: string,
+  ): 'Markets' | 'Corporate' | 'Results' | 'Macro' {
     const t = title.toLowerCase();
-    if (t.includes('rbi') || t.includes('inflation') || t.includes('gdp') || t.includes('fed') || t.includes('deficit') || t.includes('rupee') || t.includes('repo')) {
+    if (
+      t.includes('rbi') ||
+      t.includes('inflation') ||
+      t.includes('gdp') ||
+      t.includes('fed') ||
+      t.includes('deficit') ||
+      t.includes('rupee') ||
+      t.includes('repo')
+    ) {
       return 'Macro';
     }
-    if (t.includes('q1') || t.includes('q2') || t.includes('q3') || t.includes('q4') || t.includes('profit') || t.includes('revenue') || t.includes('earnings') || t.includes('pat') || t.includes('ebitda')) {
+    if (
+      t.includes('q1') ||
+      t.includes('q2') ||
+      t.includes('q3') ||
+      t.includes('q4') ||
+      t.includes('profit') ||
+      t.includes('revenue') ||
+      t.includes('earnings') ||
+      t.includes('pat') ||
+      t.includes('ebitda')
+    ) {
       return 'Results';
     }
-    if (t.includes('sensex') || t.includes('nifty') || t.includes('rally') || t.includes('stocks to watch') || t.includes('fii') || t.includes('dii') || t.includes('bull') || t.includes('bear')) {
+    if (
+      t.includes('sensex') ||
+      t.includes('nifty') ||
+      t.includes('rally') ||
+      t.includes('stocks to watch') ||
+      t.includes('fii') ||
+      t.includes('dii') ||
+      t.includes('bull') ||
+      t.includes('bear')
+    ) {
       return 'Markets';
     }
     return 'Corporate';
   }
 
-  private detectAffectedStock(title: string): { ticker: string; name: string } | undefined {
+  private detectAffectedStock(
+    title: string,
+  ): { ticker: string; name: string } | undefined {
     const t = title.toLowerCase();
     for (const stock of TOP_300_INDIAN_UNIVERSE) {
       const cleanTicker = stock.ticker.replace('.NS', '').toLowerCase();
@@ -163,20 +204,64 @@ export class NewsService implements OnModuleDestroy {
   private detectSentiment(title: string): 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' {
     const t = title.toLowerCase();
     const positiveWords = [
-      'surge', 'jump', 'gain', 'rally', 'profit', 'boost', 'growth', 'beats', 'soar',
-      'record', 'upgrade', 'expansion', 'breakout', 'buyback', 'dividend', 'acquisition',
-      'outperform', 'bullish', 'turnaround', 'milestone', 'robust', 'optimistic',
+      'surge',
+      'jump',
+      'gain',
+      'rally',
+      'profit',
+      'boost',
+      'growth',
+      'beats',
+      'soar',
+      'record',
+      'upgrade',
+      'expansion',
+      'breakout',
+      'buyback',
+      'dividend',
+      'acquisition',
+      'outperform',
+      'bullish',
+      'turnaround',
+      'milestone',
+      'robust',
+      'optimistic',
     ];
     const negativeWords = [
-      'fall', 'drop', 'slump', 'crash', 'loss', 'decline', 'plunge', 'penalty', 'probe',
-      'downgrade', 'weak', 'drag', 'fraud', 'default', 'bankruptcy', 'scam', 'selloff',
-      'bearish', 'warning', 'layoff', 'recall', 'miss', 'underperform', 'investigation',
+      'fall',
+      'drop',
+      'slump',
+      'crash',
+      'loss',
+      'decline',
+      'plunge',
+      'penalty',
+      'probe',
+      'downgrade',
+      'weak',
+      'drag',
+      'fraud',
+      'default',
+      'bankruptcy',
+      'scam',
+      'selloff',
+      'bearish',
+      'warning',
+      'layoff',
+      'recall',
+      'miss',
+      'underperform',
+      'investigation',
     ];
 
     let pos = 0;
     let neg = 0;
-    positiveWords.forEach((w) => { if (t.includes(w)) pos++; });
-    negativeWords.forEach((w) => { if (t.includes(w)) neg++; });
+    positiveWords.forEach((w) => {
+      if (t.includes(w)) pos++;
+    });
+    negativeWords.forEach((w) => {
+      if (t.includes(w)) neg++;
+    });
 
     if (pos > neg) return 'POSITIVE';
     if (neg > pos) return 'NEGATIVE';
@@ -185,10 +270,23 @@ export class NewsService implements OnModuleDestroy {
 
   private detectImpact(title: string): 'HIGH' | 'MEDIUM' | 'LOW' {
     const t = title.toLowerCase();
-    if (t.includes('rbi') || t.includes('sebi') || t.includes('merger') || t.includes('acquisition') || t.includes('results') || t.includes('huge') || t.includes('investigation')) {
+    if (
+      t.includes('rbi') ||
+      t.includes('sebi') ||
+      t.includes('merger') ||
+      t.includes('acquisition') ||
+      t.includes('results') ||
+      t.includes('huge') ||
+      t.includes('investigation')
+    ) {
       return 'HIGH';
     }
-    if (t.includes('order') || t.includes('partnership') || t.includes('dividend') || t.includes('target')) {
+    if (
+      t.includes('order') ||
+      t.includes('partnership') ||
+      t.includes('dividend') ||
+      t.includes('target')
+    ) {
       return 'MEDIUM';
     }
     return 'LOW';
@@ -208,7 +306,8 @@ export class NewsService implements OnModuleDestroy {
     return [
       {
         id: 'news_fallback_1',
-        title: 'RBI Monetary Policy Committee Maintains Repo Rate with Favorable CPI Projections',
+        title:
+          'RBI Monetary Policy Committee Maintains Repo Rate with Favorable CPI Projections',
         source: 'Economic Times',
         url: 'https://economictimes.indiatimes.com',
         publishedAt: '2025-01-15T09:00:00.000Z',
@@ -218,13 +317,16 @@ export class NewsService implements OnModuleDestroy {
         impact: 'HIGH',
         affectedStock: 'HDFCBANK.NS',
         affectedStockName: 'HDFC Bank Limited',
-        summary: 'RBI MPC reaffirms monetary stance with stable 6.50% repo rate supporting credit growth across commercial banks.',
-        whyItMatters: 'Rate stability anchors corporate capex expansion and sovereign debt yields.',
+        summary:
+          'RBI MPC reaffirms monetary stance with stable 6.50% repo rate supporting credit growth across commercial banks.',
+        whyItMatters:
+          'Rate stability anchors corporate capex expansion and sovereign debt yields.',
         isFallback: true,
       },
       {
         id: 'news_fallback_2',
-        title: 'Reliance Industries Green Energy Manufacturing Infrastructure Nears Commercial Operation',
+        title:
+          'Reliance Industries Green Energy Manufacturing Infrastructure Nears Commercial Operation',
         source: 'LiveMint',
         url: 'https://livemint.com',
         publishedAt: '2025-01-15T08:00:00.000Z',
@@ -234,8 +336,10 @@ export class NewsService implements OnModuleDestroy {
         impact: 'HIGH',
         affectedStock: 'RELIANCE.NS',
         affectedStockName: 'Reliance Industries Limited',
-        summary: 'Progress on Jamnagar solar and hydrogen giga-complex accelerates renewable energy transition.',
-        whyItMatters: 'Unlocks high-margin new energy earnings stream over the next fiscal cycle.',
+        summary:
+          'Progress on Jamnagar solar and hydrogen giga-complex accelerates renewable energy transition.',
+        whyItMatters:
+          'Unlocks high-margin new energy earnings stream over the next fiscal cycle.',
         isFallback: true,
       },
     ];
@@ -244,21 +348,31 @@ export class NewsService implements OnModuleDestroy {
   /**
    * Retrieves news with category, search query, and pagination filters
    */
-  async getMarketNews(category?: string, query?: string, limit: number = 30): Promise<MarketNewsArticle[]> {
+  async getMarketNews(
+    category?: string,
+    query?: string,
+    limit: number = 30,
+  ): Promise<MarketNewsArticle[]> {
     const allNews = await this.refreshNewsFeed();
 
-    return allNews.filter((item) => {
-      const matchesCategory =
-        !category || category === 'ALL' || item.category.toLowerCase() === category.toLowerCase();
-      const matchesQuery =
-        !query ||
-        item.title.toLowerCase().includes(query.toLowerCase()) ||
-        item.source.toLowerCase().includes(query.toLowerCase()) ||
-        (item.affectedStock && item.affectedStock.toLowerCase().includes(query.toLowerCase())) ||
-        (item.affectedStockName && item.affectedStockName.toLowerCase().includes(query.toLowerCase()));
+    return allNews
+      .filter((item) => {
+        const matchesCategory =
+          !category ||
+          category === 'ALL' ||
+          item.category.toLowerCase() === category.toLowerCase();
+        const matchesQuery =
+          !query ||
+          item.title.toLowerCase().includes(query.toLowerCase()) ||
+          item.source.toLowerCase().includes(query.toLowerCase()) ||
+          (item.affectedStock &&
+            item.affectedStock.toLowerCase().includes(query.toLowerCase())) ||
+          (item.affectedStockName &&
+            item.affectedStockName.toLowerCase().includes(query.toLowerCase()));
 
-      return matchesCategory && matchesQuery;
-    }).slice(0, limit);
+        return matchesCategory && matchesQuery;
+      })
+      .slice(0, limit);
   }
 
   /**
@@ -272,7 +386,8 @@ export class NewsService implements OnModuleDestroy {
       return (
         item.affectedStock === ticker ||
         item.title.toLowerCase().includes(cleanTicker) ||
-        (item.affectedStockName && item.affectedStockName.toLowerCase().includes(cleanTicker))
+        (item.affectedStockName &&
+          item.affectedStockName.toLowerCase().includes(cleanTicker))
       );
     });
   }
@@ -283,7 +398,7 @@ export class NewsService implements OnModuleDestroy {
   async getSentimentScoreForStock(
     ticker: string,
     sector?: string,
-    companyName?: string
+    companyName?: string,
   ): Promise<{
     sentimentScore: number;
     sentimentLabel: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
@@ -292,7 +407,9 @@ export class NewsService implements OnModuleDestroy {
   }> {
     const allNews = await this.refreshNewsFeed();
     const cleanTicker = ticker.replace('.NS', '').toLowerCase();
-    const firstName = companyName ? companyName.split(' ')[0].toLowerCase() : '';
+    const firstName = companyName
+      ? companyName.split(' ')[0].toLowerCase()
+      : '';
     const sectorLower = sector ? sector.toLowerCase() : '';
 
     let directPos = 0;
@@ -309,12 +426,14 @@ export class NewsService implements OnModuleDestroy {
         (cleanTicker.length >= 3 && titleLower.includes(cleanTicker)) ||
         (firstName.length >= 4 && titleLower.includes(firstName));
 
-      const isSectorMatch = sectorLower.length >= 3 && titleLower.includes(sectorLower);
+      const isSectorMatch =
+        sectorLower.length >= 3 && titleLower.includes(sectorLower);
 
       if (isDirectMatch) {
         totalMatched++;
         if (!topHeadline) topHeadline = article.title;
-        const weight = article.impact === 'HIGH' ? 8 : article.impact === 'MEDIUM' ? 5 : 3;
+        const weight =
+          article.impact === 'HIGH' ? 8 : article.impact === 'MEDIUM' ? 5 : 3;
         if (article.sentiment === 'POSITIVE') directPos += weight;
         else if (article.sentiment === 'NEGATIVE') directNeg += weight;
       } else if (isSectorMatch) {
@@ -326,7 +445,10 @@ export class NewsService implements OnModuleDestroy {
       }
     }
 
-    const totalScore = Math.max(-20, Math.min(20, (directPos - directNeg) + (sectorPos - sectorNeg)));
+    const totalScore = Math.max(
+      -20,
+      Math.min(20, directPos - directNeg + (sectorPos - sectorNeg)),
+    );
     const sentimentLabel: 'BULLISH' | 'BEARISH' | 'NEUTRAL' =
       totalScore >= 4 ? 'BULLISH' : totalScore <= -4 ? 'BEARISH' : 'NEUTRAL';
 

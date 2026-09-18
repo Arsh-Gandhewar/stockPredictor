@@ -6,6 +6,7 @@ import { AppModule } from '../src/app.module';
 import { DatabaseService } from '../src/database/database.service';
 import { GlobalExceptionFilter } from '../src/common/filters/http-exception.filter';
 import { YahooMarketDataProvider } from '../src/modules/stock/providers/yahoo-market-data.provider';
+import { QuantPredictionService } from '../src/modules/prediction/prediction.service';
 
 describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () => {
   let app: INestApplication;
@@ -23,7 +24,10 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
   const inMemoryIdempotency = new Map<string, any>();
   const inMemoryAlerts: any[] = [];
   const inMemoryWatchlists: any[] = [];
-  const inMemoryLocks = new Map<string, { ownerId: string; expiresAt: number; releasedAt: number | null }>();
+  const inMemoryLocks = new Map<
+    string,
+    { ownerId: string; expiresAt: number; releasedAt: number | null }
+  >();
 
   const mockDbClient = {
     user: {
@@ -74,11 +78,24 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
         });
       }),
       update: jest.fn().mockImplementation(({ data }) => {
-        if (data.availableCash !== undefined) inMemoryCash = Number(data.availableCash);
+        if (data.availableCash !== undefined)
+          inMemoryCash = Number(data.availableCash);
         return Promise.resolve({
           id: 'port_123',
           availableCash: inMemoryCash,
         });
+      }),
+      updateMany: jest.fn().mockImplementation(({ where, data }) => {
+        const required = where.availableCash?.gte;
+        const decrement = data.availableCash?.decrement;
+        if (required !== undefined && decrement !== undefined) {
+          if (inMemoryCash >= required) {
+            inMemoryCash -= decrement;
+            return Promise.resolve({ count: 1 });
+          }
+          return Promise.resolve({ count: 0 });
+        }
+        return Promise.resolve({ count: 1 });
       }),
     },
     stock: {
@@ -148,6 +165,38 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
         if (idx >= 0) inMemoryPositions.splice(idx, 1);
         return Promise.resolve({ id: where.id });
       }),
+      updateMany: jest.fn().mockImplementation(({ where, data }) => {
+        const idx = inMemoryPositions.findIndex((p) => p.id === where.id);
+        if (idx >= 0) {
+          if (
+            where.quantity?.gte !== undefined &&
+            data.quantity?.decrement !== undefined
+          ) {
+            if (inMemoryPositions[idx].quantity >= where.quantity.gte) {
+              inMemoryPositions[idx].quantity -= data.quantity.decrement;
+              return Promise.resolve({ count: 1 });
+            }
+            return Promise.resolve({ count: 0 });
+          }
+          inMemoryPositions[idx] = { ...inMemoryPositions[idx], ...data };
+          return Promise.resolve({ count: 1 });
+        }
+        return Promise.resolve({ count: 0 });
+      }),
+      deleteMany: jest.fn().mockImplementation(({ where }) => {
+        const idx = inMemoryPositions.findIndex((p) => p.id === where.id);
+        if (idx >= 0) {
+          if (
+            where.quantity !== undefined &&
+            inMemoryPositions[idx].quantity !== where.quantity
+          ) {
+            return Promise.resolve({ count: 0 });
+          }
+          inMemoryPositions.splice(idx, 1);
+          return Promise.resolve({ count: 1 });
+        }
+        return Promise.resolve({ count: 0 });
+      }),
     },
     transaction: {
       create: jest.fn().mockResolvedValue({ id: 'tx_123' }),
@@ -201,8 +250,12 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
     },
     watchlist: {
       findMany: jest.fn().mockResolvedValue(inMemoryWatchlists),
-      upsert: jest.fn().mockResolvedValue({ id: 'wl_123', name: 'Default', stocks: [] }),
-      findFirst: jest.fn().mockResolvedValue({ id: 'wl_123', name: 'Default', stocks: [] }),
+      upsert: jest
+        .fn()
+        .mockResolvedValue({ id: 'wl_123', name: 'Default', stocks: [] }),
+      findFirst: jest
+        .fn()
+        .mockResolvedValue({ id: 'wl_123', name: 'Default', stocks: [] }),
       create: jest.fn().mockImplementation(({ data }) => {
         const wl = { id: `wl_${Date.now()}`, ...data, stocks: [] };
         inMemoryWatchlists.push(wl);
@@ -217,34 +270,66 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
       return await cb(mockDbClient);
     }),
     $executeRawUnsafe: jest.fn().mockResolvedValue(1),
-    $queryRawUnsafe: jest.fn().mockImplementation(async (query: string, ...params: any[]) => {
-      if (query.includes('INSERT INTO distributed_locks')) {
-        const lockKey = params[0];
-        const ownerId = params[1];
-        const expiresAt = new Date(params[3]).getTime();
-        const existing = inMemoryLocks.get(lockKey);
-
-        if (existing && existing.releasedAt === null && existing.expiresAt > Date.now()) {
+    $queryRawUnsafe: jest
+      .fn()
+      .mockImplementation(async (query: string, ...params: any[]) => {
+        if (query.includes('SELECT lock_key FROM distributed_locks LIMIT 0')) {
           return [];
         }
 
-        inMemoryLocks.set(lockKey, { ownerId, expiresAt, releasedAt: null });
-        return [{ lock_key: lockKey, owner_id: ownerId, fencing_token: 1 }];
-      }
-
-      if (query.includes('UPDATE distributed_locks')) {
-        const lockKey = params[0];
-        const ownerId = params[1];
-        const existing = inMemoryLocks.get(lockKey);
-        if (existing && existing.ownerId === ownerId) {
-          existing.releasedAt = Date.now();
-          return [{ lock_key: lockKey }];
+        if (
+          query.includes('FROM distributed_locks') &&
+          query.includes('fencing_token')
+        ) {
+          const lockKey = params[0];
+          const ownerId = params[1];
+          const existing = inMemoryLocks.get(lockKey);
+          if (
+            existing &&
+            existing.ownerId === ownerId &&
+            existing.releasedAt === null &&
+            existing.expiresAt > Date.now()
+          ) {
+            return [{ lock_key: lockKey, owner_id: ownerId, fencing_token: 1 }];
+          }
+          return [];
         }
-        return [];
-      }
 
-      return [];
-    }),
+        if (query.includes('INSERT INTO distributed_locks')) {
+          const lockKey = params[0];
+          const ownerId = params[1];
+          const expiresAt = new Date(params[3]).getTime();
+          const existing = inMemoryLocks.get(lockKey);
+
+          if (
+            existing &&
+            existing.releasedAt === null &&
+            existing.expiresAt > Date.now()
+          ) {
+            return [];
+          }
+
+          inMemoryLocks.set(lockKey, { ownerId, expiresAt, releasedAt: null });
+          return [{ lock_key: lockKey, owner_id: ownerId, fencing_token: 1 }];
+        }
+
+        if (query.includes('UPDATE distributed_locks')) {
+          const lockKey = params[0];
+          const ownerId = params[1];
+          const existing = inMemoryLocks.get(lockKey);
+          if (existing && existing.ownerId === ownerId) {
+            if (query.includes('lease_expires_at =')) {
+              existing.expiresAt = Date.now() + 600_000;
+            } else {
+              existing.releasedAt = Date.now();
+            }
+            return [{ lock_key: lockKey }];
+          }
+          return [];
+        }
+
+        return [];
+      }),
   };
 
   const mockDatabaseService = {
@@ -253,12 +338,18 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
     onModuleDestroy: jest.fn(),
   };
 
-  function createSignedJwt(payload: Record<string, any>, secret: string = testSecret): string {
+  function createSignedJwt(
+    payload: Record<string, any>,
+    secret: string = testSecret,
+  ): string {
     const header = { alg: 'HS256', typ: 'JWT' };
     const hB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
     const pB64 = Buffer.from(JSON.stringify(payload)).toString('base64url');
     const signingInput = `${hB64}.${pB64}`;
-    const sig = crypto.createHmac('sha256', secret).update(signingInput).digest('base64url');
+    const sig = crypto
+      .createHmac('sha256', secret)
+      .update(signingInput)
+      .digest('base64url');
     return `${signingInput}.${sig}`;
   }
 
@@ -299,23 +390,49 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
 
     malformedToken = userToken.substring(0, userToken.length - 8) + 'CORRUPT!';
 
-    jest.spyOn(YahooMarketDataProvider.prototype, 'getQuote').mockImplementation(async (rawTicker: string) => {
-      const clean = rawTicker.toUpperCase();
-      return {
-        ticker: clean,
-        name: clean.replace('.NS', ''),
-        price: 2500,
-        change: 15.5,
-        changePercent: 0.62,
-        high: 2550,
-        low: 2480,
-        volume: 1500000,
-        previousClose: 2484.5,
-        open: 2490,
+    jest
+      .spyOn(QuantPredictionService.prototype, 'trainPipeline')
+      .mockResolvedValue({
+        success: true,
+        modelVersion: '5.1.0-e2e',
+        calibrationStatus: {
+          '5d': { status: 'FITTED_OUT_OF_SAMPLE', ece: 0.05, brierScore: 0.12 },
+        } as any,
+        governanceStatus: { productionReady: true } as any,
+        totalTrades: 50,
         timestamp: new Date().toISOString(),
-        sourceTimestamp: new Date().toISOString(),
-      };
-    });
+      });
+
+    jest
+      .spyOn(QuantPredictionService.prototype, 'getPrediction')
+      .mockResolvedValue({
+        stock: {
+          ticker: 'RELIANCE.NS',
+          name: 'Reliance Industries Ltd.',
+          price: 2500,
+        },
+        risk: { stopLossPrice: 2400, targetPrice: 2700 },
+      } as any);
+
+    jest
+      .spyOn(YahooMarketDataProvider.prototype, 'getQuote')
+      .mockImplementation(async (rawTicker: string): Promise<any> => {
+        const clean = rawTicker.toUpperCase();
+        return {
+          ticker: clean,
+          name: clean.replace('.NS', ''),
+          price: 2500,
+          change: 15.5,
+          changePercent: 0.62,
+          high: 2550,
+          low: 2480,
+          volume: 1500000,
+          previousClose: 2484.5,
+          open: 2490,
+          timestamp: new Date().toISOString(),
+          sourceTimestamp: new Date().toISOString(),
+        };
+      });
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -326,7 +443,9 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
 
     app = moduleFixture.createNestApplication();
     app.getHttpAdapter().getInstance().set('trust proxy', true);
-    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+    app.useGlobalPipes(
+      new ValidationPipe({ transform: true, whitelist: true }),
+    );
     app.useGlobalFilters(new GlobalExceptionFilter());
     await app.init();
   });
@@ -424,7 +543,9 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
         .get('/portfolio')
         .set('X-Forwarded-For', nextIp())
         .expect(401);
-      expect(res.body.error.message).toContain('Bearer authentication token is required');
+      expect(res.body.error.message).toContain(
+        'Bearer authentication token is required',
+      );
     });
 
     it('GET /portfolio with expired token returns 401 Unauthorized', async () => {
@@ -633,14 +754,18 @@ describe('QuantX True AppModule Full HTTP E2E Institutional Verification', () =>
         .set('X-Forwarded-For', nextIp())
         .expect(409);
 
-      expect(res.body.error.message).toContain('DISTRIBUTED_TRAINING_IN_PROGRESS');
+      expect(res.body.error.message).toContain(
+        'DISTRIBUTED_TRAINING_IN_PROGRESS',
+      );
 
       inMemoryLocks.delete('training_pipeline');
     });
 
     it('POST /prediction/train fails closed with 503 ServiceUnavailable when DB lock query fails', async () => {
       const originalQuery = mockDbClient.$queryRawUnsafe;
-      mockDbClient.$queryRawUnsafe = jest.fn().mockRejectedValue(new Error('Connection terminated unexpectedly'));
+      mockDbClient.$queryRawUnsafe = jest
+        .fn()
+        .mockRejectedValue(new Error('Connection terminated unexpectedly'));
 
       const res = await request(app.getHttpServer())
         .post('/prediction/train')

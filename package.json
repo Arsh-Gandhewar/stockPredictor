@@ -20,6 +20,7 @@
     "mcp:eng:build": "npm run build --prefix apps/mcp-engineering",
     "mcp:eng:test": "npm run test --prefix apps/mcp-engineering",
     "sync:manifests": "node scripts/sync-manifests.js",
-    "verify:manifests": "node scripts/sync-manifests.js --verify"
+    "verify:manifests": "node scripts/sync-manifests.js --verify",
+    "verify:evidence": "node scripts/verify-test-evidence.js"
   }
 }

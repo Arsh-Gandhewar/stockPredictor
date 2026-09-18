@@ -13,7 +13,10 @@ describe('StockService', () => {
       providers: [
         StockService,
         { provide: DatabaseService, useValue: {} },
-        { provide: YahooMarketDataProvider, useValue: { getUniverse: jest.fn().mockReturnValue([]) } },
+        {
+          provide: YahooMarketDataProvider,
+          useValue: { getUniverse: jest.fn().mockReturnValue([]) },
+        },
         { provide: NewsService, useValue: {} },
         { provide: QuantPredictionService, useValue: {} },
       ],

@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MarketQuote, OHLCVCandle } from '../../stock/providers/market-data.provider.interface';
+import {
+  MarketQuote,
+  OHLCVCandle,
+} from '../../stock/providers/market-data.provider.interface';
 
 export interface ModelFeatureVector25 {
   rsi_14: number;
@@ -129,7 +132,7 @@ export class FeatureEngine {
   calculateFeatures(
     quote: MarketQuote | null | undefined,
     candles: OHLCVCandle[] | null | undefined,
-    benchmarkCandles?: OHLCVCandle[] | null
+    benchmarkCandles?: OHLCVCandle[] | null,
   ): FeatureCalculationResult {
     const rawFeatures: Record<string, number | null> = {};
     const availabilityMask: Record<string, boolean> = {};
@@ -142,14 +145,23 @@ export class FeatureEngine {
     }
 
     // 1. Strict Market Quote Validation
-    if (!quote || typeof quote.price !== 'number' || isNaN(quote.price) || !isFinite(quote.price) || quote.price <= 0) {
+    if (
+      !quote ||
+      typeof quote.price !== 'number' ||
+      isNaN(quote.price) ||
+      !isFinite(quote.price) ||
+      quote.price <= 0
+    ) {
       return {
         features: null,
         rawFeatures,
         availabilityMask,
         isComplete: false,
         missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-        failureReasons: { quote: 'INVALID_PRICE_DATA: Missing or non-positive live quote price.' },
+        failureReasons: {
+          quote:
+            'INVALID_PRICE_DATA: Missing or non-positive live quote price.',
+        },
         dataQuality: 'INVALID_PRICE_DATA',
         candleCount: candles?.length || 0,
         benchmarkCandleCount: benchmarkCandles?.length || 0,
@@ -164,7 +176,10 @@ export class FeatureEngine {
         availabilityMask,
         isComplete: false,
         missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-        failureReasons: { candles: 'INSUFFICIENT_LOOKBACK: No historical OHLCV candles provided.' },
+        failureReasons: {
+          candles:
+            'INSUFFICIENT_LOOKBACK: No historical OHLCV candles provided.',
+        },
         dataQuality: 'INSUFFICIENT_LOOKBACK',
         candleCount: 0,
         benchmarkCandleCount: benchmarkCandles?.length || 0,
@@ -172,29 +187,37 @@ export class FeatureEngine {
     }
 
     // 3. Strict Temporal Structure & Point-in-Time Causality Validation
-    const decisionTime = quote?.timestamp ? new Date(quote.timestamp).getTime() : Date.now();
+    const decisionTime = quote?.timestamp
+      ? new Date(quote.timestamp).getTime()
+      : Date.now();
     const cutoffTimeMs = isNaN(decisionTime) ? Date.now() : decisionTime;
 
     // Filter out market holiday dummy bars and enforce strict PIT causality:
     // Only observations occurring on or before decision cutoff are visible to the feature pipeline.
     const activeCandles = candles
-      .filter((c) => !(c.volume === 0 && c.high === c.low && c.open === c.close))
+      .filter(
+        (c) => !(c.volume === 0 && c.high === c.low && c.open === c.close),
+      )
       .filter((c) => {
         const rawTime = c.timestamp ?? (c as any).time;
-        const timeVal = typeof rawTime === 'string' || typeof rawTime === 'number'
-          ? new Date(rawTime).getTime()
-          : NaN;
+        const timeVal =
+          typeof rawTime === 'string' || typeof rawTime === 'number'
+            ? new Date(rawTime).getTime()
+            : NaN;
         return isNaN(timeVal) || timeVal <= cutoffTimeMs + 1000;
       });
 
     const activeBenchmark = benchmarkCandles
       ? benchmarkCandles
-          .filter((b) => !(b.volume === 0 && b.high === b.low && b.open === b.close))
+          .filter(
+            (b) => !(b.volume === 0 && b.high === b.low && b.open === b.close),
+          )
           .filter((b) => {
             const rawTime = b.timestamp ?? (b as any).time;
-            const timeVal = typeof rawTime === 'string' || typeof rawTime === 'number'
-              ? new Date(rawTime).getTime()
-              : NaN;
+            const timeVal =
+              typeof rawTime === 'string' || typeof rawTime === 'number'
+                ? new Date(rawTime).getTime()
+                : NaN;
             return isNaN(timeVal) || timeVal <= cutoffTimeMs + 1000;
           })
       : undefined;
@@ -211,10 +234,22 @@ export class FeatureEngine {
     for (let i = 0; i < n; i++) {
       const c = activeCandles[i];
       if (
-        typeof c.close !== 'number' || isNaN(c.close) || !isFinite(c.close) || c.close <= 0 ||
-        typeof c.high !== 'number' || isNaN(c.high) || !isFinite(c.high) || c.high <= 0 ||
-        typeof c.low !== 'number' || isNaN(c.low) || !isFinite(c.low) || c.low <= 0 ||
-        typeof c.open !== 'number' || isNaN(c.open) || !isFinite(c.open) || c.open <= 0
+        typeof c.close !== 'number' ||
+        isNaN(c.close) ||
+        !isFinite(c.close) ||
+        c.close <= 0 ||
+        typeof c.high !== 'number' ||
+        isNaN(c.high) ||
+        !isFinite(c.high) ||
+        c.high <= 0 ||
+        typeof c.low !== 'number' ||
+        isNaN(c.low) ||
+        !isFinite(c.low) ||
+        c.low <= 0 ||
+        typeof c.open !== 'number' ||
+        isNaN(c.open) ||
+        !isFinite(c.open) ||
+        c.open <= 0
       ) {
         return {
           features: null,
@@ -222,7 +257,9 @@ export class FeatureEngine {
           availabilityMask,
           isComplete: false,
           missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-          failureReasons: { candles: `INVALID_PRICE_DATA: Invalid non-positive OHLC candle at index ${i}.` },
+          failureReasons: {
+            candles: `INVALID_PRICE_DATA: Invalid non-positive OHLC candle at index ${i}.`,
+          },
           dataQuality: 'INVALID_PRICE_DATA',
           candleCount: n,
           benchmarkCandleCount: activeBenchmark?.length || 0,
@@ -231,9 +268,10 @@ export class FeatureEngine {
 
       // Temporal validation
       const rawTime = c.timestamp ?? (c as any).time;
-      const timeVal = typeof rawTime === 'string' || typeof rawTime === 'number'
-        ? new Date(rawTime).getTime()
-        : NaN;
+      const timeVal =
+        typeof rawTime === 'string' || typeof rawTime === 'number'
+          ? new Date(rawTime).getTime()
+          : NaN;
 
       if (isNaN(timeVal)) {
         return {
@@ -242,7 +280,9 @@ export class FeatureEngine {
           availabilityMask,
           isComplete: false,
           missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-          failureReasons: { candles: `INVALID_TIMESTAMP: Unparseable timestamp at candle index ${i}.` },
+          failureReasons: {
+            candles: `INVALID_TIMESTAMP: Unparseable timestamp at candle index ${i}.`,
+          },
           dataQuality: 'INVALID_PRICE_DATA',
           candleCount: n,
           benchmarkCandleCount: activeBenchmark?.length || 0,
@@ -250,14 +290,17 @@ export class FeatureEngine {
       }
 
       if (i > 0 && timeVal <= timestamps[i - 1]) {
-        const prevRawTime = activeCandles[i - 1].timestamp ?? activeCandles[i - 1].time;
+        const prevRawTime =
+          activeCandles[i - 1].timestamp ?? activeCandles[i - 1].time;
         return {
           features: null,
           rawFeatures,
           availabilityMask,
           isComplete: false,
           missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-          failureReasons: { candles: `INVALID_TEMPORAL_STRUCTURE: Monotonic time order violated at index ${i} (${rawTime} <= ${prevRawTime}).` },
+          failureReasons: {
+            candles: `INVALID_TEMPORAL_STRUCTURE: Monotonic time order violated at index ${i} (${rawTime} <= ${prevRawTime}).`,
+          },
           dataQuality: 'INVALID_TEMPORAL_STRUCTURE',
           candleCount: n,
           benchmarkCandleCount: benchmarkCandles?.length || 0,
@@ -272,7 +315,9 @@ export class FeatureEngine {
           availabilityMask,
           isComplete: false,
           missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-          failureReasons: { candles: `INVALID_TEMPORAL_STRUCTURE: Duplicate date ${dateStr} at index ${i}.` },
+          failureReasons: {
+            candles: `INVALID_TEMPORAL_STRUCTURE: Duplicate date ${dateStr} at index ${i}.`,
+          },
           dataQuality: 'INVALID_TEMPORAL_STRUCTURE',
           candleCount: n,
           benchmarkCandleCount: benchmarkCandles?.length || 0,
@@ -284,12 +329,18 @@ export class FeatureEngine {
       highs.push(c.high);
       lows.push(c.low);
       opens.push(c.open);
-      volumes.push(typeof c.volume === 'number' && !isNaN(c.volume) ? c.volume : 0);
+      volumes.push(
+        typeof c.volume === 'number' && !isNaN(c.volume) ? c.volume : 0,
+      );
       timestamps.push(timeVal);
     }
 
     const sliceVol20 = volumes.slice(-20);
-    const hasInvalidVolume = sliceVol20.length < 20 || sliceVol20.some((v) => typeof v !== 'number' || isNaN(v) || !isFinite(v) || v <= 0);
+    const hasInvalidVolume =
+      sliceVol20.length < 20 ||
+      sliceVol20.some(
+        (v) => typeof v !== 'number' || isNaN(v) || !isFinite(v) || v <= 0,
+      );
 
     const lastClose = closes[n - 1];
 
@@ -306,7 +357,8 @@ export class FeatureEngine {
         rawFeatures['ret_1d'] = (closes[n - 1] - closes[n - 2]) / closes[n - 2];
         availabilityMask['ret_1d'] = true;
       } else {
-        failureReasons['ret_1d'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.ret_1d} candles, got ${n}`;
+        failureReasons['ret_1d'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.ret_1d} candles, got ${n}`;
       }
 
       // ── gap_pct ──
@@ -314,7 +366,8 @@ export class FeatureEngine {
         rawFeatures['gap_pct'] = (opens[n - 1] - closes[n - 2]) / closes[n - 2];
         availabilityMask['gap_pct'] = true;
       } else {
-        failureReasons['gap_pct'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.gap_pct} candles, got ${n}`;
+        failureReasons['gap_pct'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.gap_pct} candles, got ${n}`;
       }
 
       // ── ret_5d & momentum_5 ──
@@ -325,16 +378,20 @@ export class FeatureEngine {
         availabilityMask['ret_5d'] = true;
         availabilityMask['momentum_5'] = true;
       } else {
-        failureReasons['ret_5d'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.ret_5d} candles, got ${n}`;
-        failureReasons['momentum_5'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.momentum_5} candles, got ${n}`;
+        failureReasons['ret_5d'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.ret_5d} candles, got ${n}`;
+        failureReasons['momentum_5'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.momentum_5} candles, got ${n}`;
       }
 
       // ── roc_12 ──
       if (n >= FeatureEngine.MIN_LOOKBACKS.roc_12) {
-        rawFeatures['roc_12'] = ((closes[n - 1] - closes[n - 13]) / closes[n - 13]) * 100.0;
+        rawFeatures['roc_12'] =
+          ((closes[n - 1] - closes[n - 13]) / closes[n - 13]) * 100.0;
         availabilityMask['roc_12'] = true;
       } else {
-        failureReasons['roc_12'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.roc_12} candles, got ${n}`;
+        failureReasons['roc_12'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.roc_12} candles, got ${n}`;
       }
 
       // ── stoch_k (14-period) ──
@@ -343,10 +400,12 @@ export class FeatureEngine {
         const sliceLow = lows.slice(-14);
         const maxH = Math.max(...sliceHigh);
         const minL = Math.min(...sliceLow);
-        rawFeatures['stoch_k'] = maxH > minL ? (100.0 * (lastClose - minL)) / (maxH - minL) : 50.0;
+        rawFeatures['stoch_k'] =
+          maxH > minL ? (100.0 * (lastClose - minL)) / (maxH - minL) : 50.0;
         availabilityMask['stoch_k'] = true;
       } else {
-        failureReasons['stoch_k'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.stoch_k} candles, got ${n}`;
+        failureReasons['stoch_k'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.stoch_k} candles, got ${n}`;
       }
 
       // ── rsi_14 (Wilder EWM com=13) ──
@@ -354,7 +413,8 @@ export class FeatureEngine {
         rawFeatures['rsi_14'] = this.computeWilderRSI(closes, 14);
         availabilityMask['rsi_14'] = true;
       } else {
-        failureReasons['rsi_14'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.rsi_14} candles, got ${n}`;
+        failureReasons['rsi_14'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.rsi_14} candles, got ${n}`;
       }
 
       // ── atr_percent (14-period True Range) ──
@@ -371,7 +431,8 @@ export class FeatureEngine {
         rawFeatures['atr_percent'] = meanTR / lastClose;
         availabilityMask['atr_percent'] = true;
       } else {
-        failureReasons['atr_percent'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.atr_percent} candles, got ${n}`;
+        failureReasons['atr_percent'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.atr_percent} candles, got ${n}`;
       }
 
       // ── sma_20_dist ──
@@ -381,7 +442,8 @@ export class FeatureEngine {
         rawFeatures['sma_20_dist'] = (lastClose - mean20) / mean20;
         availabilityMask['sma_20_dist'] = true;
       } else {
-        failureReasons['sma_20_dist'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.sma_20_dist} candles, got ${n}`;
+        failureReasons['sma_20_dist'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.sma_20_dist} candles, got ${n}`;
       }
 
       // ── ema_20_dist ──
@@ -390,7 +452,8 @@ export class FeatureEngine {
         rawFeatures['ema_20_dist'] = (lastClose - ema20) / ema20;
         availabilityMask['ema_20_dist'] = true;
       } else {
-        failureReasons['ema_20_dist'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.ema_20_dist} candles, got ${n}`;
+        failureReasons['ema_20_dist'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.ema_20_dist} candles, got ${n}`;
       }
 
       // ── bb_width (20-day, 2 std dev) ──
@@ -403,25 +466,34 @@ export class FeatureEngine {
         rawFeatures['bb_width'] = (upper - lower) / mean20;
         availabilityMask['bb_width'] = true;
       } else {
-        failureReasons['bb_width'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.bb_width} candles, got ${n}`;
+        failureReasons['bb_width'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.bb_width} candles, got ${n}`;
       }
 
       // ── volume_z_score & rel_volume (20-day) ──
       if (hasInvalidVolume) {
-        failureReasons['volume_z_score'] = 'INVALID_VOLUME_DATA: Volume is missing, non-positive, or non-finite.';
-        failureReasons['rel_volume'] = 'INVALID_VOLUME_DATA: Volume is missing, non-positive, or non-finite.';
+        failureReasons['volume_z_score'] =
+          'INVALID_VOLUME_DATA: Volume is missing, non-positive, or non-finite.';
+        failureReasons['rel_volume'] =
+          'INVALID_VOLUME_DATA: Volume is missing, non-positive, or non-finite.';
       } else if (n >= FeatureEngine.MIN_LOOKBACKS.volume_z_score) {
         const sliceVol20 = volumes.slice(-20);
         const meanVol = sliceVol20.reduce((s, v) => s + v, 0) / 20.0;
         const stdVol = this.sampleStdDev(sliceVol20, meanVol);
         const curVol = volumes[n - 1];
-        rawFeatures['volume_z_score'] = stdVol > 0 ? Math.max(-3.0, Math.min(3.0, (curVol - meanVol) / stdVol)) : 0.0;
-        rawFeatures['rel_volume'] = meanVol > 0 ? Math.max(0.1, Math.min(10.0, curVol / meanVol)) : 1.0;
+        rawFeatures['volume_z_score'] =
+          stdVol > 0
+            ? Math.max(-3.0, Math.min(3.0, (curVol - meanVol) / stdVol))
+            : 0.0;
+        rawFeatures['rel_volume'] =
+          meanVol > 0 ? Math.max(0.1, Math.min(10.0, curVol / meanVol)) : 1.0;
         availabilityMask['volume_z_score'] = true;
         availabilityMask['rel_volume'] = true;
       } else {
-        failureReasons['volume_z_score'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.volume_z_score} candles, got ${n}`;
-        failureReasons['rel_volume'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.rel_volume} candles, got ${n}`;
+        failureReasons['volume_z_score'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.volume_z_score} candles, got ${n}`;
+        failureReasons['rel_volume'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.rel_volume} candles, got ${n}`;
       }
 
       // ── ret_20d & momentum_20 ──
@@ -432,8 +504,10 @@ export class FeatureEngine {
         availabilityMask['ret_20d'] = true;
         availabilityMask['momentum_20'] = true;
       } else {
-        failureReasons['ret_20d'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.ret_20d} candles, got ${n}`;
-        failureReasons['momentum_20'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.momentum_20} candles, got ${n}`;
+        failureReasons['ret_20d'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.ret_20d} candles, got ${n}`;
+        failureReasons['momentum_20'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.momentum_20} candles, got ${n}`;
       }
 
       // ── annualized_volatility & vol_20d & downside_deviation (20 returns) ──
@@ -454,9 +528,12 @@ export class FeatureEngine {
         availabilityMask['annualized_volatility'] = true;
         availabilityMask['downside_deviation'] = true;
       } else {
-        failureReasons['vol_20d'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.vol_20d} candles, got ${n}`;
-        failureReasons['annualized_volatility'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.annualized_volatility} candles, got ${n}`;
-        failureReasons['downside_deviation'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.downside_deviation} candles, got ${n}`;
+        failureReasons['vol_20d'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.vol_20d} candles, got ${n}`;
+        failureReasons['annualized_volatility'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.annualized_volatility} candles, got ${n}`;
+        failureReasons['downside_deviation'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.downside_deviation} candles, got ${n}`;
       }
 
       // ── macd_hist (span 12, 26, 9) ──
@@ -464,7 +541,8 @@ export class FeatureEngine {
         rawFeatures['macd_hist'] = this.computeNormalizedMACDHist(closes);
         availabilityMask['macd_hist'] = true;
       } else {
-        failureReasons['macd_hist'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.macd_hist} candles, got ${n}`;
+        failureReasons['macd_hist'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.macd_hist} candles, got ${n}`;
       }
 
       // ── dist_52w_high & dist_52w_low (True 252 trading sessions lookback) ──
@@ -473,13 +551,17 @@ export class FeatureEngine {
         const sliceL = lows.slice(-252);
         const max52w = Math.max(...sliceH);
         const min52w = Math.min(...sliceL);
-        rawFeatures['dist_52w_high'] = max52w > 0 ? (lastClose - max52w) / max52w : 0.0;
-        rawFeatures['dist_52w_low'] = min52w > 0 ? (lastClose - min52w) / min52w : 0.0;
+        rawFeatures['dist_52w_high'] =
+          max52w > 0 ? (lastClose - max52w) / max52w : 0.0;
+        rawFeatures['dist_52w_low'] =
+          min52w > 0 ? (lastClose - min52w) / min52w : 0.0;
         availabilityMask['dist_52w_high'] = true;
         availabilityMask['dist_52w_low'] = true;
       } else {
-        failureReasons['dist_52w_high'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.dist_52w_high} candles for 52-week high, got ${n}`;
-        failureReasons['dist_52w_low'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.dist_52w_low} candles for 52-week low, got ${n}`;
+        failureReasons['dist_52w_high'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.dist_52w_high} candles for 52-week high, got ${n}`;
+        failureReasons['dist_52w_low'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.dist_52w_low} candles for 52-week low, got ${n}`;
       }
 
       // ── sma_50_dist ──
@@ -489,7 +571,8 @@ export class FeatureEngine {
         rawFeatures['sma_50_dist'] = (lastClose - mean50) / mean50;
         availabilityMask['sma_50_dist'] = true;
       } else {
-        failureReasons['sma_50_dist'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.sma_50_dist} candles, got ${n}`;
+        failureReasons['sma_50_dist'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.sma_50_dist} candles, got ${n}`;
       }
 
       // ── vol_60d (60 returns) ──
@@ -500,11 +583,16 @@ export class FeatureEngine {
         rawFeatures['vol_60d'] = stdRet60 * Math.sqrt(252.0);
         availabilityMask['vol_60d'] = true;
       } else {
-        failureReasons['vol_60d'] = `Need >= ${FeatureEngine.MIN_LOOKBACKS.vol_60d} candles, got ${n}`;
+        failureReasons['vol_60d'] =
+          `Need >= ${FeatureEngine.MIN_LOOKBACKS.vol_60d} candles, got ${n}`;
       }
 
       // ── Benchmark Features: beta_nifty & relative_strength_nifty with EXACT Date Matching ──
-      if (activeBenchmark && Array.isArray(activeBenchmark) && activeBenchmark.length >= 61) {
+      if (
+        activeBenchmark &&
+        Array.isArray(activeBenchmark) &&
+        activeBenchmark.length >= 61
+      ) {
         // Map benchmark candles by date string (YYYY-MM-DD)
         const benchMap = new Map<string, number>();
         for (const b of activeBenchmark) {
@@ -520,13 +608,19 @@ export class FeatureEngine {
         const matchedBenchReturns: number[] = [];
 
         for (let i = 1; i < n; i++) {
-          const prevDate = new Date(timestamps[i - 1]).toISOString().slice(0, 10);
+          const prevDate = new Date(timestamps[i - 1])
+            .toISOString()
+            .slice(0, 10);
           const currDate = new Date(timestamps[i]).toISOString().slice(0, 10);
 
           const prevBenchClose = benchMap.get(prevDate);
           const currBenchClose = benchMap.get(currDate);
 
-          if (prevBenchClose !== undefined && currBenchClose !== undefined && prevBenchClose > 0) {
+          if (
+            prevBenchClose !== undefined &&
+            currBenchClose !== undefined &&
+            prevBenchClose > 0
+          ) {
             const stockRet = (closes[i] - closes[i - 1]) / closes[i - 1];
             const benchRet = (currBenchClose - prevBenchClose) / prevBenchClose;
             matchedStockReturns.push(stockRet);
@@ -556,40 +650,55 @@ export class FeatureEngine {
           rawFeatures['beta_nifty'] = Math.max(0.2, Math.min(3.0, rawBeta));
           availabilityMask['beta_nifty'] = true;
         } else {
-          failureReasons['beta_nifty'] = `Date-matched benchmark return pairs count (${matchedStockReturns.length}) < 60`;
+          failureReasons['beta_nifty'] =
+            `Date-matched benchmark return pairs count (${matchedStockReturns.length}) < 60`;
         }
 
         // 20-day relative strength using exact date match (independent of 60d beta)
         if (n >= 21) {
-          const lastDate = new Date(timestamps[n - 1]).toISOString().slice(0, 10);
-          const date20Ago = new Date(timestamps[n - 21]).toISOString().slice(0, 10);
+          const lastDate = new Date(timestamps[n - 1])
+            .toISOString()
+            .slice(0, 10);
+          const date20Ago = new Date(timestamps[n - 21])
+            .toISOString()
+            .slice(0, 10);
           const bLast = benchMap.get(lastDate);
           const b20Ago = benchMap.get(date20Ago);
 
           if (bLast !== undefined && b20Ago !== undefined && b20Ago > 0) {
-            const stockPerf20 = (closes[n - 1] - closes[n - 21]) / closes[n - 21];
+            const stockPerf20 =
+              (closes[n - 1] - closes[n - 21]) / closes[n - 21];
             const benchPerf20 = (bLast - b20Ago) / b20Ago;
             rawFeatures['relative_strength_nifty'] = stockPerf20 - benchPerf20;
             availabilityMask['relative_strength_nifty'] = true;
           } else {
-            failureReasons['relative_strength_nifty'] = `Benchmark candles missing matching dates for 20d return (${date20Ago} or ${lastDate})`;
+            failureReasons['relative_strength_nifty'] =
+              `Benchmark candles missing matching dates for 20d return (${date20Ago} or ${lastDate})`;
           }
         } else {
-          failureReasons['relative_strength_nifty'] = `Need >= 21 candles for 20d relative strength, got ${n}`;
+          failureReasons['relative_strength_nifty'] =
+            `Need >= 21 candles for 20d relative strength, got ${n}`;
         }
       } else {
-        failureReasons['beta_nifty'] = `Benchmark candles missing or < 61 (got ${activeBenchmark?.length || 0})`;
-        failureReasons['relative_strength_nifty'] = `Benchmark candles missing or < 21 (got ${activeBenchmark?.length || 0})`;
+        failureReasons['beta_nifty'] =
+          `Benchmark candles missing or < 61 (got ${activeBenchmark?.length || 0})`;
+        failureReasons['relative_strength_nifty'] =
+          `Benchmark candles missing or < 21 (got ${activeBenchmark?.length || 0})`;
       }
     } catch (err: any) {
-      this.logger.error(`Feature computation exception: ${err.message}`, err.stack);
+      this.logger.error(
+        `Feature computation exception: ${err.message}`,
+        err.stack,
+      );
       return {
         features: null,
         rawFeatures,
         availabilityMask,
         isComplete: false,
         missingFeatures: [...FeatureEngine.CANONICAL_FEATURE_KEYS],
-        failureReasons: { global: `FEATURE_COMPUTATION_FAILED: ${err.message}` },
+        failureReasons: {
+          global: `FEATURE_COMPUTATION_FAILED: ${err.message}`,
+        },
         dataQuality: 'FEATURE_COMPUTATION_FAILED',
         candleCount: n,
         benchmarkCandleCount: benchmarkCandles?.length || 0,
@@ -598,18 +707,25 @@ export class FeatureEngine {
 
     // 5. Availability Check & Completion Status
     for (const key of FeatureEngine.CANONICAL_FEATURE_KEYS) {
-      if (!availabilityMask[key] || rawFeatures[key] === null || isNaN(rawFeatures[key]!) || !isFinite(rawFeatures[key]!)) {
+      if (
+        !availabilityMask[key] ||
+        rawFeatures[key] === null ||
+        isNaN(rawFeatures[key]) ||
+        !isFinite(rawFeatures[key])
+      ) {
         missingFeatures.push(key);
       }
     }
 
     if (missingFeatures.length > 0) {
-      const isBenchmarkIssue = missingFeatures.every((k) => k === 'beta_nifty' || k === 'relative_strength_nifty');
+      const isBenchmarkIssue = missingFeatures.every(
+        (k) => k === 'beta_nifty' || k === 'relative_strength_nifty',
+      );
       const dataQuality: FeatureDataQuality = hasInvalidVolume
         ? 'INVALID_VOLUME_DATA'
         : isBenchmarkIssue
-        ? 'INSUFFICIENT_BENCHMARK'
-        : 'INSUFFICIENT_LOOKBACK';
+          ? 'INSUFFICIENT_BENCHMARK'
+          : 'INSUFFICIENT_LOOKBACK';
 
       return {
         features: null,
@@ -733,6 +849,6 @@ export class FeatureEngine {
 
     if (avgLoss === 0.0) return 100.0;
     const rs = avgGain / avgLoss;
-    return 100.0 - (100.0 / (1.0 + rs));
+    return 100.0 - 100.0 / (1.0 + rs);
   }
 }

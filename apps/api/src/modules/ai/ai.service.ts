@@ -14,8 +14,9 @@ export class AiService {
       this.logger.warn('GEMINI_API_KEY is not configured.');
     }
     this.genAI = new GoogleGenerativeAI(apiKey);
-    
-    const modelName = this.configService.get<string>('GEMINI_MODEL') || 'gemini-1.5-pro';
+
+    const modelName =
+      this.configService.get<string>('GEMINI_MODEL') || 'gemini-1.5-pro';
     this.model = this.genAI.getGenerativeModel({
       model: modelName,
       generationConfig: {
@@ -40,12 +41,23 @@ export class AiService {
   /**
    * Generates evidence-constrained investment explanations based on authoritative quantitative model outputs.
    */
-  async generateInvestmentInsight(stockTicker: string, data: any): Promise<any> {
-    const authoritativeDecision = data.decision || data.recommendation || 'HOLD';
-    const authoritativeProb = data.confidenceScore || (data.prediction?.['20d']?.calibratedProbability ? Math.round(data.prediction['20d'].calibratedProbability * 100) : 50);
-    const authoritativeTarget = data.target || data.risk?.targetPrice || data.quote?.price || 0;
-    const authoritativeStopLoss = data.stopLoss || data.risk?.stopLossPrice || data.quote?.price || 0;
-    const authoritativeRR = data.rewardRiskRatio || data.risk?.rewardRiskRatio || 2.0;
+  async generateInvestmentInsight(
+    stockTicker: string,
+    data: any,
+  ): Promise<any> {
+    const authoritativeDecision =
+      data.decision || data.recommendation || 'HOLD';
+    const authoritativeProb =
+      data.confidenceScore ||
+      (data.prediction?.['20d']?.calibratedProbability
+        ? Math.round(data.prediction['20d'].calibratedProbability * 100)
+        : 50);
+    const authoritativeTarget =
+      data.target || data.risk?.targetPrice || data.quote?.price || 0;
+    const authoritativeStopLoss =
+      data.stopLoss || data.risk?.stopLossPrice || data.quote?.price || 0;
+    const authoritativeRR =
+      data.rewardRiskRatio || data.risk?.rewardRiskRatio || 2.0;
 
     const prompt = `
       You are an evidence-constrained financial narrative engine for QuantX on the Indian Stock Market.
@@ -88,7 +100,7 @@ export class AiService {
     try {
       const result = await this.model.generateContent(prompt);
       const response = await result.response;
-      let text = response.text();
+      const text = response.text();
       const parsed = this.cleanAndParseJson<any>(text, null);
 
       if (parsed) {
@@ -103,7 +115,10 @@ export class AiService {
       }
       return null;
     } catch (error) {
-      this.logger.error(`Failed to generate AI insight for ${stockTicker}`, error);
+      this.logger.error(
+        `Failed to generate AI insight for ${stockTicker}`,
+        error,
+      );
       throw error;
     }
   }
@@ -111,7 +126,10 @@ export class AiService {
   /**
    * Summarizes a news article and calculates sentiment.
    */
-  async analyzeNewsSentiment(article: { title: string; content: string }): Promise<any> {
+  async analyzeNewsSentiment(article: {
+    title: string;
+    content: string;
+  }): Promise<any> {
     const prompt = `
       Analyze the following news article for Indian stock market sentiment.
       
@@ -131,13 +149,15 @@ export class AiService {
 
     try {
       const flashModel = this.genAI.getGenerativeModel({
-        model: this.configService.get<string>('GEMINI_FLASH_MODEL') || 'gemini-1.5-flash',
+        model:
+          this.configService.get<string>('GEMINI_FLASH_MODEL') ||
+          'gemini-1.5-flash',
         generationConfig: { temperature: 0 },
       });
-      
+
       const result = await flashModel.generateContent(prompt);
       const response = await result.response;
-      let text = response.text();
+      const text = response.text();
       return this.cleanAndParseJson<any>(text, null);
     } catch (error) {
       this.logger.error(`Failed to analyze news sentiment`, error);
@@ -164,9 +184,12 @@ export class AiService {
     evidence?: string;
     invalidationConditions?: string[];
   }): Promise<any> {
-    const targetDecision = holding.decision || (holding.unrealizedPnLPercent > 15 ? 'SELL' : 'HOLD');
+    const targetDecision =
+      holding.decision || (holding.unrealizedPnLPercent > 15 ? 'SELL' : 'HOLD');
     const targetExit = holding.targetExitPrice || holding.currentPrice;
-    const downsideProbText = holding.downsideProbability ? `${(holding.downsideProbability * 100).toFixed(1)}%` : 'Elevated';
+    const downsideProbText = holding.downsideProbability
+      ? `${(holding.downsideProbability * 100).toFixed(1)}%`
+      : 'Elevated';
 
     const prompt = `
       You are an evidence-constrained quantitative risk explanation engine for QuantX on the Indian Stock Market.
@@ -208,19 +231,24 @@ export class AiService {
       recommendation: targetDecision,
       targetExitPrice: targetExit,
       financialReasoning: `Quantitative model triggered ${targetDecision} signal. PnL: ${holding.unrealizedPnLPercent >= 0 ? '+' : ''}${holding.unrealizedPnLPercent.toFixed(1)}%. Downside probability: ${downsideProbText}.`,
-      newsImpact: holding.evidence || 'Neutral to cautious market sentiment observed across peer equities.',
-      gmpAnalysis: 'Momentum profile indicates risk of further drawdowns near current levels.'
+      newsImpact:
+        holding.evidence ||
+        'Neutral to cautious market sentiment observed across peer equities.',
+      gmpAnalysis:
+        'Momentum profile indicates risk of further drawdowns near current levels.',
     };
 
     try {
       const flashModel = this.genAI.getGenerativeModel({
-        model: this.configService.get<string>('GEMINI_FLASH_MODEL') || 'gemini-1.5-flash',
+        model:
+          this.configService.get<string>('GEMINI_FLASH_MODEL') ||
+          'gemini-1.5-flash',
         generationConfig: { temperature: 0 },
       });
 
       const result = await flashModel.generateContent(prompt);
       const response = await result.response;
-      let text = response.text();
+      const text = response.text();
       const parsed = this.cleanAndParseJson<any>(text, fallback);
 
       // Enforce immutability of quantitative decision
@@ -229,12 +257,16 @@ export class AiService {
         name: holding.name,
         recommendation: targetDecision,
         targetExitPrice: targetExit,
-        financialReasoning: parsed?.financialReasoning || fallback.financialReasoning,
+        financialReasoning:
+          parsed?.financialReasoning || fallback.financialReasoning,
         newsImpact: parsed?.newsImpact || fallback.newsImpact,
         gmpAnalysis: parsed?.gmpAnalysis || fallback.gmpAnalysis,
       };
     } catch (error) {
-      this.logger.error(`Failed to evaluate sell opportunity for ${holding.ticker}`, error);
+      this.logger.error(
+        `Failed to evaluate sell opportunity for ${holding.ticker}`,
+        error,
+      );
       return fallback;
     }
   }

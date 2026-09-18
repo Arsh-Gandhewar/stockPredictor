@@ -1,4 +1,14 @@
-import { IsEnum, IsInt, IsNotEmpty, IsNumber, IsOptional, IsPositive, IsString, Max, Min } from 'class-validator';
+import {
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { TransactionType, OrderType } from 'db';
 
@@ -13,7 +23,9 @@ export class ExecuteTradeDto {
   @IsInt({ message: 'Quantity must be an integer' })
   @IsPositive({ message: 'Quantity must be greater than zero' })
   @Min(1, { message: 'Minimum 1 share required' })
-  @Max(1000000, { message: 'Maximum 1,000,000 shares allowed per simulated order' })
+  @Max(1000000, {
+    message: 'Maximum 1,000,000 shares allowed per simulated order',
+  })
   quantity: number;
 
   @IsOptional()

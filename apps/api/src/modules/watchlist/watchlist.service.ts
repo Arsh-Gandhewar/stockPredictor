@@ -10,7 +10,7 @@ export class WatchlistService {
   constructor(
     private readonly db: DatabaseService,
     private readonly stockService: StockService,
-    private readonly marketProvider: YahooMarketDataProvider
+    private readonly marketProvider: YahooMarketDataProvider,
   ) {}
 
   private validateTicker(ticker: string): string {
@@ -23,7 +23,9 @@ export class WatchlistService {
     }
     // Semantic universe check: verify symbol exists in supported universe
     if (this.marketProvider && !this.marketProvider.isSupportedTicker(clean)) {
-      throw new BadRequestException(`Unsupported stock ticker: '${ticker}'. Symbol not found in market universe.`);
+      throw new BadRequestException(
+        `Unsupported stock ticker: '${ticker}'. Symbol not found in market universe.`,
+      );
     }
     return clean;
   }
@@ -33,10 +35,17 @@ export class WatchlistService {
       return await this.db.client.user.upsert({
         where: { clerkId: userId },
         update: {},
-        create: { clerkId: userId, email: `${userId}@quantx.internal`, firstName: 'QuantX', lastName: 'Trader' },
+        create: {
+          clerkId: userId,
+          email: `${userId}@quantx.internal`,
+          firstName: 'QuantX',
+          lastName: 'Trader',
+        },
       });
     } catch {
-      return await this.db.client.user.findUniqueOrThrow({ where: { clerkId: userId } });
+      return await this.db.client.user.findUniqueOrThrow({
+        where: { clerkId: userId },
+      });
     }
   }
 
@@ -63,10 +72,17 @@ export class WatchlistService {
           include: { stocks: { include: { stock: true } } },
         });
 
-        const defaultTickers = ['RELIANCE.NS', 'TCS.NS', 'HDFCBANK.NS', 'INFY.NS'];
-        
+        const defaultTickers = [
+          'RELIANCE.NS',
+          'TCS.NS',
+          'HDFCBANK.NS',
+          'INFY.NS',
+        ];
+
         for (const ticker of defaultTickers) {
-          const universeStock = this.marketProvider.getUniverse().find((s) => s.ticker === ticker);
+          const universeStock = this.marketProvider
+            .getUniverse()
+            .find((s) => s.ticker === ticker);
           const stock = await this.db.client.stock.upsert({
             where: { ticker },
             update: {},
@@ -125,8 +141,10 @@ export class WatchlistService {
       });
     }
 
-    const universeStock = this.marketProvider.getUniverse().find((s) => s.ticker === ticker);
-    
+    const universeStock = this.marketProvider
+      .getUniverse()
+      .find((s) => s.ticker === ticker);
+
     const stock = await this.db.client.stock.upsert({
       where: { ticker },
       update: {},

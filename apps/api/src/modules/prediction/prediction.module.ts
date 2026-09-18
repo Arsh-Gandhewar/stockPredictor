@@ -41,6 +41,12 @@ import { DistributedLockService } from './engines/distributed-lock.service';
     UniverseRegistry,
     DistributedLockService,
   ],
-  exports: [QuantPredictionService, RuntimeVerificationService, TestEvidenceService, UniverseRegistry, DistributedLockService],
+  exports: [
+    QuantPredictionService,
+    RuntimeVerificationService,
+    TestEvidenceService,
+    UniverseRegistry,
+    DistributedLockService,
+  ],
 })
 export class PredictionModule {}

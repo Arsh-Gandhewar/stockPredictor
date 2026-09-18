@@ -24,13 +24,18 @@ export interface ScenarioReturnQuantiles {
 }
 
 export function getCanonicalFeatureSchemaPath(): string {
-  return path.resolve(__dirname, '../../../../../../packages/quant-engine/research/canonical_features.json');
+  return path.resolve(
+    __dirname,
+    '../../../../../../packages/quant-engine/research/canonical_features.json',
+  );
 }
 
 export function getCanonicalFeatureSchemaHash(): string {
   const p = getCanonicalFeatureSchemaPath();
   if (!fs.existsSync(p)) {
-    throw new Error(`CANONICAL_SCHEMA_MISSING: Canonical feature schema file not found at ${p}.`);
+    throw new Error(
+      `CANONICAL_SCHEMA_MISSING: Canonical feature schema file not found at ${p}.`,
+    );
   }
   const content = fs.readFileSync(p, 'utf-8');
   return crypto.createHash('sha256').update(content).digest('hex');
@@ -44,7 +49,7 @@ export class OnnxInferenceEngine implements OnModuleInit {
     const canonicalPath = getCanonicalFeatureSchemaPath();
     if (!fs.existsSync(canonicalPath)) {
       throw new Error(
-        `CANONICAL_SCHEMA_MISSING: Canonical feature schema file not found at ${canonicalPath}. Silent fallback prohibited.`
+        `CANONICAL_SCHEMA_MISSING: Canonical feature schema file not found at ${canonicalPath}. Silent fallback prohibited.`,
       );
     }
     try {
@@ -54,20 +59,25 @@ export class OnnxInferenceEngine implements OnModuleInit {
         return raw.features;
       }
       throw new Error(
-        `CANONICAL_SCHEMA_CORRUPT: Expected 25 features in canonical schema, got ${raw.features ? raw.features.length : 'none'}`
+        `CANONICAL_SCHEMA_CORRUPT: Expected 25 features in canonical schema, got ${raw.features ? raw.features.length : 'none'}`,
       );
     } catch (err: any) {
       if (err.message && err.message.startsWith('CANONICAL_SCHEMA_')) {
         throw err;
       }
-      throw new Error(`CANONICAL_SCHEMA_PARSE_ERROR: Failed to parse canonical features JSON: ${err.message}`);
+      throw new Error(
+        `CANONICAL_SCHEMA_PARSE_ERROR: Failed to parse canonical features JSON: ${err.message}`,
+      );
     }
   })();
 
   private isModelLoaded: boolean = false;
   private conditionalReturnsTable: Record<string, Record<string, any>> = {};
 
-  private readonly artifactsDir = path.resolve(__dirname, '../../../../data/artifacts/active');
+  private readonly artifactsDir = path.resolve(
+    __dirname,
+    '../../../../data/artifacts/active',
+  );
 
   async onModuleInit() {
     await this.loadActiveModels();
@@ -82,16 +92,21 @@ export class OnnxInferenceEngine implements OnModuleInit {
       const manifestPath = path.join(this.artifactsDir, 'model-artifact.json');
 
       if (!fs.existsSync(manifestPath)) {
-        this.logger.error(`MODEL_ARTIFACT_MISSING: Manifest not found at ${manifestPath}`);
+        this.logger.error(
+          `MODEL_ARTIFACT_MISSING: Manifest not found at ${manifestPath}`,
+        );
         return;
       }
 
       const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
-      const manifestSchemaHash = manifest.featureSchemaHash || manifest.lineage?.featureHash || manifest.lineageHashes?.featureHash;
+      const manifestSchemaHash =
+        manifest.featureSchemaHash ||
+        manifest.lineage?.featureHash ||
+        manifest.lineageHashes?.featureHash;
 
       if (!manifestSchemaHash || manifestSchemaHash !== canonicalSchemaHash) {
         this.logger.error(
-          `FEATURE_SCHEMA_HASH_MISMATCH: Manifest feature schema hash (${manifestSchemaHash}) does not match canonical schema hash (${canonicalSchemaHash}). Model activation rejected.`
+          `FEATURE_SCHEMA_HASH_MISMATCH: Manifest feature schema hash (${manifestSchemaHash}) does not match canonical schema hash (${canonicalSchemaHash}). Model activation rejected.`,
         );
         return;
       }
@@ -101,54 +116,82 @@ export class OnnxInferenceEngine implements OnModuleInit {
       }
 
       if (!manifest.onnxModels || typeof manifest.onnxModels !== 'object') {
-        this.logger.error('MODEL_ARTIFACT_CORRUPT: Manifest onnxModels metadata is missing or invalid.');
+        this.logger.error(
+          'MODEL_ARTIFACT_CORRUPT: Manifest onnxModels metadata is missing or invalid.',
+        );
         return;
       }
 
-      const stagedSessions = new Map<'1d' | '5d' | '20d', ort.InferenceSession>();
+      const stagedSessions = new Map<
+        '1d' | '5d' | '20d',
+        ort.InferenceSession
+      >();
       const horizons = ['1d', '5d', '20d'] as const;
 
       for (const h of horizons) {
         const modelMeta = manifest.onnxModels[h];
-        if (!modelMeta || !modelMeta.sha256 || typeof modelMeta.sha256 !== 'string') {
-          this.logger.error(`MANDATORY_HASH_MISSING: ONNX model for horizon ${h} is missing mandatory SHA-256 in manifest.`);
+        if (
+          !modelMeta ||
+          !modelMeta.sha256 ||
+          typeof modelMeta.sha256 !== 'string'
+        ) {
+          this.logger.error(
+            `MANDATORY_HASH_MISSING: ONNX model for horizon ${h} is missing mandatory SHA-256 in manifest.`,
+          );
           return;
         }
 
-        const modelPath = path.join(this.artifactsDir, modelMeta.filename || `model_${h}.onnx`);
+        const modelPath = path.join(
+          this.artifactsDir,
+          modelMeta.filename || `model_${h}.onnx`,
+        );
         if (!fs.existsSync(modelPath)) {
-          this.logger.error(`ONNX_FILE_MISSING: ONNX model file not found for horizon ${h}: ${modelPath}`);
+          this.logger.error(
+            `ONNX_FILE_MISSING: ONNX model file not found for horizon ${h}: ${modelPath}`,
+          );
           return;
         }
 
         const fileBuffer = fs.readFileSync(modelPath);
-        const actualHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+        const actualHash = crypto
+          .createHash('sha256')
+          .update(fileBuffer)
+          .digest('hex');
 
         if (actualHash !== modelMeta.sha256) {
           this.logger.error(
-            `ONNX_HASH_MISMATCH: Hash mismatch for horizon ${h} (${modelPath}). Expected ${modelMeta.sha256}, got ${actualHash}`
+            `ONNX_HASH_MISMATCH: Hash mismatch for horizon ${h} (${modelPath}). Expected ${modelMeta.sha256}, got ${actualHash}`,
           );
           return;
         }
 
         const session = await ort.InferenceSession.create(modelPath);
         stagedSessions.set(h, session);
-        this.logger.log(`Validated and staged ONNX model for horizon ${h} (${modelMeta.sha256.slice(0, 12)}...)`);
+        this.logger.log(
+          `Validated and staged ONNX model for horizon ${h} (${modelMeta.sha256.slice(0, 12)}...)`,
+        );
       }
 
       if (stagedSessions.size === 3) {
         this.sessions = stagedSessions;
         this.isModelLoaded = true;
-        this.logger.log('MODEL_ARTIFACT_VALID: All 3 ONNX horizons (1d, 5d, 20d) atomically loaded and active.');
+        this.logger.log(
+          'MODEL_ARTIFACT_VALID: All 3 ONNX horizons (1d, 5d, 20d) atomically loaded and active.',
+        );
       } else {
         this.sessions.clear();
         this.isModelLoaded = false;
-        this.logger.error('ATOMIC_ACTIVATION_FAILED: Incomplete session staging. 0 models active.');
+        this.logger.error(
+          'ATOMIC_ACTIVATION_FAILED: Incomplete session staging. 0 models active.',
+        );
       }
     } catch (err: any) {
       this.sessions.clear();
       this.isModelLoaded = false;
-      this.logger.error(`Failed to load ONNX inference sessions: ${err.message}`, err.stack);
+      this.logger.error(
+        `Failed to load ONNX inference sessions: ${err.message}`,
+        err.stack,
+      );
     }
   }
 
@@ -160,14 +203,21 @@ export class OnnxInferenceEngine implements OnModuleInit {
    * Executes native ONNX runtime inference over exactly 25 point-in-time features.
    * Strictly fails closed (never silently executes heuristic baseline or fills missing values with 0.0).
    */
-  async evaluate(features: ModelFeatureVector25, horizon: '1d' | '5d' | '20d'): Promise<number> {
+  async evaluate(
+    features: ModelFeatureVector25,
+    horizon: '1d' | '5d' | '20d',
+  ): Promise<number> {
     const session = this.sessions.get(horizon);
     if (!session) {
-      throw new Error(`MODEL_UNAVAILABLE: ONNX inference session for horizon ${horizon} is not loaded`);
+      throw new Error(
+        `MODEL_UNAVAILABLE: ONNX inference session for horizon ${horizon} is not loaded`,
+      );
     }
 
     if (!features || typeof features !== 'object') {
-      throw new Error(`FEATURE_SCHEMA_MISMATCH: Input features must be a valid non-null ModelFeatureVector25 object.`);
+      throw new Error(
+        `FEATURE_SCHEMA_MISMATCH: Input features must be a valid non-null ModelFeatureVector25 object.`,
+      );
     }
 
     try {
@@ -177,16 +227,29 @@ export class OnnxInferenceEngine implements OnModuleInit {
       for (let i = 0; i < this.featureSchema.length; i++) {
         const key = this.featureSchema[i];
         if (!(key in features)) {
-          throw new Error(`FEATURE_SCHEMA_MISMATCH: Missing required feature '${key}' in input vector`);
+          throw new Error(
+            `FEATURE_SCHEMA_MISMATCH: Missing required feature '${key}' in input vector`,
+          );
         }
         const val = (features as any)[key];
-        if (val === null || val === undefined || typeof val !== 'number' || isNaN(val) || !isFinite(val)) {
-          throw new Error(`FEATURE_SCHEMA_MISMATCH: Feature '${key}' has invalid/non-finite value: ${val}`);
+        if (
+          val === null ||
+          val === undefined ||
+          typeof val !== 'number' ||
+          isNaN(val) ||
+          !isFinite(val)
+        ) {
+          throw new Error(
+            `FEATURE_SCHEMA_MISMATCH: Feature '${key}' has invalid/non-finite value: ${val}`,
+          );
         }
         inputVector[i] = Number(val);
       }
 
-      const inputTensor = new ort.Tensor('float32', inputVector, [1, this.featureSchema.length]);
+      const inputTensor = new ort.Tensor('float32', inputVector, [
+        1,
+        this.featureSchema.length,
+      ]);
       const feeds: Record<string, ort.Tensor> = {};
       const inputName = session.inputNames[0] || 'float_input';
       feeds[inputName] = inputTensor;
@@ -196,7 +259,10 @@ export class OnnxInferenceEngine implements OnModuleInit {
 
       if (probOutput && probOutput.data) {
         let prob = 0.5;
-        if (probOutput.data instanceof Float32Array || probOutput.data instanceof Float64Array) {
+        if (
+          probOutput.data instanceof Float32Array ||
+          probOutput.data instanceof Float64Array
+        ) {
           const dataArr = probOutput.data;
           prob = dataArr.length >= 2 ? Number(dataArr[1]) : Number(dataArr[0]);
         } else if (Array.isArray(probOutput.data)) {
@@ -205,7 +271,9 @@ export class OnnxInferenceEngine implements OnModuleInit {
         } else if (probOutput.data instanceof BigInt64Array) {
           prob = Number(probOutput.data[0]) === 1 ? 0.75 : 0.25;
         } else {
-          prob = Number((probOutput.data as any)[1] ?? (probOutput.data as any)[0] ?? 0.5);
+          prob = Number(
+            (probOutput.data as any)[1] ?? (probOutput.data as any)[0] ?? 0.5,
+          );
         }
         return parseFloat(Math.max(0.0, Math.min(1.0, prob)).toFixed(4));
       }
@@ -215,8 +283,12 @@ export class OnnxInferenceEngine implements OnModuleInit {
       if (err.message?.startsWith('FEATURE_SCHEMA_MISMATCH')) {
         throw err;
       }
-      this.logger.error(`ONNX inference execution failed for ${horizon}: ${err.message}`);
-      throw new Error(`MODEL_UNAVAILABLE: ONNX inference failed: ${err.message}`);
+      this.logger.error(
+        `ONNX inference execution failed for ${horizon}: ${err.message}`,
+      );
+      throw new Error(
+        `MODEL_UNAVAILABLE: ONNX inference failed: ${err.message}`,
+      );
     }
   }
 
@@ -224,7 +296,7 @@ export class OnnxInferenceEngine implements OnModuleInit {
     const p = Math.max(0.0, Math.min(1.0, prob));
     if (p < 0.35) return 'DOWNSIDE_LOW';
     if (p < 0.45) return 'DOWNSIDE_MID';
-    if (p < 0.50) return 'NEUTRAL_DOWN';
+    if (p < 0.5) return 'NEUTRAL_DOWN';
     if (p < 0.55) return 'NEUTRAL_UP';
     if (p < 0.65) return 'MODERATE_BULL';
     if (p < 0.75) return 'STRONG_BULL';
@@ -235,7 +307,7 @@ export class OnnxInferenceEngine implements OnModuleInit {
     horizon: '1d' | '5d' | '20d',
     calibratedProb: number = 0.55,
     regime: string = 'SIDEWAYS',
-    assetVolatility: number = 0.02
+    assetVolatility: number = 0.02,
   ): ScenarioReturnQuantiles {
     const hTable = this.conditionalReturnsTable[horizon];
     const bucketName = this.getBucketName(calibratedProb);
@@ -288,7 +360,7 @@ export class OnnxInferenceEngine implements OnModuleInit {
    */
   public async computeFeatureAttribution(
     features: ModelFeatureVector25,
-    horizon: '1d' | '5d' | '20d' = '5d'
+    horizon: '1d' | '5d' | '20d' = '5d',
   ): Promise<{
     attributions: { feature: string; contribution: number }[];
     baseValue: number;
@@ -298,7 +370,9 @@ export class OnnxInferenceEngine implements OnModuleInit {
   }> {
     const session = this.sessions.get(horizon);
     if (!session) {
-      throw new Error(`MODEL_UNAVAILABLE: ONNX inference session for horizon ${horizon} is not loaded`);
+      throw new Error(
+        `MODEL_UNAVAILABLE: ONNX inference session for horizon ${horizon} is not loaded`,
+      );
     }
 
     const baselineVector: Record<string, number> = {};
@@ -361,9 +435,15 @@ export class OnnxInferenceEngine implements OnModuleInit {
       });
     }
 
-    attributions.sort((a, b) => Math.abs(b.contribution) - Math.abs(a.contribution));
-    const sumAttributions = parseFloat(attributions.reduce((s, a) => s + a.contribution, 0).toFixed(6));
-    const decompositionError = parseFloat(Math.abs(baseValue + sumAttributions - modelOutput).toFixed(6));
+    attributions.sort(
+      (a, b) => Math.abs(b.contribution) - Math.abs(a.contribution),
+    );
+    const sumAttributions = parseFloat(
+      attributions.reduce((s, a) => s + a.contribution, 0).toFixed(6),
+    );
+    const decompositionError = parseFloat(
+      Math.abs(baseValue + sumAttributions - modelOutput).toFixed(6),
+    );
 
     return {
       attributions,
@@ -374,4 +454,3 @@ export class OnnxInferenceEngine implements OnModuleInit {
     };
   }
 }
-

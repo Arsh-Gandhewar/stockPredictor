@@ -45,25 +45,32 @@ export interface RuntimeVerificationReport {
 export class RuntimeVerificationService {
   private readonly logger = new Logger(RuntimeVerificationService.name);
   private static readonly REPORT_SECRET = 'quantx-runtime-report-salt-2026';
-  private readonly reportPath = path.resolve(__dirname, '../../../../data/artifacts/governance/runtime-verification-report.json');
+  private readonly reportPath = path.resolve(
+    __dirname,
+    '../../../../data/artifacts/governance/runtime-verification-report.json',
+  );
 
   constructor(
     private readonly featureEngine: FeatureEngine,
     private readonly riskEngine: RiskEngine,
     private readonly inferenceEngine: ModelInferenceEngine,
     private readonly testEvidenceService: TestEvidenceService,
-    private readonly universeRegistry: UniverseRegistry
+    private readonly universeRegistry: UniverseRegistry,
   ) {}
 
   public static getRuntimeCodeVersion(): string {
     try {
       return execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
     } catch {
-      return process.env.COMMIT_SHA || 'e5c05c275ad242febc4b5617ef2c1d48b30f6966';
+      return (
+        process.env.COMMIT_SHA || 'e5c05c275ad242febc4b5617ef2c1d48b30f6966'
+      );
     }
   }
 
-  public static signReport(report: Omit<RuntimeVerificationReport, 'signature'>): string {
+  public static signReport(
+    report: Omit<RuntimeVerificationReport, 'signature'>,
+  ): string {
     const canonical = JSON.stringify({
       evaluatedAt: report.evaluatedAt,
       codeVersion: report.codeVersion,
@@ -72,10 +79,15 @@ export class RuntimeVerificationService {
       overallPassed: report.overallPassed,
       verifications: report.verifications,
     });
-    return crypto.createHmac('sha256', RuntimeVerificationService.REPORT_SECRET).update(canonical).digest('hex');
+    return crypto
+      .createHmac('sha256', RuntimeVerificationService.REPORT_SECRET)
+      .update(canonical)
+      .digest('hex');
   }
 
-  public async runFullVerification(artifact: ModelArtifact | null): Promise<RuntimeVerificationReport> {
+  public async runFullVerification(
+    artifact: ModelArtifact | null,
+  ): Promise<RuntimeVerificationReport> {
     const timestamp = new Date().toISOString();
     const codeVersion = RuntimeVerificationService.getRuntimeCodeVersion();
     const artifactHash = artifact?.checksum || 'NO_ARTIFACT';
@@ -86,25 +98,33 @@ export class RuntimeVerificationService {
     try {
       // Stream candles through production normalization check
       const seriesLength = 260;
-      const rawProviderCandles = Array.from({ length: seriesLength }, (_, i) => ({
-        open: 100 + i * 0.15,
-        high: 102 + i * 0.15,
-        low: 99 + i * 0.15,
-        close: 101.5 + i * 0.15,
-        volume: 125000 + i * 50,
-        timestamp: 1700000000000 + i * 86400000,
-        time: 1700000000000 + i * 86400000,
-      }));
+      const rawProviderCandles = Array.from(
+        { length: seriesLength },
+        (_, i) => ({
+          open: 100 + i * 0.15,
+          high: 102 + i * 0.15,
+          low: 99 + i * 0.15,
+          close: 101.5 + i * 0.15,
+          volume: 125000 + i * 50,
+          timestamp: 1700000000000 + i * 86400000,
+          time: 1700000000000 + i * 86400000,
+        }),
+      );
 
       // Invariant 1: OHLC geometric relation holds strictly
       const ohlcValid = rawProviderCandles.every(
-        (c) => c.high >= Math.max(c.open, c.close) && c.low <= Math.min(c.open, c.close) && c.volume > 0
+        (c) =>
+          c.high >= Math.max(c.open, c.close) &&
+          c.low <= Math.min(c.open, c.close) &&
+          c.volume > 0,
       );
 
       // Invariant 2: Timestamps are monotonically strictly increasing
       let monotonicTimestamps = true;
       for (let i = 1; i < rawProviderCandles.length; i++) {
-        if (rawProviderCandles[i].timestamp <= rawProviderCandles[i - 1].timestamp) {
+        if (
+          rawProviderCandles[i].timestamp <= rawProviderCandles[i - 1].timestamp
+        ) {
           monotonicTimestamps = false;
           break;
         }
@@ -114,8 +134,12 @@ export class RuntimeVerificationService {
       const universeEvents = this.universeRegistry.getEvents();
       const hasUniverseLedger = universeEvents.length > 0;
 
-      const datasetHash = crypto.createHash('sha256').update(JSON.stringify(rawProviderCandles)).digest('hex');
-      const pipelineValid = ohlcValid && monotonicTimestamps && hasUniverseLedger;
+      const datasetHash = crypto
+        .createHash('sha256')
+        .update(JSON.stringify(rawProviderCandles))
+        .digest('hex');
+      const pipelineValid =
+        ohlcValid && monotonicTimestamps && hasUniverseLedger;
 
       dataIntegrityEvidence = {
         testId: 'TEST-DATA-INTEGRITY-01',
@@ -167,7 +191,11 @@ export class RuntimeVerificationService {
       };
 
       // Step A: Calculate features at cutoff t0
-      const res0 = this.featureEngine.calculateFeatures(quote, baseCandles, baseCandles);
+      const res0 = this.featureEngine.calculateFeatures(
+        quote,
+        baseCandles,
+        baseCandles,
+      );
 
       // Step B: Inject 50 future candles with extreme volatility (+30% / -25%) and massive volume spikes
       const futureCandles: any = Array.from({ length: 50 }, (_, i) => {
@@ -185,10 +213,19 @@ export class RuntimeVerificationService {
       const candlesWithFuture = [...baseCandles, ...futureCandles];
 
       // Step C: Recalculate feature vector at cutoff t0 with future data present
-      const resWithFuture = this.featureEngine.calculateFeatures(quote, candlesWithFuture, candlesWithFuture);
+      const resWithFuture = this.featureEngine.calculateFeatures(
+        quote,
+        candlesWithFuture,
+        candlesWithFuture,
+      );
 
       let maxDiff = 0.0;
-      if (res0.isComplete && resWithFuture.isComplete && res0.features && resWithFuture.features) {
+      if (
+        res0.isComplete &&
+        resWithFuture.isComplete &&
+        res0.features &&
+        resWithFuture.features
+      ) {
         for (const key of FeatureEngine.CANONICAL_FEATURE_KEYS) {
           const v0 = res0.features[key] ?? 0;
           const vF = resWithFuture.features[key] ?? 0;
@@ -224,8 +261,9 @@ export class RuntimeVerificationService {
     }
 
     // 3. COST_MODELING
-    const roundTripFriction = (MODEL_CONFIG.PORTFOLIO.COST_PER_TRADE_PERCENT || 0.0013) * 100;
-    const costPassed = roundTripFriction >= 0.10;
+    const roundTripFriction =
+      (MODEL_CONFIG.PORTFOLIO.COST_PER_TRADE_PERCENT || 0.0013) * 100;
+    const costPassed = roundTripFriction >= 0.1;
     const costEvidence: MachineVerificationEvidence = {
       testId: 'TEST-COST-MODEL-03',
       timestamp,
@@ -268,9 +306,10 @@ export class RuntimeVerificationService {
     let portfolioEvidence: MachineVerificationEvidence;
     try {
       const maxSingleWeight = MODEL_CONFIG.PORTFOLIO.MAX_SINGLE_STOCK_WEIGHT; // 10%
-      const sectorCap = MODEL_CONFIG.PORTFOLIO.SECTOR_CONCENTRATION_CAP;       // 25%
-      const grossCap = MODEL_CONFIG.PORTFOLIO.MAX_GROSS_EXPOSURE;             // 100%
-      const limitsOk = maxSingleWeight <= 0.20 && sectorCap <= 0.35 && grossCap <= 1.0;
+      const sectorCap = MODEL_CONFIG.PORTFOLIO.SECTOR_CONCENTRATION_CAP; // 25%
+      const grossCap = MODEL_CONFIG.PORTFOLIO.MAX_GROSS_EXPOSURE; // 100%
+      const limitsOk =
+        maxSingleWeight <= 0.2 && sectorCap <= 0.35 && grossCap <= 1.0;
 
       // Simulated trade rejection test for invariant violation
       const violatingTradeWeight = 0.25; // 25% exceeds 10% cap
@@ -310,8 +349,11 @@ export class RuntimeVerificationService {
       mockVector['rsi_14'] = 58;
       mockVector['ret_5d'] = 0.025;
 
-      const attributions = this.inferenceEngine.calculateFeatureContributions(mockVector);
-      const isCompleteAttribution = Array.isArray(attributions) && attributions.length === FeatureEngine.CANONICAL_FEATURE_KEYS.length;
+      const attributions =
+        this.inferenceEngine.calculateFeatureContributions(mockVector);
+      const isCompleteAttribution =
+        Array.isArray(attributions) &&
+        attributions.length === FeatureEngine.CANONICAL_FEATURE_KEYS.length;
 
       explainEvidence = {
         testId: 'TEST-EXPLAINABILITY-06',
@@ -339,7 +381,8 @@ export class RuntimeVerificationService {
     // 7. TEST_COVERAGE: Cryptographic CI Evidence Verification (Never Hardcoded)
     let testCoverageEvidence: MachineVerificationEvidence;
     try {
-      const evidenceValidation = this.testEvidenceService.loadAndValidateEvidence(codeVersion);
+      const evidenceValidation =
+        this.testEvidenceService.loadAndValidateEvidence(codeVersion);
       testCoverageEvidence = {
         testId: 'TEST-COVERAGE-07',
         timestamp,
@@ -369,11 +412,30 @@ export class RuntimeVerificationService {
     let failSafeEvidence: MachineVerificationEvidence;
     try {
       const corruptCandles = [
-        { open: 100, high: 105, low: 98, close: 102, volume: 0, timestamp: 1700000000000 },
+        {
+          open: 100,
+          high: 105,
+          low: 98,
+          close: 102,
+          volume: 0,
+          timestamp: 1700000000000,
+        },
       ];
       const res = this.featureEngine.calculateFeatures(
-        { ticker: 'FAIL.NS', name: 'Fail', price: 102, change: 0, changePercent: 0, volume: 0, high: 105, low: 98, open: 100, previousClose: 100, timestamp: new Date(1700000000000).toISOString() } as any,
-        corruptCandles as any
+        {
+          ticker: 'FAIL.NS',
+          name: 'Fail',
+          price: 102,
+          change: 0,
+          changePercent: 0,
+          volume: 0,
+          high: 105,
+          low: 98,
+          open: 100,
+          previousClose: 100,
+          timestamp: new Date(1700000000000).toISOString(),
+        } as any,
+        corruptCandles as any,
       );
       const failsClosedCleanly = !res.isComplete && res.features === null;
       failSafeEvidence = {
@@ -384,7 +446,8 @@ export class RuntimeVerificationService {
         rawMetric: failsClosedCleanly ? 1.0 : 0.0,
         threshold: 1.0,
         artifactHash,
-        details: 'Verified strict fail-closed safety: invalid/zero volume produces isComplete=false and zero numerical predictions.',
+        details:
+          'Verified strict fail-closed safety: invalid/zero volume produces isComplete=false and zero numerical predictions.',
       };
     } catch (err: any) {
       failSafeEvidence = {
@@ -410,7 +473,9 @@ export class RuntimeVerificationService {
       FAIL_SAFE_BEHAVIOR: failSafeEvidence,
     };
 
-    const overallPassed = Object.values(verifications).every((v) => v.status === 'PASS');
+    const overallPassed = Object.values(verifications).every(
+      (v) => v.status === 'PASS',
+    );
 
     const reportPayload: Omit<RuntimeVerificationReport, 'signature'> = {
       evaluatedAt: timestamp,
@@ -431,9 +496,15 @@ export class RuntimeVerificationService {
     try {
       const dir = path.dirname(this.reportPath);
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      fs.writeFileSync(this.reportPath, JSON.stringify(signedReport, null, 2), 'utf-8');
+      fs.writeFileSync(
+        this.reportPath,
+        JSON.stringify(signedReport, null, 2),
+        'utf-8',
+      );
     } catch (err: any) {
-      this.logger.warn(`Failed to persist runtime verification report: ${err.message}`);
+      this.logger.warn(
+        `Failed to persist runtime verification report: ${err.message}`,
+      );
     }
 
     return signedReport;

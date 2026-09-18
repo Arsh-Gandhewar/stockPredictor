@@ -20,7 +20,16 @@ export interface MovementCatalyst {
   direction: 'UP' | 'DOWN' | 'FLAT';
   volumeSurgeRatio: number;
   primaryDriver: string;
-  catalystType: 'TECHNICAL_BREAKOUT' | 'EARNINGS_ANNOUNCEMENT' | 'SECTOR_RALLY' | 'VOLUME_SPIKE' | 'BROAD_MARKET' | 'PROFIT_BOOKING' | 'MOMENTUM_BREAKOUT' | 'ORDERBOOK_PIPELINE' | 'RANGE_ACCUMULATION';
+  catalystType:
+    | 'TECHNICAL_BREAKOUT'
+    | 'EARNINGS_ANNOUNCEMENT'
+    | 'SECTOR_RALLY'
+    | 'VOLUME_SPIKE'
+    | 'BROAD_MARKET'
+    | 'PROFIT_BOOKING'
+    | 'MOMENTUM_BREAKOUT'
+    | 'ORDERBOOK_PIPELINE'
+    | 'RANGE_ACCUMULATION';
   confidenceScore: number;
   keyFactors: string[];
   invalidationLevel?: number | null;
@@ -116,7 +125,7 @@ export class StockService {
     private readonly marketProvider: YahooMarketDataProvider,
     private readonly newsService: NewsService,
     @Inject(forwardRef(() => QuantPredictionService))
-    private readonly predictionService: QuantPredictionService
+    private readonly predictionService: QuantPredictionService,
   ) {
     // Clean expired cache entries every 60 seconds
     setInterval(() => {
@@ -185,7 +194,7 @@ export class StockService {
       if (cached) results.push(cached);
       else uncached.push(ticker);
     }
-    
+
     if (uncached.length > 0) {
       const freshQuotes = await this.marketProvider.getQuotes(uncached);
       for (const q of freshQuotes) {
@@ -193,16 +202,22 @@ export class StockService {
         results.push(q);
       }
     }
-    
+
     return results;
   }
 
-  async getChartData(ticker: string, range: string = '6mo'): Promise<OHLCVCandle[]> {
+  async getChartData(
+    ticker: string,
+    range: string = '6mo',
+  ): Promise<OHLCVCandle[]> {
     const cacheKey = `chart:${ticker}:${range}`;
     const cached = this.getCached<OHLCVCandle[]>(cacheKey);
     if (cached) return cached;
 
-    const candles = await this.marketProvider.getHistoricalCandles(ticker, range);
+    const candles = await this.marketProvider.getHistoricalCandles(
+      ticker,
+      range,
+    );
     const ttl = range === '1d' ? 10_000 : range === '1w' ? 60_000 : 300_000;
     this.setCache(cacheKey, candles, ttl);
     return candles;
@@ -228,8 +243,12 @@ export class StockService {
     const scanUniverse = this.marketProvider.getUniverse().slice(0, 20);
     const quotes = await this.getQuotes(scanUniverse.map((s) => s.ticker));
 
-    const sortedByChange = [...quotes].sort((a, b) => b.changePercent - a.changePercent);
-    const sortedByVolume = [...quotes].sort((a, b) => (b.volume || 0) - (a.volume || 0));
+    const sortedByChange = [...quotes].sort(
+      (a, b) => b.changePercent - a.changePercent,
+    );
+    const sortedByVolume = [...quotes].sort(
+      (a, b) => (b.volume || 0) - (a.volume || 0),
+    );
 
     const result = {
       gainers: sortedByChange.slice(0, 8),
@@ -248,21 +267,30 @@ export class StockService {
     const rankedPredictions = await this.predictionService.getTopRankedStocks();
     const picks: TopPick[] = rankedPredictions.slice(0, 10).map((p, idx) => {
       const newsEvidence = p.evidence.find((e) => e.type === 'NEWS');
-      const newsSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = newsEvidence?.description.includes('BEARISH')
-        ? 'BEARISH'
-        : newsEvidence?.description.includes('BULLISH')
-        ? 'BULLISH'
-        : 'NEUTRAL';
-      const topHeadline = newsEvidence?.description.replace(/^\[.*?\]\s*/, '').replace(/\s*\(Sentiment score:.*?\)/, '');
+      const newsSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' =
+        newsEvidence?.description.includes('BEARISH')
+          ? 'BEARISH'
+          : newsEvidence?.description.includes('BULLISH')
+            ? 'BULLISH'
+            : 'NEUTRAL';
+      const topHeadline = newsEvidence?.description
+        .replace(/^\[.*?\]\s*/, '')
+        .replace(/\s*\(Sentiment score:.*?\)/, '');
 
       const prob20d = p.prediction['20d'].calibratedProbability ?? 0.5;
       const prob5d = p.prediction['5d'].calibratedProbability ?? 0.5;
       const rrRatio = p.risk.rewardRiskRatio ?? 1.5;
       const confidenceScore = Math.round(prob20d * 100);
       const convictionScore = Math.round(
-        (p.decision === 'STRONG_BUY' ? 100 : p.decision === 'BUY' ? 80 : p.decision === 'ACCUMULATE' ? 60 : 40) +
-        confidenceScore +
-        rrRatio * 10
+        (p.decision === 'STRONG_BUY'
+          ? 100
+          : p.decision === 'BUY'
+            ? 80
+            : p.decision === 'ACCUMULATE'
+              ? 60
+              : 40) +
+          confidenceScore +
+          rrRatio * 10,
       );
 
       let reasoning = `Low-risk setup with ${(prob5d * 100).toFixed(0)}% 5-day probability and 1:${rrRatio} R:R.`;
@@ -286,8 +314,12 @@ export class StockService {
         convictionScore,
         calibrated5dProb: Math.round(prob5d * 100),
         calibrated20dProb: Math.round(prob20d * 100),
-        expectedReturn: parseFloat(((p.prediction['5d'].expectedReturn ?? 0) * 100).toFixed(1)),
-        downsideProbability: Math.round((p.risk.downsideProbability ?? 0.5) * 100),
+        expectedReturn: parseFloat(
+          ((p.prediction['5d'].expectedReturn ?? 0) * 100).toFixed(1),
+        ),
+        downsideProbability: Math.round(
+          (p.risk.downsideProbability ?? 0.5) * 100,
+        ),
         newsSentiment,
         newsImpactScore: Math.round((prob20d - 0.5) * 40),
         topHeadline,
@@ -307,31 +339,43 @@ export class StockService {
     const cached = this.getCached<HighRiskPick[]>('high-risk-high-reward');
     if (cached) return cached;
 
-    const highRiskPredictions = await this.predictionService.getHighRiskOpportunities();
+    const highRiskPredictions =
+      await this.predictionService.getHighRiskOpportunities();
     const ranked: HighRiskPick[] = highRiskPredictions.map((p, idx) => {
       const newsEvidence = p.evidence.find((e) => e.type === 'NEWS');
-      const newsSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = newsEvidence?.description.includes('BEARISH')
-        ? 'BEARISH'
-        : newsEvidence?.description.includes('BULLISH')
-        ? 'BULLISH'
-        : 'NEUTRAL';
-      const topHeadline = newsEvidence?.description.replace(/^\[.*?\]\s*/, '').replace(/\s*\(Sentiment score:.*?\)/, '');
+      const newsSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' =
+        newsEvidence?.description.includes('BEARISH')
+          ? 'BEARISH'
+          : newsEvidence?.description.includes('BULLISH')
+            ? 'BULLISH'
+            : 'NEUTRAL';
+      const topHeadline = newsEvidence?.description
+        .replace(/^\[.*?\]\s*/, '')
+        .replace(/\s*\(Sentiment score:.*?\)/, '');
 
       const volatility = p.risk.volatility ?? 0.02;
       const estimatedBeta = parseFloat((1.35 + volatility * 25).toFixed(2));
       const targetPrice = p.risk.targetPrice ?? (p.stock.price || 1) * 1.1;
       const stopLossPrice = p.risk.stopLossPrice ?? (p.stock.price || 1) * 0.95;
-      const targetPercent = parseFloat((((targetPrice - (p.stock.price || 1)) / (p.stock.price || 1)) * 100).toFixed(1));
-      const stopLossPercent = parseFloat(((((p.stock.price || 1) - stopLossPrice) / (p.stock.price || 1)) * 100).toFixed(1));
+      const targetPercent = parseFloat(
+        (
+          ((targetPrice - (p.stock.price || 1)) / (p.stock.price || 1)) *
+          100
+        ).toFixed(1),
+      );
+      const stopLossPercent = parseFloat(
+        (
+          (((p.stock.price || 1) - stopLossPrice) / (p.stock.price || 1)) *
+          100
+        ).toFixed(1),
+      );
 
       const prob20d = p.prediction['20d'].calibratedProbability ?? 0.5;
       const prob5d = p.prediction['5d'].calibratedProbability ?? 0.5;
       const rrRatio = p.risk.rewardRiskRatio ?? 1.5;
 
       const alphaScore = Math.round(
-        prob20d * 100 +
-        rrRatio * 20 +
-        volatility * 500
+        prob20d * 100 + rrRatio * 20 + volatility * 500,
       );
 
       let catalystText = `High beta (${estimatedBeta}x) momentum setup with 1:${rrRatio} R:R and ${p.decision} signal.`;
@@ -377,7 +421,8 @@ export class StockService {
     const meta = universe.find((s) => s.ticker === ticker);
 
     const change = quote.changePercent;
-    const direction: 'UP' | 'DOWN' | 'FLAT' = change > 0.2 ? 'UP' : change < -0.2 ? 'DOWN' : 'FLAT';
+    const direction: 'UP' | 'DOWN' | 'FLAT' =
+      change > 0.2 ? 'UP' : change < -0.2 ? 'DOWN' : 'FLAT';
     const isGain = change >= 0;
 
     const companyName = meta?.name || quote.name || ticker.replace('.NS', '');
@@ -386,19 +431,28 @@ export class StockService {
     const industry = meta?.industry || 'Equities';
 
     const newsEvidence = pred.evidence.find((e) => e.type === 'NEWS');
-    const topHeadline = newsEvidence ? newsEvidence.description.replace(/^\[.*?\]\s*/, '').replace(/\s*\(Sentiment score:.*?\)/, '') : undefined;
-    const newsSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' = newsEvidence?.description.includes('BEARISH')
-      ? 'BEARISH'
-      : newsEvidence?.description.includes('BULLISH')
-      ? 'BULLISH'
-      : 'NEUTRAL';
+    const topHeadline = newsEvidence
+      ? newsEvidence.description
+          .replace(/^\[.*?\]\s*/, '')
+          .replace(/\s*\(Sentiment score:.*?\)/, '')
+      : undefined;
+    const newsSentiment: 'BULLISH' | 'BEARISH' | 'NEUTRAL' =
+      newsEvidence?.description.includes('BEARISH')
+        ? 'BEARISH'
+        : newsEvidence?.description.includes('BULLISH')
+          ? 'BULLISH'
+          : 'NEUTRAL';
 
     let avgVolume = quote.volume || 1;
     if (candles.length >= 5) {
-      const totalVol = candles.slice(-20).reduce((acc, c) => acc + (c.volume || 0), 0);
+      const totalVol = candles
+        .slice(-20)
+        .reduce((acc, c) => acc + (c.volume || 0), 0);
       avgVolume = Math.max(1, totalVol / Math.min(20, candles.length));
     }
-    const volumeSurgeRatio = parseFloat(((quote.volume || avgVolume) / avgVolume).toFixed(2));
+    const volumeSurgeRatio = parseFloat(
+      ((quote.volume || avgVolume) / avgVolume).toFixed(2),
+    );
 
     let catalystType: MovementCatalyst['catalystType'] = 'TECHNICAL_BREAKOUT';
     if (volumeSurgeRatio >= 1.6 && Math.abs(change) >= 1.5) {
@@ -414,7 +468,8 @@ export class StockService {
     }
 
     const prob20d = pred.prediction['20d'].calibratedProbability ?? 0.5;
-    const primaryDriver = pred.evidence.map((e) => e.description).join('. ') +
+    const primaryDriver =
+      pred.evidence.map((e) => e.description).join('. ') +
       ` Model stance: ${pred.decision} (20d probability ${(prob20d * 100).toFixed(0)}%).`;
 
     const keyFactors = [
@@ -431,7 +486,10 @@ export class StockService {
       volumeSurgeRatio,
       primaryDriver,
       catalystType,
-      confidenceScore: Math.max(60, Math.round(Math.max(prob20d, 1 - prob20d, 0.65) * 100)),
+      confidenceScore: Math.max(
+        60,
+        Math.round(Math.max(prob20d, 1 - prob20d, 0.65) * 100),
+      ),
       keyFactors,
       invalidationLevel: pred.risk.stopLossPrice,
       newsSentiment,
@@ -454,7 +512,8 @@ export class StockService {
     try {
       if (closes.length >= 15) {
         const rsiArr = RSI.calculate({ values: closes, period: 14 });
-        if (rsiArr.length > 0) rsiVal = parseFloat(rsiArr[rsiArr.length - 1].toFixed(2));
+        if (rsiArr.length > 0)
+          rsiVal = parseFloat(rsiArr[rsiArr.length - 1].toFixed(2));
       }
     } catch {}
 
@@ -462,8 +521,8 @@ export class StockService {
       rsiVal > 70
         ? 'Overbought (Extended Momentum)'
         : rsiVal < 30
-        ? 'Oversold (Mean Reversion Zone)'
-        : 'Neutral Momentum Zone';
+          ? 'Oversold (Mean Reversion Zone)'
+          : 'Neutral Momentum Zone';
 
     // Compute MACD (12, 26, 9)
     let macdVal = { macd: 0, signal: 0, histogram: 0, trend: 'Bullish' };
@@ -483,7 +542,10 @@ export class StockService {
             macd: parseFloat((last.MACD || 0).toFixed(2)),
             signal: parseFloat((last.signal || 0).toFixed(2)),
             histogram: parseFloat((last.histogram || 0).toFixed(2)),
-            trend: (last.histogram || 0) >= 0 ? 'Bullish Crossover' : 'Bearish Crossover',
+            trend:
+              (last.histogram || 0) >= 0
+                ? 'Bullish Crossover'
+                : 'Bearish Crossover',
           };
         }
       }
@@ -495,19 +557,32 @@ export class StockService {
     try {
       if (closes.length >= 50) {
         const arr = SMA.calculate({ values: closes, period: 50 });
-        if (arr.length > 0) sma50Val = parseFloat(arr[arr.length - 1].toFixed(2));
+        if (arr.length > 0)
+          sma50Val = parseFloat(arr[arr.length - 1].toFixed(2));
       }
       if (closes.length >= 150) {
-        const arr = SMA.calculate({ values: closes, period: Math.min(200, closes.length) });
-        if (arr.length > 0) sma200Val = parseFloat(arr[arr.length - 1].toFixed(2));
+        const arr = SMA.calculate({
+          values: closes,
+          period: Math.min(200, closes.length),
+        });
+        if (arr.length > 0)
+          sma200Val = parseFloat(arr[arr.length - 1].toFixed(2));
       }
     } catch {}
 
     // Compute Bollinger Bands (20, 2)
-    let bbVal = { upper: quote.price * 1.05, middle: quote.price, lower: quote.price * 0.95 };
+    let bbVal = {
+      upper: quote.price * 1.05,
+      middle: quote.price,
+      lower: quote.price * 0.95,
+    };
     try {
       if (closes.length >= 20) {
-        const bbArr = BollingerBands.calculate({ values: closes, period: 20, stdDev: 2 });
+        const bbArr = BollingerBands.calculate({
+          values: closes,
+          period: 20,
+          stdDev: 2,
+        });
         if (bbArr.length > 0) {
           const last = bbArr[bbArr.length - 1];
           bbVal = {
@@ -519,13 +594,14 @@ export class StockService {
       }
     } catch {}
 
-    const stockMeta =
-      this.marketProvider.getUniverse().find((u) => u.ticker === ticker) || {
-        ticker,
-        name: quote.name,
-        exchange: 'NSE',
-        sector: 'Equities',
-      };
+    const stockMeta = this.marketProvider
+      .getUniverse()
+      .find((u) => u.ticker === ticker) || {
+      ticker,
+      name: quote.name,
+      exchange: 'NSE',
+      sector: 'Equities',
+    };
 
     return {
       stock: stockMeta,

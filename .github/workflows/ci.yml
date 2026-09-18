@@ -34,10 +34,17 @@ jobs:
           cache: 'pip'
 
       - name: Install Node.js Dependencies
-        run: npm ci || npm install
+        run: npm ci
 
       - name: Generate Prisma Client
-        run: npx prisma generate --schema=packages/db/prisma/schema.prisma
+        run: npm --workspace=db run generate
+
+      - name: Lint Codebase
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Typecheck API Service
+        run: npx tsc --noEmit --project apps/api/tsconfig.build.json
 
       - name: Install Python Dependencies
         run: |
@@ -53,6 +60,9 @@ jobs:
       - name: Run Pytest Quant Engine Suite
         run: python -m pytest packages/quant-engine -q
 
+      - name: Verify Signed Test Evidence
+        run: npm run verify:evidence
+
       - name: Build API Service
         run: npm --workspace=api run build
 
@@ -61,3 +71,10 @@ jobs:
         env:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
           CLERK_SECRET_KEY: sk_test_mock_key_for_build
+
+      - name: Upload Governance Test Evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: quantx-governance-evidence
+          path: apps/api/data/artifacts/governance/test-evidence.json

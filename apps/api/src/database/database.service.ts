@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { prisma } from 'db';
 
 import { PrismaClient } from 'db';
@@ -19,9 +24,13 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
         this.logger.log('Database connected successfully.');
         return;
       } catch (err: any) {
-        this.logger.warn(`Prisma connection attempt ${attempt}/${maxRetries} failed: ${err.message}`);
+        this.logger.warn(
+          `Prisma connection attempt ${attempt}/${maxRetries} failed: ${err.message}`,
+        );
         if (attempt === maxRetries) {
-          this.logger.error('Prisma failed initial connection; will retry lazily on first query.');
+          this.logger.error(
+            'Prisma failed initial connection; will retry lazily on first query.',
+          );
           return;
         }
         await new Promise((res) => setTimeout(res, 1500));
