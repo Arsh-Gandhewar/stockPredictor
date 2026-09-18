@@ -21,6 +21,8 @@
     "mcp:eng:test": "npm run test --prefix apps/mcp-engineering",
     "sync:manifests": "node scripts/sync-manifests.js",
     "verify:manifests": "node scripts/sync-manifests.js --verify",
-    "verify:evidence": "node scripts/verify-test-evidence.js"
+    "verify:evidence": "node scripts/verify-test-evidence.js",
+    "generate:economic": "node scripts/generate-economic-certification.js",
+    "verify:economic": "node scripts/verify-economic-certification.js"
   }
 }

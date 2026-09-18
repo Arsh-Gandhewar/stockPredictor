@@ -19,6 +19,7 @@ import { RuntimeVerificationService } from './engines/runtime-verification.servi
 import { TestEvidenceService } from './engines/test-evidence.service';
 import { UniverseRegistry } from './engines/universe-registry';
 import { DistributedLockService } from './engines/distributed-lock.service';
+import { EconomicCertificationService } from './engines/economic-certification.service';
 
 @Module({
   imports: [forwardRef(() => StockModule), NewsModule, DatabaseModule],
@@ -40,6 +41,7 @@ import { DistributedLockService } from './engines/distributed-lock.service';
     TestEvidenceService,
     UniverseRegistry,
     DistributedLockService,
+    EconomicCertificationService,
   ],
   exports: [
     QuantPredictionService,
@@ -47,6 +49,7 @@ import { DistributedLockService } from './engines/distributed-lock.service';
     TestEvidenceService,
     UniverseRegistry,
     DistributedLockService,
+    EconomicCertificationService,
   ],
 })
 export class PredictionModule {}

@@ -1,6 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { YahooMarketDataProvider } from '../../stock/providers/yahoo-market-data.provider';
-import { FeatureEngine } from './feature-engine';
+import { FeatureEngine, ModelFeatureVector25 } from './feature-engine';
 import { ModelInferenceEngine } from './model-inference';
 import { CalibrationEngine } from './calibration-engine';
 import { RiskEngine } from './risk-engine';
@@ -16,9 +16,19 @@ import { MODEL_CONFIG } from './model-config';
 import { ModelRegistry } from './model-registry';
 import { TrainingSample } from './learned-model';
 import { Money } from '../../../common/utils/money.util';
+import { OnnxInferenceEngine } from './onnx-inference.engine';
+import {
+  EconomicCertificationService,
+  SignedEconomicCertification,
+} from './economic-certification.service';
+import {
+  EventDrivenPortfolioSimulator,
+  PortfolioMetrics,
+} from '../../portfolio/engines/portfolio-simulator';
+import { MarketRegime } from '../prediction.types';
 
 export type ExitReason = 'STOP_LOSS' | 'TARGET_PROFIT' | 'HORIZON_EXPIRY';
-export type PositionType = 'LONG' | 'SHORT';
+export type PositionType = 'LONG';
 export type WalkForwardPartition = 'TRAIN' | 'VALIDATION' | 'TEST' | 'HOLDOUT';
 
 export interface BacktestTrade {
@@ -154,7 +164,10 @@ export interface BacktestResult {
     sameCandleCollisionRule: string;
     frictionModeling: string;
     leakagePrevention: string;
+    strategyMandate?: string;
   };
+  portfolioMetrics?: PortfolioMetrics;
+  certification?: SignedEconomicCertification;
 }
 
 @Injectable()
@@ -179,6 +192,24 @@ export class BacktestEngine {
     'BHEL.NS',
   ];
 
+  static readonly TICKER_SECTORS: Record<string, string> = {
+    'RELIANCE.NS': 'Energy',
+    'TCS.NS': 'Technology',
+    'HDFCBANK.NS': 'Financial Services',
+    'ITC.NS': 'Consumer Goods',
+    'BHARTIARTL.NS': 'Telecommunication',
+    'TATAMOTORS.NS': 'Automobile',
+    'SUNPHARMA.NS': 'Healthcare',
+    'LT.NS': 'Construction',
+    'TATASTEEL.NS': 'Metals',
+    'ADANIENT.NS': 'Conglomerate',
+    'TITAN.NS': 'Consumer Goods',
+    'BAJFINANCE.NS': 'Financial Services',
+    'COALINDIA.NS': 'Energy',
+    'DIXON.NS': 'Technology',
+    'BHEL.NS': 'Industrials',
+  };
+
   constructor(
     private readonly featureEngine: FeatureEngine,
     private readonly inferenceEngine: ModelInferenceEngine,
@@ -188,7 +219,19 @@ export class BacktestEngine {
     private readonly regimeEngine: RegimeEngine,
     private readonly artifactService: ModelArtifactService,
     private readonly marketProvider: YahooMarketDataProvider,
+    @Optional() private readonly onnxEngine?: OnnxInferenceEngine,
+    @Optional() private readonly certService?: EconomicCertificationService,
   ) {}
+
+  public async evaluateModel(
+    features: ModelFeatureVector25,
+    horizon: '1d' | '5d' | '20d',
+  ): Promise<number> {
+    if (this.onnxEngine && this.onnxEngine.isLoaded()) {
+      return this.onnxEngine.evaluate(features, horizon);
+    }
+    return this.inferenceEngine.evaluate(features as any, horizon);
+  }
 
   private roundTo1(num: number): number {
     return Math.round(num * 10) / 10;
@@ -200,7 +243,7 @@ export class BacktestEngine {
 
   async runFullBacktest(): Promise<BacktestResult> {
     this.logger.log(
-      'Executing point-in-time walk-forward backtest across train, validation, test, and holdout partitions...',
+      'Executing point-in-time walk-forward backtest across train, validation, test, and holdout partitions with strict fold sequencing and Long-Only execution...',
     );
 
     let benchmarkCandles: OHLCVCandle[] = [];
@@ -213,122 +256,472 @@ export class BacktestEngine {
       this.logger.warn('Failed to load NIFTY benchmark candles for backtest');
     }
 
-    const results = await Promise.allSettled(
-      BacktestEngine.BACKTEST_TICKERS.map(async (ticker, idx) => {
-        this.logger.log(
-          `Backtesting ${ticker}... (${idx + 1}/${BacktestEngine.BACKTEST_TICKERS.length})`,
-        );
-        const candles = await this.marketProvider.getHistoricalCandles(
-          ticker,
-          '1y',
-        );
-        if (candles.length < MODEL_CONFIG.BACKTEST.MIN_CANDLES_REQUIRED) {
-          this.logger.warn(
-            `Skipping ${ticker} due to insufficient candle count (${candles.length})`,
-          );
-          return { trades: [], trainingSamples: [] };
-        }
-        return this.runSingleStockBacktest(ticker, candles, benchmarkCandles);
-      }),
-    );
+    // Step 1: Collect stock candles and extract point-in-time feature evaluation contexts
+    interface EvalContext {
+      ticker: string;
+      sector: string;
+      candleIndex: number;
+      date: string;
+      quote: MarketQuote;
+      candle: OHLCVCandle;
+      candles: OHLCVCandle[];
+      features: ModelFeatureVector25;
+      regime: MarketRegime;
+      partition: WalkForwardPartition;
+    }
 
-    let allTrades: BacktestTrade[] = [];
-    let allTrainingSamples: TrainingSample[] = [];
+    const allContexts: EvalContext[] = [];
     let stocksEvaluated = 0;
+    const tickerCandlesMap = new Map<string, OHLCVCandle[]>();
 
-    results.forEach((res, idx) => {
-      if (res.status === 'fulfilled' && res.value.trades.length > 0) {
-        allTrades = allTrades.concat(res.value.trades);
-        allTrainingSamples = allTrainingSamples.concat(
-          res.value.trainingSamples,
-        );
-        stocksEvaluated++;
-      } else if (res.status === 'rejected') {
-        this.logger.warn(
-          `Failed to backtest ${BacktestEngine.BACKTEST_TICKERS[idx]}: ${res.reason}`,
-        );
+    for (let idx = 0; idx < BacktestEngine.BACKTEST_TICKERS.length; idx++) {
+      const ticker = BacktestEngine.BACKTEST_TICKERS[idx];
+      let candles: OHLCVCandle[] = [];
+      try {
+        candles = await this.marketProvider.getHistoricalCandles(ticker, '1y');
+      } catch (err: any) {
+        this.logger.warn(`Failed to fetch candles for ${ticker}: ${err.message}`);
+        continue;
       }
-    });
 
-    // 1. Separate Partitions Chronologically
-    const trainTrades = allTrades.filter((t) => t.partition === 'TRAIN');
-    const valTrades = allTrades.filter((t) => t.partition === 'VALIDATION');
-    const testTrades = allTrades.filter((t) => t.partition === 'TEST');
-    const holdoutTrades = allTrades.filter((t) => t.partition === 'HOLDOUT');
+      if (candles.length < MODEL_CONFIG.BACKTEST.MIN_CANDLES_REQUIRED) {
+        this.logger.warn(
+          `Skipping ${ticker} due to insufficient candle count (${candles.length})`,
+        );
+        continue;
+      }
 
-    // 2. Fit Learned Logistic Regression Model from TRAIN partition samples ONLY
+      stocksEvaluated++;
+      tickerCandlesMap.set(ticker, candles);
+
+      const sector = BacktestEngine.TICKER_SECTORS[ticker] || 'General';
+      const warmup = MODEL_CONFIG.BACKTEST.WARMUP_PERIOD_DAYS;
+      const step = MODEL_CONFIG.BACKTEST.EVALUATION_STEP_DAYS;
+      const totalWalkForwardCandles = candles.length - 21 - warmup;
+      if (totalWalkForwardCandles <= 0) continue;
+
+      for (let i = warmup; i <= candles.length - 21; i += step) {
+        const historicalCandles = candles.slice(0, i + 1);
+        const prevClose = i > 0 ? candles[i - 1].close : candles[i].open;
+        const change = candles[i].close - prevClose;
+        const changePercent = prevClose > 0 ? (change / prevClose) * 100 : 0;
+
+        const quote: MarketQuote = {
+          ticker,
+          name: ticker,
+          price: candles[i].close,
+          change,
+          changePercent,
+          dayHigh: candles[i].high,
+          dayLow: candles[i].low,
+          prevClose,
+          open: candles[i].open,
+          volume: candles[i].volume,
+          marketState: 'CLOSED',
+          exchange: 'NSE',
+          timestamp: String(candles[i].time),
+          sourceTimestamp: String(candles[i].time),
+          serverReceivedAt: new Date().toISOString(),
+          source: 'backtest',
+          freshness: 'CLOSED' as const,
+        };
+
+        const benchSlice = benchmarkCandles.slice(
+          0,
+          Math.min(i + 1, benchmarkCandles.length),
+        );
+        if (benchSlice.length < 61) {
+          continue;
+        }
+
+        const featResult = this.featureEngine.calculateFeatures(
+          quote,
+          historicalCandles,
+          benchSlice,
+        );
+        if (!featResult.isComplete || !featResult.features) {
+          continue;
+        }
+
+        const benchCurr = benchSlice[benchSlice.length - 1].close;
+        const benchPrev =
+          benchSlice.length > 1
+            ? benchSlice[benchSlice.length - 2].close
+            : benchCurr;
+        const benchDelta = benchCurr - benchPrev;
+        const benchDeltaPct = benchPrev > 0 ? (benchDelta / benchPrev) * 100 : 0;
+
+        const benchmarkIndices: MarketIndexBenchmark[] = [
+          {
+            symbol: '^NSEI',
+            name: 'NIFTY 50',
+            value: benchCurr,
+            change: Money.round(benchDelta),
+            changePercent: Money.round(benchDeltaPct),
+            up: benchDelta >= 0,
+            marketState: 'CLOSED',
+            timestamp: String(candles[i].time),
+          },
+        ];
+        const regime = this.regimeEngine.detectRegime(
+          benchmarkIndices,
+          benchSlice,
+        );
+
+        const progressFraction = (i - warmup) / totalWalkForwardCandles;
+        const partition: WalkForwardPartition =
+          progressFraction < 0.5
+            ? 'TRAIN'
+            : progressFraction < 0.75
+              ? 'VALIDATION'
+              : progressFraction < 0.9
+                ? 'TEST'
+                : 'HOLDOUT';
+
+        allContexts.push({
+          ticker,
+          sector,
+          candleIndex: i,
+          date: String(candles[i].time),
+          quote,
+          candle: candles[i],
+          candles,
+          features: featResult.features,
+          regime,
+          partition,
+        });
+      }
+    }
+
+    const trainContexts = allContexts.filter((c) => c.partition === 'TRAIN');
+    const valContexts = allContexts.filter((c) => c.partition === 'VALIDATION');
+    const testContexts = allContexts.filter((c) => c.partition === 'TEST');
+    const holdoutContexts = allContexts.filter((c) => c.partition === 'HOLDOUT');
+
+    // =========================================================================
+    // STRICT FOLD SEQUENCING
+    // Step 1: TRAIN Partition -> Collect samples & Fit/Freeze learned model
+    // =========================================================================
+    const allTrainingSamples: TrainingSample[] = [];
+    for (const ctx of trainContexts) {
+      if (ctx.candleIndex + 5 < ctx.candles.length) {
+        const fwdReturn =
+          (ctx.candles[ctx.candleIndex + 5].close - ctx.candle.close) /
+          ctx.candle.close;
+        allTrainingSamples.push({
+          features: { ...ctx.features },
+          outcome: fwdReturn > 0 ? 1 : 0,
+        });
+      }
+    }
+
     const learnedModel = this.inferenceEngine.getLearnedModel();
-    if (allTrainingSamples.length >= 30) {
+    if (!this.onnxEngine?.isLoaded() && allTrainingSamples.length >= 30) {
       learnedModel.fit(allTrainingSamples);
     }
 
-    // 3. Fit Calibration and Empirical Distributions from VALIDATION partition ONLY
-    if (valTrades.length >= 15) {
-      const valSamples = valTrades.map((t) => ({
-        prob: t.predictedProb,
-        outcome: t.directionCorrect ? 1 : 0,
-      }));
-      this.calibrationEngine.fitPAV(valSamples);
+    // =========================================================================
+    // Step 2: VALIDATION Partition -> Evaluate frozen model & Fit/Freeze Calibration
+    // =========================================================================
+    const valSamples: { prob: number; outcome: 0 | 1 }[] = [];
+    const valReturnSamples: {
+      prob: number;
+      horizon: '1d' | '5d' | '20d';
+      actualReturn: number;
+    }[] = [];
+    const horizons: ('1d' | '5d' | '20d')[] = ['1d', '5d', '20d'];
 
-      const valReturnSamples = valTrades.map((t) => ({
-        prob: t.predictedProb,
-        horizon: t.horizon,
-        actualReturn: t.grossReturn,
-      }));
-      this.inferenceEngine.fitEmpiricalDistributions(valReturnSamples);
+    for (const ctx of valContexts) {
+      for (const horizon of horizons) {
+        const offset = horizon === '1d' ? 1 : horizon === '5d' ? 5 : 20;
+        if (ctx.candleIndex + offset >= ctx.candles.length) continue;
+
+        const rawProb = await this.evaluateModel(ctx.features, horizon);
+        const fwdReturn =
+          (ctx.candles[ctx.candleIndex + offset].close - ctx.candle.close) /
+          ctx.candle.close;
+        const outcome: 0 | 1 = fwdReturn > 0 ? 1 : 0;
+
+        valSamples.push({ prob: rawProb, outcome });
+        valReturnSamples.push({ prob: rawProb, horizon, actualReturn: fwdReturn });
+      }
     }
 
-    // 4. Save Fitted Model Artifact to disk for production startup verification
+    if (valSamples.length >= 15) {
+      this.calibrationEngine.fitPAV(valSamples);
+      this.inferenceEngine.fitEmpiricalDistributions(valReturnSamples);
+    }
+    // Calibration parameters are now FROZEN for test & holdout evaluation.
+
+    // =========================================================================
+    // Step 3 & 4: Simulate Trades Across Partitions (Strict Long-Only Mandate)
+    // =========================================================================
+    const simulateContextTrades = async (
+      contexts: EvalContext[],
+      partition: WalkForwardPartition,
+      isPreCalibration: boolean = false,
+    ): Promise<BacktestTrade[]> => {
+      const partitionTrades: BacktestTrade[] = [];
+      const slippage = MODEL_CONFIG.COSTS.SLIPPAGE_BPS / 10000;
+      const brokerage = MODEL_CONFIG.COSTS.BROKERAGE_PCT;
+      const sttSell = MODEL_CONFIG.COSTS.STT_SELL_PCT;
+
+      for (const ctx of contexts) {
+        for (const horizon of horizons) {
+          const offset = horizon === '1d' ? 1 : horizon === '5d' ? 5 : 20;
+          if (ctx.candleIndex + offset >= ctx.candles.length) continue;
+
+          const rawProb = await this.evaluateModel(ctx.features, horizon);
+          const calibProb = isPreCalibration
+            ? rawProb
+            : this.calibrationEngine.apply(rawProb);
+
+          let downsideProb = 1 - calibProb;
+          if (horizon !== '20d') {
+            const pred20d_raw = await this.evaluateModel(ctx.features, '20d');
+            const pred20d_calib = isPreCalibration
+              ? pred20d_raw
+              : this.calibrationEngine.apply(pred20d_raw);
+            downsideProb = 1 - pred20d_calib;
+          }
+
+          const risk = this.riskEngine.calculateRisk(
+            ctx.quote,
+            ctx.features,
+            Math.min(0.95, Math.max(0.05, downsideProb)),
+          );
+
+          const signalQuality =
+            calibProb >= 0.65 || calibProb <= 0.35
+              ? 'HIGH'
+              : calibProb >= 0.58 || calibProb <= 0.42
+                ? 'MEDIUM'
+                : 'LOW';
+
+          const decision = this.decisionEngine.makeDecision(
+            calibProb,
+            risk,
+            ctx.regime,
+            'HIGH',
+            signalQuality,
+          );
+
+          // P0 Finding 4: Strict Long-Only Mandate
+          // Short sales are prohibited. Only BUY / STRONG_BUY enters positions.
+          const isLong = ['BUY', 'STRONG_BUY'].includes(decision);
+          if (!isLong) {
+            continue;
+          }
+
+          if (risk.stopLossPrice === null || risk.targetPrice === null) {
+            continue;
+          }
+
+          const stopLossPrice = risk.stopLossPrice;
+          const targetPrice = risk.targetPrice;
+
+          let exitReason: ExitReason = 'HORIZON_EXPIRY';
+          let exitPrice = ctx.candles[ctx.candleIndex + offset].close;
+          let exitDate = String(ctx.candles[ctx.candleIndex + offset].time);
+          let targetHit = false;
+          let stopLossHit = false;
+
+          for (let j = ctx.candleIndex + 1; j <= ctx.candleIndex + offset; j++) {
+            const high = ctx.candles[j].high;
+            const low = ctx.candles[j].low;
+            const candleDate = String(ctx.candles[j].time);
+
+            const touchedTarget = high >= targetPrice;
+            const touchedStop = low <= stopLossPrice;
+
+            if (touchedTarget && touchedStop) {
+              // Conservative rule: Stop loss triggers first
+              stopLossHit = true;
+              exitPrice = stopLossPrice;
+              exitDate = candleDate;
+              exitReason = 'STOP_LOSS';
+              break;
+            } else if (touchedStop) {
+              stopLossHit = true;
+              exitPrice = stopLossPrice;
+              exitDate = candleDate;
+              exitReason = 'STOP_LOSS';
+              break;
+            } else if (touchedTarget) {
+              targetHit = true;
+              exitPrice = targetPrice;
+              exitDate = candleDate;
+              exitReason = 'TARGET_PROFIT';
+              break;
+            }
+          }
+
+          const grossReturn = (exitPrice - ctx.quote.price) / ctx.quote.price;
+          const effectiveEntry = ctx.quote.price * (1 + slippage + brokerage);
+          const effectiveExit = exitPrice * (1 - slippage - brokerage - sttSell);
+          const netReturn = (effectiveExit - effectiveEntry) / effectiveEntry;
+          const directionCorrect = grossReturn > 0;
+
+          partitionTrades.push({
+            ticker: ctx.ticker,
+            entryDate: ctx.date,
+            entryPrice: ctx.quote.price,
+            exitDate,
+            exitPrice,
+            exitReason,
+            positionType: 'LONG',
+            horizon,
+            predictedProb: calibProb,
+            predictedDirection: 'UP',
+            decision,
+            stopLossPrice,
+            targetPrice,
+            grossReturn,
+            netReturn,
+            directionCorrect,
+            targetHit,
+            stopLossHit,
+            regime: ctx.regime,
+            partition,
+          });
+        }
+      }
+      return partitionTrades;
+    };
+
+    const trainTrades = await simulateContextTrades(
+      trainContexts,
+      'TRAIN',
+      true,
+    );
+    const valTrades = await simulateContextTrades(
+      valContexts,
+      'VALIDATION',
+      false,
+    );
+    const testTrades = await simulateContextTrades(
+      testContexts,
+      'TEST',
+      false,
+    );
+    const holdoutTrades = await simulateContextTrades(
+      holdoutContexts,
+      'HOLDOUT',
+      false,
+    );
+
+    const allTrades: BacktestTrade[] = [
+      ...trainTrades,
+      ...valTrades,
+      ...testTrades,
+      ...holdoutTrades,
+    ];
+
+    // =========================================================================
+    // Step 5: Event-Driven Unified Cross-Sectional Portfolio Simulator
+    // =========================================================================
+    const simulator = new EventDrivenPortfolioSimulator({
+      initialCash: 1_000_000,
+      maxStockWeight: MODEL_CONFIG.RISK.POSITION_CONCENTRATION_LIMIT, // 10%
+      maxSectorWeight: MODEL_CONFIG.RISK.SECTOR_CONCENTRATION_LIMIT, // 25%
+      maxGrossExposure: 1.0,
+      maxPositions: 10,
+    });
+
+    const dateToCandlesMap = new Map<string, Map<string, OHLCVCandle>>();
+    for (const [ticker, candles] of tickerCandlesMap.entries()) {
+      for (const candle of candles) {
+        const d = String(candle.time);
+        if (!dateToCandlesMap.has(d)) {
+          dateToCandlesMap.set(d, new Map());
+        }
+        dateToCandlesMap.get(d)!.set(ticker, candle);
+      }
+    }
+
+    const allDates = Array.from(dateToCandlesMap.keys()).sort();
+
+    // Map certified 5d trades from TEST and HOLDOUT into order intents
+    const certTrades = [...testTrades, ...holdoutTrades].filter(
+      (t) => t.horizon === '5d',
+    );
+    const signalsByDate = new Map<string, BacktestTrade[]>();
+    for (const trade of certTrades) {
+      const list = signalsByDate.get(trade.entryDate) || [];
+      list.push(trade);
+      signalsByDate.set(trade.entryDate, list);
+    }
+
+    for (const date of allDates) {
+      const dailyCandles = dateToCandlesMap.get(date)!;
+
+      // 1. Process candle path (stop-loss, target-profit, expiry) for currently open positions
+      const openTickers = Array.from(simulator.positions.keys());
+      for (const ticker of openTickers) {
+        const candle = dailyCandles.get(ticker);
+        if (candle) {
+          simulator.processCandlePath(ticker, candle);
+        }
+      }
+
+      // 2. Process new Buy Order Intents on this date (sorted by predicted probability descending)
+      const daySignals = signalsByDate.get(date) || [];
+      daySignals.sort((a, b) => b.predictedProb - a.predictedProb);
+
+      for (const sig of daySignals) {
+        const sector = BacktestEngine.TICKER_SECTORS[sig.ticker] || 'General';
+        simulator.processOrderIntent({
+          ticker: sig.ticker,
+          sector,
+          type: 'BUY',
+          price: sig.entryPrice,
+          date,
+          stopLossPrice: sig.stopLossPrice,
+          targetPrice: sig.targetPrice,
+          horizonDays: 5,
+          reason: sig.decision,
+        });
+      }
+
+      // 3. Mark to Market at end of day
+      const quotesMap = new Map<string, number>();
+      for (const [t, c] of dailyCandles.entries()) {
+        quotesMap.set(t, c.close);
+      }
+      simulator.markToMarket(date, quotesMap);
+    }
+
+    const portfolioMetrics = simulator.computeMetrics();
+
+    // =========================================================================
+    // Step 6: Independent Economic Certification & Immutable Ledgers
+    // =========================================================================
+    let certification: SignedEconomicCertification | undefined;
+    if (this.certService) {
+      try {
+        certification = this.certService.recordCertification(
+          simulator.trades,
+          simulator.equityCurve,
+        );
+      } catch (err: any) {
+        this.logger.error(
+          `Failed to record economic certification: ${err.message}`,
+        );
+      }
+    }
+
+    // =========================================================================
+    // Step 7: Multi-Horizon & Aggregate Metrics
+    // =========================================================================
     const dates = allTrades.map((t) => t.entryDate).sort();
     const trainDates = trainTrades.map((t) => t.entryDate).sort();
     const valDates = valTrades.map((t) => t.entryDate).sort();
     const testDates = testTrades.map((t) => t.entryDate).sort();
     const holdoutDates = holdoutTrades.map((t) => t.entryDate).sort();
 
-    const valSamples = valTrades.map((t) => ({
-      prob: t.predictedProb,
-      outcome: t.directionCorrect ? 1 : 0,
-    }));
     const calibrationMetrics =
       this.calibrationEngine.getCalibrationGateMetrics(valSamples);
 
-    const artifactData: Omit<ModelArtifact, 'checksum' | 'id'> = {
-      modelVersion: ModelRegistry.getModelVersion(),
-      modelType: ModelRegistry.getModelType(),
-      featureVersion: 'v4.0.0-multi-factor-25',
-      trainingStart: trainDates[0] || dates[0] || '2025-08-22',
-      trainingEnd: trainDates[trainDates.length - 1] || '2026-02-15',
-      validationStart: valDates[0] || '2026-02-16',
-      validationEnd: valDates[valDates.length - 1] || '2026-05-15',
-      testStart: testDates[0] || '2026-05-16',
-      testEnd: testDates[testDates.length - 1] || '2026-07-15',
-      holdoutStart: holdoutDates[0] || '2026-07-16',
-      holdoutEnd:
-        holdoutDates[holdoutDates.length - 1] ||
-        dates[dates.length - 1] ||
-        '2026-08-22',
-      horizon: '5d',
-      fittingMethod:
-        'Isotonic Regression (PAV) + Trimmed Two-Stage Conditional Return Estimation',
-      parameters: learnedModel.getWeights(),
-      calibrationVersion: this.calibrationEngine.getVersion(),
-      calibrationKnots: this.calibrationEngine.getKnots(),
-      calibrationStatus: this.calibrationEngine.getCalibrationStatus(),
-      calibrationMetrics,
-      empiricalDistributions: this.inferenceEngine.getEmpiricalBuckets(),
-      statisticalGatePassed: this.calibrationEngine.getIsCalibrated(),
-      gateDetails: {
-        sampleSufficiency: valTrades.length >= 20,
-        calibrationQuality:
-          calibrationMetrics.isMonotonic && calibrationMetrics.ece <= 0.18,
-        versionCompatibility: true,
-        dateRangeIntegrity: true,
-      },
-      createdAt: new Date().toISOString(),
-    };
-    // Note: Authoritative immutable artifact is governed and exported from Python pipeline
-
-    // 5. Evaluate Multi-Horizon Metrics using Direct Daily Equity Curve
     const trades1d = allTrades.filter((t) => t.horizon === '1d');
     const trades5d = allTrades.filter((t) => t.horizon === '5d');
     const trades20d = allTrades.filter((t) => t.horizon === '20d');
@@ -337,7 +730,6 @@ export class BacktestEngine {
     const h5d = this.computeDirectHorizonMetrics(trades5d, '5d');
     const h20d = this.computeDirectHorizonMetrics(trades20d, '20d');
 
-    // 6. Overall Metrics
     const overallWinRate =
       allTrades.length > 0
         ? (allTrades.filter((t) => t.directionCorrect).length /
@@ -384,7 +776,6 @@ export class BacktestEngine {
         (Math.pow(1 + totalReturn, 252 / tradingDays) - 1) * 100;
     }
 
-    // Overall Calibration Metrics
     const calibrationPairs = allTrades.map((t) => ({
       prob: t.predictedProb,
       outcome: t.directionCorrect ? 1 : 0,
@@ -393,7 +784,6 @@ export class BacktestEngine {
       this.calibrationEngine.calculateBrierScore(calibrationPairs);
     const ece = this.calibrationEngine.calculateECE(calibrationPairs);
 
-    // Regime Performance Breakdown
     const regimeGroups = new Map<string, BacktestTrade[]>();
     for (const trade of allTrades) {
       const list = regimeGroups.get(trade.regime) || [];
@@ -415,7 +805,6 @@ export class BacktestEngine {
       },
     );
 
-    // Partition Performance Breakdown with Exact Date Boundaries
     const partitionDefs: {
       partition: WalkForwardPartition;
       datesList: string[];
@@ -453,7 +842,6 @@ export class BacktestEngine {
       (p) => p.partition === 'HOLDOUT',
     );
 
-    // Rolling Window Robustness Analysis (3 Chronological Windows)
     const rollingWindows: RollingWindowMetric[] = [];
     const windowPairs: [string[], string[]][] = [
       [
@@ -532,7 +920,6 @@ export class BacktestEngine {
       bestCAGR: this.roundTo1(Math.max(...cagrs)),
     };
 
-    // Comparative Model Evaluation on TEST Partition
     const test5dTrades = testTrades.filter((t) => t.horizon === '5d');
     const testPairs = test5dTrades.map((t) => ({
       prob: t.predictedProb,
@@ -605,15 +992,19 @@ export class BacktestEngine {
           '0.13% round-trip institutional friction (0.03% brokerage, 0.10% STT on sell side, 5 bps execution slippage applied to entry and exit).',
         leakagePrevention:
           'Strict point-in-time candle slicing. Features, volatility, and benchmark alignment truncated to entry timestamp.',
+        strategyMandate:
+          'Strict Long-Only: Short sales are prohibited. BUY enters long; SELL exits position to cash.',
       },
+      portfolioMetrics,
+      certification,
     };
   }
 
-  private runSingleStockBacktest(
+  public async runSingleStockBacktest(
     ticker: string,
     candles: OHLCVCandle[],
     benchmarkCandles: OHLCVCandle[],
-  ): { trades: BacktestTrade[]; trainingSamples: TrainingSample[] } {
+  ): Promise<{ trades: BacktestTrade[]; trainingSamples: TrainingSample[] }> {
     const trades: BacktestTrade[] = [];
     const trainingSamples: TrainingSample[] = [];
     const warmup = MODEL_CONFIG.BACKTEST.WARMUP_PERIOD_DAYS;
@@ -720,15 +1111,12 @@ export class BacktestEngine {
       const horizons: ('1d' | '5d' | '20d')[] = ['1d', '5d', '20d'];
 
       for (const horizon of horizons) {
-        const rawProb = this.inferenceEngine.evaluate(features as any, horizon);
+        const rawProb = await this.evaluateModel(features, horizon);
         const calibProb = this.calibrationEngine.apply(rawProb);
 
         let downsideProb = 1 - calibProb;
         if (horizon !== '20d') {
-          const pred20d_raw = this.inferenceEngine.evaluate(
-            features as any,
-            '20d',
-          );
+          const pred20d_raw = await this.evaluateModel(features, '20d');
           const pred20d_calib = this.calibrationEngine.apply(pred20d_raw);
           downsideProb = 1 - pred20d_calib;
         }
@@ -754,29 +1142,21 @@ export class BacktestEngine {
           signalQuality,
         );
 
+        // P0 Finding 4: Strict Long-Only Mandate: Only BUY / STRONG_BUY enters trades
         const isLong = ['BUY', 'STRONG_BUY'].includes(decision);
-        const isShort = ['SELL', 'STRONG_SELL'].includes(decision);
-
-        if (isLong || isShort) {
+        if (isLong) {
           const offset = horizon === '1d' ? 1 : horizon === '5d' ? 5 : 20;
           if (i + offset >= candles.length) continue;
 
-          const positionType: PositionType = isLong ? 'LONG' : 'SHORT';
-          const predictedDirection: 'UP' | 'DOWN' = isLong ? 'UP' : 'DOWN';
+          const positionType: PositionType = 'LONG';
+          const predictedDirection: 'UP' | 'DOWN' = 'UP';
 
           if (risk.stopLossPrice === null || risk.targetPrice === null) {
             continue;
           }
 
-          const rawStop = risk.stopLossPrice;
-          const rawTarget = risk.targetPrice;
-
-          const stopLossPrice = isLong
-            ? rawStop
-            : parseFloat((quote.price + (quote.price - rawStop)).toFixed(2));
-          const targetPrice = isLong
-            ? rawTarget
-            : parseFloat((quote.price - (rawTarget - quote.price)).toFixed(2));
+          const stopLossPrice = risk.stopLossPrice;
+          const targetPrice = risk.targetPrice;
 
           let exitReason: ExitReason = 'HORIZON_EXPIRY';
           let exitPrice = candles[i + offset].close;
@@ -789,73 +1169,36 @@ export class BacktestEngine {
             const low = candles[j].low;
             const candleDate = String(candles[j].time);
 
-            if (positionType === 'LONG') {
-              const touchedTarget = high >= targetPrice;
-              const touchedStop = low <= stopLossPrice;
+            const touchedTarget = high >= targetPrice;
+            const touchedStop = low <= stopLossPrice;
 
-              if (touchedTarget && touchedStop) {
-                // Conservative rule: Stop loss triggers first
-                stopLossHit = true;
-                exitPrice = stopLossPrice;
-                exitDate = candleDate;
-                exitReason = 'STOP_LOSS';
-                break;
-              } else if (touchedStop) {
-                stopLossHit = true;
-                exitPrice = stopLossPrice;
-                exitDate = candleDate;
-                exitReason = 'STOP_LOSS';
-                break;
-              } else if (touchedTarget) {
-                targetHit = true;
-                exitPrice = targetPrice;
-                exitDate = candleDate;
-                exitReason = 'TARGET_PROFIT';
-                break;
-              }
-            } else {
-              const touchedTarget = low <= targetPrice;
-              const touchedStop = high >= stopLossPrice;
-
-              if (touchedTarget && touchedStop) {
-                stopLossHit = true;
-                exitPrice = stopLossPrice;
-                exitDate = candleDate;
-                exitReason = 'STOP_LOSS';
-                break;
-              } else if (touchedStop) {
-                stopLossHit = true;
-                exitPrice = stopLossPrice;
-                exitDate = candleDate;
-                exitReason = 'STOP_LOSS';
-                break;
-              } else if (touchedTarget) {
-                targetHit = true;
-                exitPrice = targetPrice;
-                exitDate = candleDate;
-                exitReason = 'TARGET_PROFIT';
-                break;
-              }
+            if (touchedTarget && touchedStop) {
+              // Conservative rule: Stop loss triggers first
+              stopLossHit = true;
+              exitPrice = stopLossPrice;
+              exitDate = candleDate;
+              exitReason = 'STOP_LOSS';
+              break;
+            } else if (touchedStop) {
+              stopLossHit = true;
+              exitPrice = stopLossPrice;
+              exitDate = candleDate;
+              exitReason = 'STOP_LOSS';
+              break;
+            } else if (touchedTarget) {
+              targetHit = true;
+              exitPrice = targetPrice;
+              exitDate = candleDate;
+              exitReason = 'TARGET_PROFIT';
+              break;
             }
           }
 
-          let grossReturn = 0;
-          let netReturn = 0;
-
-          if (positionType === 'LONG') {
-            grossReturn = (exitPrice - quote.price) / quote.price;
-            const effectiveEntry = quote.price * (1 + slippage + brokerage);
-            const effectiveExit =
-              exitPrice * (1 - slippage - brokerage - sttSell);
-            netReturn = (effectiveExit - effectiveEntry) / effectiveEntry;
-          } else {
-            grossReturn = (quote.price - exitPrice) / quote.price;
-            const effectiveEntry =
-              quote.price * (1 - slippage - brokerage - sttSell);
-            const effectiveExit = exitPrice * (1 + slippage + brokerage);
-            netReturn = (effectiveEntry - effectiveExit) / quote.price;
-          }
-
+          const grossReturn = (exitPrice - quote.price) / quote.price;
+          const effectiveEntry = quote.price * (1 + slippage + brokerage);
+          const effectiveExit =
+            exitPrice * (1 - slippage - brokerage - sttSell);
+          const netReturn = (effectiveExit - effectiveEntry) / effectiveEntry;
           const directionCorrect = grossReturn > 0;
 
           trades.push({

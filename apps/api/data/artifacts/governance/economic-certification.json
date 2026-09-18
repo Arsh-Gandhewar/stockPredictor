@@ -1,0 +1,19 @@
+{
+  "commitSha": "c39a130ee577d8dc8adde4247d100373447a2323",
+  "evaluatedAt": "2026-09-18T03:33:39.135Z",
+  "ledgerHash": "7c3adfbfe4aeeb654803954da67e0bc2de4ca460bfcb19326213433c32987d1d",
+  "tradeCount": 283,
+  "metrics": {
+    "totalTrades": 283,
+    "winRate": 52.7,
+    "sharpeRatio": -1.33,
+    "sortinoRatio": -1.96,
+    "maxDrawdown": 2.69,
+    "totalReturn": 0.34,
+    "cagr": 0.34,
+    "profitFactor": 1.06
+  },
+  "mandate": "LONG_ONLY",
+  "sourceModel": "PRODUCTION_ONNX_ENGINE",
+  "signature": "1113c785d137a9e50089b38bc258de689798d363436fbfdf99d50fb43f05421a"
+}

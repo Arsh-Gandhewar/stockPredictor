@@ -63,6 +63,12 @@ jobs:
       - name: Verify Signed Test Evidence
         run: npm run verify:evidence
 
+      - name: Generate Independent Economic Certification
+        run: node scripts/generate-economic-certification.js
+
+      - name: Verify Signed Economic Certification & Ledgers
+        run: npm run verify:economic
+
       - name: Build API Service
         run: npm --workspace=api run build
 
@@ -72,9 +78,12 @@ jobs:
           NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
           CLERK_SECRET_KEY: sk_test_mock_key_for_build
 
-      - name: Upload Governance Test Evidence
+      - name: Upload Governance Test & Economic Evidence
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: quantx-governance-evidence
-          path: apps/api/data/artifacts/governance/test-evidence.json
+          path: |
+            apps/api/data/artifacts/governance/test-evidence.json
+            apps/api/data/artifacts/governance/economic-certification.json
+            apps/api/data/artifacts/governance/economic-trade-ledger.json

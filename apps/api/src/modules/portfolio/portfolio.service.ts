@@ -957,6 +957,54 @@ export class PortfolioService {
         );
 
         if (type === TransactionType.BUY) {
+          if (Number(portfolio.availableCash) < totalCost) {
+            throw new BadRequestException(
+              `Insufficient virtual capital. Required: ${Money.formatINR(totalCost)}, Available: ${Money.formatINR(Number(portfolio.availableCash))}`,
+            );
+          }
+
+          const investedValue = portfolio.positions.reduce(
+            (sum, p) => sum + p.quantity * Number(p.averagePrice),
+            0,
+          );
+          const totalNav = Number(portfolio.availableCash) + investedValue;
+
+          // Portfolio-level constraint checks (aligned with EventDrivenPortfolioSimulator)
+          if (!existingPosition && portfolio.positions.length >= 10) {
+            throw new BadRequestException(
+              'MAX_POSITIONS_REACHED: Portfolio holds maximum of 10 active positions.',
+            );
+          }
+
+          if (totalNav > 0) {
+            const currentStockVal = existingPosition
+              ? existingPosition.quantity * Number(existingPosition.averagePrice)
+              : 0;
+            const postTradeStockVal = currentStockVal + totalCost;
+            if (
+              postTradeStockVal / totalNav >
+              MODEL_CONFIG.RISK.POSITION_CONCENTRATION_LIMIT + 0.001
+            ) {
+              throw new BadRequestException(
+                `PORTFOLIO_CONCENTRATION_EXCEEDED: Stock allocation exceeds 10% maximum portfolio limit (${((postTradeStockVal / totalNav) * 100).toFixed(1)}% > 10.0%).`,
+              );
+            }
+
+            const stockSector = stock.sector || 'General';
+            const currentSectorVal = portfolio.positions
+              .filter((p) => (p.stock.sector || 'General') === stockSector)
+              .reduce((sum, p) => sum + p.quantity * Number(p.averagePrice), 0);
+            const postTradeSectorVal = currentSectorVal + totalCost;
+            if (
+              postTradeSectorVal / totalNav >
+              MODEL_CONFIG.RISK.SECTOR_CONCENTRATION_LIMIT + 0.001
+            ) {
+              throw new BadRequestException(
+                `SECTOR_CONCENTRATION_EXCEEDED: Sector '${stockSector}' allocation exceeds 25% maximum portfolio limit (${((postTradeSectorVal / totalNav) * 100).toFixed(1)}% > 25.0%).`,
+              );
+            }
+          }
+
           // Atomic conditional balance deduction: PostgreSQL guarantees that only rows where availableCash >= totalCost will update
           const cashUpdate = await tx.portfolio.updateMany({
             where: {
