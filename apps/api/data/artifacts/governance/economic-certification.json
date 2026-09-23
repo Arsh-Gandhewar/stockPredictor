@@ -1,6 +1,6 @@
 {
-  "commitSha": "e0ce7c221d39430e3ddf662bb23a4af1c5fc42a7",
-  "evaluatedAt": "2026-09-23T07:41:49.046Z",
+  "commitSha": "5b67e4213475907cad09a37ca3036187ad9fff0f",
+  "evaluatedAt": "2026-09-23T07:42:32.540Z",
   "ledgerHash": "46695de8c2b9bf3661c3373115587c1c5339cf6c1b3e8832dc8a1c72b0e316b3",
   "tradeCount": 728,
   "metrics": {
@@ -16,5 +16,5 @@
   "mandate": "LONG_ONLY",
   "sourceModel": "PRODUCTION_ONNX_ENGINE",
   "sourceDataset": "REAL_HISTORICAL_PARQUET_NSE",
-  "signature": "13e64175cf1a4b985ef21b05931596625550967a0bc698051ed780fd512b087b"
+  "signature": "05972c58d3ba47a86d10ca8bf22fec38c479299dee7854d70cb176de7a056ad3"
 }
