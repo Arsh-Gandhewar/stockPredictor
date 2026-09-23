@@ -1,4 +1,4 @@
-﻿name: QuantX Institutional CI & Certification Pipeline
+name: QuantX Institutional CI & Certification Pipeline
 
 on:
   push:
@@ -49,13 +49,16 @@ jobs:
         run: npm --workspace=db run generate
 
       - name: Run API Unit & Integration Tests
-        run: npm --workspace=api run test
+        run: npm --workspace=api run test -- --forceExit
 
       - name: Build API Gateway
         run: npm --workspace=api run build
 
       - name: Build Web Application
         run: npm --workspace=web run build
+        env:
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+          CLERK_SECRET_KEY: sk_test_mock_key_for_build
 
   release-attestation-verification:
     name: Cryptographic Attestation Verification

@@ -1,90 +1,90 @@
 {
-  "evaluatedAt": "2026-09-18T03:32:35.577Z",
-  "codeVersion": "c39a130ee577d8dc8adde4247d100373447a2323",
-  "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+  "evaluatedAt": "2026-09-23T07:22:37.791Z",
+  "codeVersion": "ee7111b8cac53f3328a225d7ade5a8838732a424",
+  "artifactHash": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
   "ttlSeconds": 86400,
   "overallPassed": true,
   "verifications": {
     "DATA_INTEGRITY": {
       "testId": "TEST-DATA-INTEGRITY-01",
-      "timestamp": "2026-09-18T03:32:35.577Z",
-      "codeVersion": "c39a130ee577d8dc8adde4247d100373447a2323",
+      "timestamp": "2026-09-23T07:22:37.791Z",
+      "codeVersion": "ee7111b8cac53f3328a225d7ade5a8838732a424",
       "status": "PASS",
       "rawMetric": 1,
       "threshold": 1,
-      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "artifactHash": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
       "details": "Verified production market data pipeline: OHLC geometry valid, monotonic timestamps verified, PIT universe registry active (9 corporate actions). Dataset Hash: fde1e37647eb2754..."
     },
     "POINT_IN_TIME_CORRECTNESS": {
       "testId": "TEST-PIT-CORRECTNESS-02",
-      "timestamp": "2026-09-18T03:32:35.577Z",
-      "codeVersion": "c39a130ee577d8dc8adde4247d100373447a2323",
+      "timestamp": "2026-09-23T07:22:37.791Z",
+      "codeVersion": "ee7111b8cac53f3328a225d7ade5a8838732a424",
       "status": "PASS",
       "rawMetric": 0,
       "threshold": 0,
-      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "artifactHash": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
       "details": "Adversarial future injection test: injected 50 extreme forward sessions (+30%/-25% swings). Maximum feature discrepancy at cutoff t was 0.00e+0 (strictly zero tolerance enforced)."
     },
     "COST_MODELING": {
       "testId": "TEST-COST-MODEL-03",
-      "timestamp": "2026-09-18T03:32:35.577Z",
-      "codeVersion": "c39a130ee577d8dc8adde4247d100373447a2323",
+      "timestamp": "2026-09-23T07:22:37.791Z",
+      "codeVersion": "ee7111b8cac53f3328a225d7ade5a8838732a424",
       "status": "PASS",
       "rawMetric": "0.130%",
       "threshold": ">= 0.10%",
-      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "artifactHash": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
       "details": "Verified centralized execution cost model: round-trip friction is 0.130% (brokerage, STT, 5 bps slippage, GST)."
     },
     "RISK_MODEL": {
       "testId": "TEST-RISK-METRICS-04",
-      "timestamp": "2026-09-18T03:32:35.577Z",
-      "codeVersion": "c39a130ee577d8dc8adde4247d100373447a2323",
+      "timestamp": "2026-09-23T07:22:37.791Z",
+      "codeVersion": "ee7111b8cac53f3328a225d7ade5a8838732a424",
       "status": "PASS",
       "rawMetric": 1,
       "threshold": 1,
-      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "artifactHash": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
       "details": "Verified dynamic risk engine invariants across 5 analytical scenarios (Crash 50%, Monotonic Rise 0%, Flat series 0%, Zero-variance, and Normal Expected Shortfall). All passed: true."
     },
     "PORTFOLIO_RISK": {
       "testId": "TEST-PORTFOLIO-RISK-05",
-      "timestamp": "2026-09-18T03:32:35.577Z",
-      "codeVersion": "c39a130ee577d8dc8adde4247d100373447a2323",
+      "timestamp": "2026-09-23T07:22:37.791Z",
+      "codeVersion": "ee7111b8cac53f3328a225d7ade5a8838732a424",
       "status": "PASS",
       "rawMetric": "MaxWeight=0.1, SectorCap=0.25, GrossCap=1",
       "threshold": "MaxWeight<=0.20, SectorCap<=0.35, Gross<=1.0",
-      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "artifactHash": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
       "details": "Verified portfolio risk limits and deterministic violation rejection: single stock cap 10%, sector cap 25%, gross exposure <= 100%. Violating order deterministically rejected: true."
     },
     "EXPLAINABILITY": {
       "testId": "TEST-EXPLAINABILITY-06",
-      "timestamp": "2026-09-18T03:32:35.577Z",
-      "codeVersion": "c39a130ee577d8dc8adde4247d100373447a2323",
+      "timestamp": "2026-09-23T07:22:37.791Z",
+      "codeVersion": "ee7111b8cac53f3328a225d7ade5a8838732a424",
       "status": "PASS",
       "rawMetric": 25,
       "threshold": 25,
-      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "artifactHash": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
       "details": "Verified model-consistent feature attribution: calculated 25 / 25 factor contributions covering all canonical features."
     },
     "TEST_COVERAGE": {
       "testId": "TEST-COVERAGE-07",
-      "timestamp": "2026-09-18T03:32:35.577Z",
-      "codeVersion": "c39a130ee577d8dc8adde4247d100373447a2323",
+      "timestamp": "2026-09-23T07:22:37.791Z",
+      "codeVersion": "ee7111b8cac53f3328a225d7ade5a8838732a424",
       "status": "PASS",
       "rawMetric": "214 Jest + 626 Pytest passed",
       "threshold": "Cryptographically signed 100% passing ledger",
-      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
-      "details": "Verified signed CI test evidence for commit c39a130: 214 Jest + 626 Pytest tests passed with exit code 0."
+      "artifactHash": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
+      "details": "Verified signed CI test evidence for commit ee7111b: 214 Jest + 626 Pytest tests passed with exit code 0."
     },
     "FAIL_SAFE_BEHAVIOR": {
       "testId": "TEST-FAIL-SAFE-08",
-      "timestamp": "2026-09-18T03:32:35.577Z",
-      "codeVersion": "c39a130ee577d8dc8adde4247d100373447a2323",
+      "timestamp": "2026-09-23T07:22:37.791Z",
+      "codeVersion": "ee7111b8cac53f3328a225d7ade5a8838732a424",
       "status": "PASS",
       "rawMetric": 1,
       "threshold": 1,
-      "artifactHash": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+      "artifactHash": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
       "details": "Verified strict fail-closed safety: invalid/zero volume produces isComplete=false and zero numerical predictions."
     }
   },
-  "signature": "1dfeb73dc020b0ab42caab94a857dcc29e231648faf27c5380ca8482a28defbf"
+  "signature": "de03414e0961e9d3fd55edaa20b6eeb70f807b5a744f9e0b53eaeb41fdf76d39"
 }

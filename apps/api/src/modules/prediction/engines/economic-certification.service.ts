@@ -300,19 +300,11 @@ export class EconomicCertificationService {
         failureReasons.push('UNSUPPORTED_SHORT_POSITIONS: Raw trade ledger contains positions that violate Long-Only mandate.');
       }
 
-      // 4. Verify Commit SHA
+      // 4. Verify Commit SHA (Strict binding: zero parent commit or HEAD~1 exceptions)
       if (expectedCommitSha && cert.commitSha !== expectedCommitSha) {
-        let isParentCommit = false;
-        try {
-          const parentSha = execSync('git rev-parse HEAD~1', { encoding: 'utf-8' }).trim();
-          if (parentSha === cert.commitSha) isParentCommit = true;
-        } catch {}
-
-        if (!isParentCommit) {
-          failureReasons.push(
-            `COMMIT_SHA_MISMATCH: Certification was generated for ${cert.commitSha.slice(0, 7)} but running HEAD is ${expectedCommitSha.slice(0, 7)}.`
-          );
-        }
+        failureReasons.push(
+          `COMMIT_SHA_MISMATCH: Certification was generated for ${cert.commitSha.slice(0, 7)} but expected commit is ${expectedCommitSha.slice(0, 7)}.`
+        );
       }
 
       return {

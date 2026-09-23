@@ -6,6 +6,8 @@ const { execSync } = require('child_process');
 const HMAC_SECRET = process.env.GOVERNANCE_CI_SECRET || 'quantx-gov-ci-salt-2026-v5-1';
 const certPath = path.resolve(__dirname, '../apps/api/data/artifacts/governance/economic-certification.json');
 const ledgerPath = path.resolve(__dirname, '../apps/api/data/artifacts/governance/economic-trade-ledger.json');
+const feedPath = path.resolve(__dirname, '../apps/api/data/artifacts/governance/real-oos-feed.json');
+const extractorScript = path.resolve(__dirname, 'extract-historical-backtest-feed.py');
 
 console.log('--- QuantX Independent Economic Certification Generator ---');
 
@@ -14,137 +16,127 @@ let commitSha;
 try {
   commitSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
 } catch {
-  commitSha = process.env.COMMIT_SHA || 'c39a130ee577d8dc8adde4247d100373447a2323';
+  commitSha = process.env.COMMIT_SHA;
+}
+if (!commitSha) {
+  console.error('ERROR: Unable to resolve active commit SHA.');
+  process.exit(1);
 }
 console.log(`Target Commit SHA: ${commitSha}`);
 
-// 2. Load model artifact to obtain active model metadata
-const artifactPath = path.resolve(__dirname, '../apps/api/data/artifacts/active/model-artifact.json');
-let modelVersion = '5.1.0';
-if (fs.existsSync(artifactPath)) {
+// 2. Ensure Real Historical OOS Feed Exists
+if (!fs.existsSync(feedPath)) {
+  console.log('Real historical OOS feed not found. Running extractor script...');
   try {
-    const art = JSON.parse(fs.readFileSync(artifactPath, 'utf-8'));
-    modelVersion = art.modelVersion || modelVersion;
-  } catch {}
-}
-
-// 3. Define Universe and Realistic Historical Price Trajectories for Walk-Forward Certification
-// Covering the NIFTY liquid universe across 2025-2026 out-of-sample periods
-const UNIVERSE = [
-  { ticker: 'RELIANCE.NS', sector: 'Energy', basePrice: 2850.0, trend: 0.0004, vol: 0.012 },
-  { ticker: 'TCS.NS', sector: 'Technology', basePrice: 4120.0, trend: 0.0003, vol: 0.011 },
-  { ticker: 'HDFCBANK.NS', sector: 'Financial Services', basePrice: 1650.0, trend: 0.0002, vol: 0.010 },
-  { ticker: 'BHARTIARTL.NS', sector: 'Telecommunication', basePrice: 1420.0, trend: 0.0005, vol: 0.013 },
-  { ticker: 'ITC.NS', sector: 'Consumer Goods', basePrice: 490.0, trend: 0.0002, vol: 0.008 },
-  { ticker: 'LT.NS', sector: 'Construction', basePrice: 3580.0, trend: 0.0003, vol: 0.014 },
-  { ticker: 'SUNPHARMA.NS', sector: 'Healthcare', basePrice: 1720.0, trend: 0.0004, vol: 0.011 },
-  { ticker: 'TATAMOTORS.NS', sector: 'Automobile', basePrice: 980.0, trend: 0.0003, vol: 0.016 },
-  { ticker: 'TATASTEEL.NS', sector: 'Metals', basePrice: 155.0, trend: 0.0001, vol: 0.017 },
-  { ticker: 'BAJFINANCE.NS', sector: 'Financial Services', basePrice: 7100.0, trend: 0.0003, vol: 0.015 },
-];
-
-// Generate deterministic trading calendar (252 trading days)
-const START_DATE = new Date('2025-08-25T03:45:00.000Z');
-const tradingDays = [];
-let curr = new Date(START_DATE);
-while (tradingDays.length < 252) {
-  const day = curr.getUTCDay();
-  if (day !== 0 && day !== 6) {
-    tradingDays.push(curr.toISOString().split('T')[0]);
+    execSync(`python "${extractorScript}"`, { stdio: 'inherit' });
+  } catch (err) {
+    console.error('ERROR: Failed to run historical feed extractor:', err.message);
+    process.exit(1);
   }
-  curr.setUTCDate(curr.getUTCDate() + 1);
 }
 
-// Deterministic Pseudo-Random Number Generator (seeded with commit sha for 100% reproducible trace)
-function createPrng(seedStr) {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < seedStr.length; i++) {
-    h ^= seedStr.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
+if (!fs.existsSync(feedPath)) {
+  console.error(`ERROR: Historical feed file missing at ${feedPath}`);
+  process.exit(1);
+}
+
+const feed = JSON.parse(fs.readFileSync(feedPath, 'utf-8'));
+console.log(`Loaded real historical feed with ${feed.tradingDaysCount} sessions and ${feed.stocksCount} equities.`);
+
+const tradingDates = feed.tradingDates;
+const dailyCandles = feed.dailyCandles; // ticker -> list of candles
+const opportunities = feed.opportunities; // list of candidate BUYs
+
+// Index opportunities by date
+const oppsByDate = new Map();
+for (const opp of opportunities) {
+  if (!oppsByDate.has(opp.date)) {
+    oppsByDate.set(opp.date, []);
   }
-  return function () {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    h ^= h >>> 16;
-    return (h >>> 0) / 4294967296;
-  };
+  oppsByDate.get(opp.date).push(opp);
 }
 
-const rng = createPrng(commitSha);
-
-// Generate deterministic daily prices
-const priceSeries = new Map();
-for (const stock of UNIVERSE) {
-  const series = [];
-  let price = stock.basePrice;
-  for (let d = 0; d < tradingDays.length; d++) {
-    const shock = (rng() - 0.485) * 2 * stock.vol;
-    price = price * (1 + stock.trend + shock);
-    const dayHigh = price * (1 + Math.abs(shock) * 0.7);
-    const dayLow = price * (1 - Math.abs(shock) * 0.7);
-    series.push({
-      date: tradingDays[d],
-      open: parseFloat((price * (1 - shock * 0.3)).toFixed(2)),
-      high: parseFloat(dayHigh.toFixed(2)),
-      low: parseFloat(dayLow.toFixed(2)),
-      close: parseFloat(price.toFixed(2)),
-    });
+// Index candles by ticker -> date -> candle
+const candleMap = new Map();
+for (const [ticker, candles] of Object.entries(dailyCandles)) {
+  const byDate = new Map();
+  for (const c of candles) {
+    byDate.set(c.date, c);
   }
-  priceSeries.set(stock.ticker, series);
+  candleMap.set(ticker, byDate);
 }
 
-// 4. Run Event-Driven Portfolio Simulator (Strict Long-Only, 10% Stock Cap, 25% Sector Cap, Max 10 Positions)
+// 3. Institutional Portfolio Simulation Parameters (Aligned with EventDrivenPortfolioSimulator)
 const INITIAL_CASH = 1_000_000;
+const MAX_STOCK_WEIGHT = 0.10; // 10%
+const MAX_SECTOR_WEIGHT = 0.25; // 25%
+const MAX_GROSS_EXPOSURE = 1.00; // 100%
+const MAX_POSITIONS = 10;
+const BROKERAGE_RATE = 0.0003; // 3 bps
+const STT_SELL_RATE = 0.0010; // 10 bps
+const SLIPPAGE_RATE = 0.0005; // 5 bps
+
 let cash = INITIAL_CASH;
-const positions = new Map(); // ticker -> position
+const positions = new Map(); // ticker -> position object
 const executedTrades = [];
 const equityCurve = [];
 let tradeCounter = 0;
 
-const MAX_STOCK_WEIGHT = 0.10;
-const MAX_SECTOR_WEIGHT = 0.25;
-const MAX_POSITIONS = 10;
-const SLIPPAGE = 0.0005; // 5 bps
-const BROKERAGE = 0.0003; // 3 bps
-const STT_SELL = 0.0010; // 10 bps
-
-function getNav(prices) {
-  let invested = 0;
-  for (const pos of positions.values()) {
-    const currentPrice = prices.get(pos.ticker) || pos.currentPrice;
-    invested += pos.quantity * currentPrice;
-  }
-  return cash + invested;
+function roundMoney(val) {
+  return Math.round(val * 100) / 100;
 }
 
-function getSectorValue(sector, prices) {
+function getNAV(quotesOnDay) {
+  let invested = 0;
+  for (const [ticker, pos] of positions.entries()) {
+    const mark = quotesOnDay.get(ticker) || pos.currentPrice;
+    invested += pos.quantity * mark;
+  }
+  return roundMoney(cash + invested);
+}
+
+function getSectorInvested(sector, quotesOnDay) {
   let val = 0;
-  for (const pos of positions.values()) {
+  for (const [ticker, pos] of positions.entries()) {
     if (pos.sector === sector) {
-      const currentPrice = prices.get(pos.ticker) || pos.currentPrice;
-      val += pos.quantity * currentPrice;
+      const mark = quotesOnDay.get(ticker) || pos.currentPrice;
+      val += pos.quantity * mark;
     }
   }
-  return val;
+  return roundMoney(val);
 }
 
-let prevNav = INITIAL_CASH;
+function getInvestedValue(quotesOnDay) {
+  let val = 0;
+  for (const [ticker, pos] of positions.entries()) {
+    const mark = quotesOnDay.get(ticker) || pos.currentPrice;
+    val += pos.quantity * mark;
+  }
+  return roundMoney(val);
+}
 
-for (let d = 0; d < tradingDays.length; d++) {
-  const date = tradingDays[d];
-  const dailyQuotes = new Map();
-  const dailyCandles = new Map();
-  for (const stock of UNIVERSE) {
-    const candle = priceSeries.get(stock.ticker)[d];
-    dailyQuotes.set(stock.ticker, candle.close);
-    dailyCandles.set(stock.ticker, candle);
+// 4. Chronological Step-by-Step Simulation
+for (let d = 0; d < tradingDates.length; d++) {
+  const dateStr = tradingDates[d];
+
+  // Collect quotes for today
+  const quotesToday = new Map();
+  for (const [ticker, byDate] of candleMap.entries()) {
+    const c = byDate.get(dateStr);
+    if (c && c.close > 0) {
+      quotesToday.set(ticker, c.close);
+    }
   }
 
-  // A. Check open positions for intraday triggers (stop loss, target profit, horizon expiry)
-  const openTickers = Array.from(positions.keys());
-  for (const ticker of openTickers) {
+  // Step A: Process intraday price path for held positions (Stops / Targets / Horizon Expiry)
+  const heldTickers = Array.from(positions.keys());
+  for (const ticker of heldTickers) {
     const pos = positions.get(ticker);
-    const candle = dailyCandles.get(ticker);
+    if (!pos) continue;
+
+    const candle = candleMap.get(ticker)?.get(dateStr);
+    if (!candle) continue;
+
     pos.holdingDays += 1;
     pos.currentPrice = candle.close;
 
@@ -155,7 +147,7 @@ for (let d = 0; d < tradingDays.length; d++) {
     const touchedTarget = pos.targetPrice !== null && candle.high >= pos.targetPrice;
 
     if (touchedStop && touchedTarget) {
-      // Conservative collision rule: stop-loss triggers first
+      // Conservative collision priority: stop loss triggers first
       exitPrice = pos.stopLossPrice;
       exitReason = 'STOP_LOSS';
     } else if (touchedStop) {
@@ -170,149 +162,136 @@ for (let d = 0; d < tradingDays.length; d++) {
     }
 
     if (exitPrice !== null && exitReason !== null) {
-      // Execute Sell Order with adverse slippage and friction
-      const execExitPrice = parseFloat((exitPrice * (1 - SLIPPAGE)).toFixed(2));
-      const notionalExit = parseFloat((pos.quantity * execExitPrice).toFixed(2));
-      const totalCosts = parseFloat((notionalExit * (BROKERAGE + STT_SELL)).toFixed(2));
-      const netProceeds = parseFloat((notionalExit - totalCosts).toFixed(2));
+      // Execute SELL with adverse slippage and frictions
+      const execExitPrice = roundMoney(exitPrice * (1 - SLIPPAGE_RATE));
+      const notionalExit = roundMoney(pos.quantity * execExitPrice);
+      const exitFriction = roundMoney(notionalExit * (BROKERAGE_RATE + STT_SELL_RATE));
+      const netProceeds = roundMoney(notionalExit - exitFriction);
 
-      const notionalEntry = parseFloat((pos.quantity * pos.averagePrice).toFixed(2));
-      const realizedPnL = parseFloat((netProceeds - notionalEntry).toFixed(2));
-      const grossReturn = parseFloat(((execExitPrice - pos.averagePrice) / pos.averagePrice).toFixed(4));
-      const netReturn = parseFloat(((netProceeds - notionalEntry) / notionalEntry).toFixed(4));
+      const notionalEntry = roundMoney(pos.quantity * pos.averagePrice);
+      const pnl = roundMoney(netProceeds - notionalEntry);
+      const grossReturn = parseFloat(((execExitPrice - pos.entryPrice) / pos.entryPrice).toFixed(4));
+      const netReturn = notionalEntry > 0 ? parseFloat(((netProceeds - notionalEntry) / notionalEntry).toFixed(4)) : 0;
 
-      cash = parseFloat((cash + netProceeds).toFixed(2));
+      cash = roundMoney(cash + netProceeds);
+      positions.delete(ticker);
+
       tradeCounter++;
-
       executedTrades.push({
-        tradeId: `cert_trade_${tradeCounter}_${ticker}_${date}`,
+        tradeId: `trade_${tradeCounter}_${ticker}_${dateStr}`,
         ticker,
         sector: pos.sector,
-        positionType: 'LONG', // Strict Long-Only Mandate
+        positionType: 'LONG',
         entryDate: pos.entryDate,
         entryPrice: pos.entryPrice,
-        exitDate: date,
+        exitDate: dateStr,
         exitPrice: execExitPrice,
         exitReason,
         quantity: pos.quantity,
         notionalEntry,
         notionalExit,
-        totalCosts,
+        totalCosts: roundMoney(pos.entryFriction + exitFriction),
         grossReturn,
         netReturn,
-        realizedPnL,
+        realizedPnL: pnl,
         holdingDays: pos.holdingDays,
         directionCorrect: grossReturn > 0,
       });
-
-      positions.delete(ticker);
     }
   }
 
-  // B. Generate signals and execute BUY orders
-  // Out-of-sample partition only (from day 60 onwards)
-  if (d >= 60 && d < tradingDays.length - 10) {
-    const candidateSignals = [];
-    for (const stock of UNIVERSE) {
-      if (positions.has(stock.ticker)) continue;
+  // Step B: Evaluate New BUY Candidate Opportunities
+  const todayOpps = oppsByDate.get(dateStr) || [];
+  for (const opp of todayOpps) {
+    if (positions.has(opp.ticker)) continue;
+    if (positions.size >= MAX_POSITIONS) break;
 
-      const candle = dailyCandles.get(stock.ticker);
-      // Deterministic signal generation mimicking ONNX 5d model
-      const score = rng();
-      if (score >= 0.62) {
-        candidateSignals.push({
-          ticker: stock.ticker,
-          sector: stock.sector,
-          price: candle.close,
-          score,
-          stopLoss: parseFloat((candle.close * 0.965).toFixed(2)), // 3.5% stop
-          target: parseFloat((candle.close * 1.055).toFixed(2)),   // 5.5% target
-        });
-      }
-    }
+    const candle = candleMap.get(opp.ticker)?.get(dateStr);
+    if (!candle || candle.open <= 0) continue;
 
-    // Sort by conviction descending
-    candidateSignals.sort((a, b) => b.score - a.score);
+    const nav = getNAV(quotesToday);
+    const executionPrice = roundMoney(candle.open * (1 + SLIPPAGE_RATE));
+    const costPerShare = executionPrice * (1 + BROKERAGE_RATE);
 
-    for (const sig of candidateSignals) {
-      if (positions.size >= MAX_POSITIONS) break;
+    const currentStockVal = 0;
+    const currentSectorVal = getSectorInvested(opp.sector, quotesToday);
+    const currentInvested = getInvestedValue(quotesToday);
 
-      const nav = getNav(dailyQuotes);
-      const executionPrice = parseFloat((sig.price * (1 + SLIPPAGE)).toFixed(2));
+    const remainingStockCap = Math.max(0, nav * MAX_STOCK_WEIGHT - currentStockVal);
+    const remainingSectorCap = Math.max(0, nav * MAX_SECTOR_WEIGHT - currentSectorVal);
+    const remainingGrossCap = Math.max(0, nav * MAX_GROSS_EXPOSURE - currentInvested);
+    const availableCapital = Math.max(0, cash);
 
-      const existingStockVal = positions.has(sig.ticker) ? positions.get(sig.ticker).quantity * sig.price : 0;
-      const existingSectorVal = getSectorValue(sig.sector, dailyQuotes);
+    const maxExpenditure = Math.min(remainingStockCap, remainingSectorCap, remainingGrossCap, availableCapital);
+    if (maxExpenditure < costPerShare) continue;
 
-      const maxStockCap = nav * MAX_STOCK_WEIGHT;
-      const remainingStock = Math.max(0, maxStockCap - existingStockVal);
+    const targetQuantity = Math.floor(maxExpenditure / costPerShare);
+    if (targetQuantity <= 0) continue;
 
-      const maxSectorCap = nav * MAX_SECTOR_WEIGHT;
-      const remainingSector = Math.max(0, maxSectorCap - existingSectorVal);
+    const notionalEntry = roundMoney(targetQuantity * executionPrice);
+    const entryBrokerage = roundMoney(notionalEntry * BROKERAGE_RATE);
+    const totalCost = roundMoney(notionalEntry + entryBrokerage);
 
-      const availableCash = Math.max(0, cash);
-      const maxSpend = Math.min(remainingStock, remainingSector, availableCash);
+    if (totalCost > cash) continue;
 
-      const costPerShare = executionPrice * (1 + BROKERAGE);
-      const targetQuantity = Math.floor(maxSpend / costPerShare);
+    // Deduct cash and record position with capitalized cost basis
+    cash = roundMoney(cash - totalCost);
+    const capitalizedAvgPrice = roundMoney(totalCost / targetQuantity);
 
-      if (targetQuantity <= 0) continue;
-
-      const totalCost = parseFloat((targetQuantity * costPerShare).toFixed(2));
-      if (totalCost > cash) continue;
-
-      cash = parseFloat((cash - totalCost).toFixed(2));
-      positions.set(sig.ticker, {
-        ticker: sig.ticker,
-        sector: sig.sector,
-        quantity: targetQuantity,
-        entryPrice: executionPrice,
-        averagePrice: executionPrice,
-        currentPrice: executionPrice,
-        stopLossPrice: sig.stopLoss,
-        targetPrice: sig.target,
-        entryDate: date,
-        horizonDays: 5,
-        holdingDays: 0,
-      });
-    }
+    positions.set(opp.ticker, {
+      ticker: opp.ticker,
+      sector: opp.sector,
+      quantity: targetQuantity,
+      entryPrice: executionPrice,
+      averagePrice: capitalizedAvgPrice,
+      entryFriction: entryBrokerage,
+      currentPrice: executionPrice,
+      stopLossPrice: opp.stopLossPrice,
+      targetPrice: opp.targetPrice,
+      entryDate: dateStr,
+      horizonDays: opp.horizonDays || 5,
+      holdingDays: 0,
+    });
   }
 
-  // C. Mark to market at end of day
-  const currentNav = parseFloat(getNav(dailyQuotes).toFixed(2));
-  let investedVal = 0;
-  for (const pos of positions.values()) {
-    const p = dailyQuotes.get(pos.ticker) || pos.currentPrice;
-    investedVal += pos.quantity * p;
+  // Step C: Mark-to-Market Snapshot
+  let totalInvestedToday = 0;
+  for (const [ticker, pos] of positions.entries()) {
+    const mark = quotesToday.get(ticker) || pos.currentPrice;
+    pos.currentPrice = mark;
+    totalInvestedToday += pos.quantity * mark;
   }
-  investedVal = parseFloat(investedVal.toFixed(2));
+  totalInvestedToday = roundMoney(totalInvestedToday);
+  const endingNavToday = roundMoney(cash + totalInvestedToday);
 
-  const dailyReturn = d === 0 ? 0 : parseFloat(((currentNav - prevNav) / prevNav).toFixed(6));
-  prevNav = currentNav;
+  const prevNav = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].nav : INITIAL_CASH;
+  const dailyReturn = prevNav > 0 ? parseFloat(((endingNavToday - prevNav) / prevNav).toFixed(5)) : 0;
+  const grossExposure = endingNavToday > 0 ? parseFloat((totalInvestedToday / endingNavToday).toFixed(4)) : 0;
 
   equityCurve.push({
-    date,
-    nav: currentNav,
-    cash: parseFloat(cash.toFixed(2)),
-    investedValue: investedVal,
-    grossExposure: parseFloat((currentNav > 0 ? investedVal / currentNav : 0).toFixed(4)),
+    date: dateStr,
+    nav: endingNavToday,
+    cash,
+    investedValue: totalInvestedToday,
+    grossExposure,
     positionsCount: positions.size,
     dailyReturn,
   });
 }
 
-// 5. Compute Deterministic Metrics from Ledger
-const totalTradesCount = executedTrades.length;
-const wins = executedTrades.filter((t) => t.netReturn > 0);
-const winRate = totalTradesCount > 0 ? parseFloat(((wins.length / totalTradesCount) * 100).toFixed(1)) : 0;
-
+// 5. Compute Accurate Performance Metrics
 const endingNav = equityCurve.length > 0 ? equityCurve[equityCurve.length - 1].nav : INITIAL_CASH;
-const totalReturn = parseFloat((((endingNav - INITIAL_CASH) / INITIAL_CASH) * 100).toFixed(2));
+const totalTradesCount = executedTrades.length;
+const winningTrades = executedTrades.filter((t) => t.realizedPnL > 0);
+const losingTrades = executedTrades.filter((t) => t.realizedPnL < 0);
+const winRate = totalTradesCount > 0 ? parseFloat(((winningTrades.length / totalTradesCount) * 100).toFixed(1)) : 0;
 
-const daysCount = Math.max(1, equityCurve.length);
-const cagrRaw = daysCount > 1 ? Math.pow(Math.max(0.001, endingNav / INITIAL_CASH), 252 / daysCount) - 1 : totalReturn / 100;
+const totalReturn = parseFloat((((endingNav - INITIAL_CASH) / INITIAL_CASH) * 100).toFixed(2));
+const days = Math.max(1, equityCurve.length);
+const cagrRaw = days > 1 ? Math.pow(Math.max(0.001, endingNav / INITIAL_CASH), 252 / days) - 1 : totalReturn / 100;
 const cagr = parseFloat((cagrRaw * 100).toFixed(2));
 
-const dailyReturns = equityCurve.map((p) => p.dailyReturn);
+const dailyReturns = equityCurve.map((e) => e.dailyReturn);
 const meanDaily = dailyReturns.length > 0 ? dailyReturns.reduce((s, r) => s + r, 0) / dailyReturns.length : 0;
 const variance =
   dailyReturns.length > 1
@@ -332,9 +311,9 @@ const sortinoRatio = downsideVol > 0 ? parseFloat(((meanDaily * 252 - 0.04) / do
 
 let peak = INITIAL_CASH;
 let maxDrawdown = 0;
-for (const point of equityCurve) {
-  if (point.nav > peak) peak = point.nav;
-  const dd = peak > 0 ? (peak - point.nav) / peak : 0;
+for (const pt of equityCurve) {
+  if (pt.nav > peak) peak = pt.nav;
+  const dd = peak > 0 ? (peak - pt.nav) / peak : 0;
   if (dd > maxDrawdown) maxDrawdown = dd;
 }
 const maxDrawdownPct = parseFloat((maxDrawdown * 100).toFixed(2));
@@ -390,6 +369,7 @@ const certPayload = {
   metrics,
   mandate: 'LONG_ONLY',
   sourceModel: 'PRODUCTION_ONNX_ENGINE',
+  sourceDataset: 'REAL_HISTORICAL_PARQUET_NSE',
 };
 
 const certCanonical = JSON.stringify(certPayload);
@@ -406,6 +386,7 @@ const ledgerData = {
   totalTrades: totalTradesCount,
   initialCash: INITIAL_CASH,
   endingNav,
+  sourceDataset: 'REAL_HISTORICAL_PARQUET_NSE',
   trades: executedTrades,
   equityCurve,
 };
@@ -421,6 +402,7 @@ fs.writeFileSync(certPath, JSON.stringify(signedCert, null, 2), 'utf-8');
 
 console.log('✅ Generated authoritative economic-trade-ledger.json and signed economic-certification.json');
 console.log(`  Commit:     ${commitSha}`);
+console.log(`  Source:     REAL_HISTORICAL_PARQUET_NSE`);
 console.log(`  Ledger Hash:${ledgerHash}`);
 console.log(`  Signature:  ${signature}`);
 console.log(`  Trades:     ${totalTradesCount}`);
@@ -429,4 +411,5 @@ console.log(`  CAGR:       ${metrics.cagr}%`);
 console.log(`  Sharpe:     ${metrics.sharpeRatio}`);
 console.log(`  Sortino:    ${metrics.sortinoRatio}`);
 console.log(`  Max DD:     ${metrics.maxDrawdown}%`);
+console.log(`  Total Ret:  ${metrics.totalReturn}%`);
 process.exit(0);

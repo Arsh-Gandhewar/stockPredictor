@@ -527,7 +527,9 @@ export default function SettingsPage() {
               <div className="font-bold text-foreground text-xs font-mono">
                 {pingLatency} ms
               </div>
-              <div className="text-[10px] text-emerald-400/80 font-mono">Sub-20ms SLA</div>
+              <div className={`text-[10px] font-mono ${pingLatency < 50 ? 'text-emerald-400/80' : 'text-amber-400/80'}`}>
+                {pingLatency < 50 ? 'Live Probe OK' : 'Probe Elevated'}
+              </div>
             </div>
 
             {/* 6. Security & Encryption */}

@@ -13,6 +13,7 @@
  */
 
 import * as path from 'node:path';
+import * as fs from 'node:fs';
 import { McpEngError } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,20 @@ export class PathGuard {
       !resolved.startsWith(canonicalRoot)
     ) {
       this.deny(requestedPath, `Path resolves outside repository root (${root})`);
+    }
+
+    // ---- 4b. Ensure symlink target does not resolve outside repository root ----
+    try {
+      if (fs.existsSync(resolved)) {
+        const realTarget = fs.realpathSync(resolved);
+        const realRoot = fs.realpathSync(root);
+        const realCanonicalRoot = realRoot.endsWith(path.sep) ? realRoot : realRoot + path.sep;
+        if (realTarget !== realRoot && !realTarget.startsWith(realCanonicalRoot)) {
+          this.deny(requestedPath, `Symlink target points outside repository root (${root})`);
+        }
+      }
+    } catch (err: unknown) {
+      if (err instanceof McpEngError) throw err;
     }
 
     // ---- 5. Check forbidden basenames ----

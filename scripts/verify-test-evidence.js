@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
-const HMAC_SECRET = 'quantx-gov-ci-salt-2026-v5-1';
+const HMAC_SECRET = process.env.GOVERNANCE_CI_SECRET || 'quantx-gov-ci-salt-2026-v5-1';
 const evidencePath = path.resolve(__dirname, '../apps/api/data/artifacts/governance/test-evidence.json');
 
 if (!fs.existsSync(evidencePath)) {

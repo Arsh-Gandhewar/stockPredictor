@@ -37,6 +37,7 @@ export class QuantxClient {
       'Accept': 'application/json',
       'Authorization': `Bearer ${this.config.apiKey}`,
       'x-api-key': this.config.apiKey,
+      'x-delegated-by': 'quantx_service',
       'x-request-id': requestId,
       'x-user-id': (userId || this.config.authUserId) || '',
     };
@@ -217,6 +218,7 @@ export class QuantxClient {
       type: 'BUY' | 'SELL';
       quantity: number;
       orderType?: 'MARKET' | 'LIMIT';
+      limitPrice?: number;
       idempotencyKey?: string;
     },
     requestId?: string

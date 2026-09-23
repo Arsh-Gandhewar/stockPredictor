@@ -23,6 +23,7 @@ export interface DailyEquityPoint {
   grossExposure: number; // 0.0 to 1.0
   positionsCount: number;
   dailyReturn: number;
+  valuationStatus?: 'VALID' | 'MARK_UNAVAILABLE';
 }
 
 export interface ExecutedSimulatorTrade {
@@ -111,9 +112,9 @@ export class EventDrivenPortfolioSimulator {
   constructor(config: PortfolioSimulatorConfig = {}) {
     this.config = {
       initialCash: config.initialCash ?? 1_000_000,
-      maxStockWeight: config.maxStockWeight ?? MODEL_CONFIG.RISK.POSITION_CONCENTRATION_LIMIT, // 0.10
-      maxSectorWeight: config.maxSectorWeight ?? MODEL_CONFIG.RISK.SECTOR_CONCENTRATION_LIMIT, // 0.25
-      maxGrossExposure: config.maxGrossExposure ?? 1.00,
+      maxStockWeight: config.maxStockWeight ?? 0.10, // 10% maximum stock allocation
+      maxSectorWeight: config.maxSectorWeight ?? 0.25, // 25% maximum sector allocation
+      maxGrossExposure: config.maxGrossExposure ?? 1.00, // 100% gross exposure cap
       maxPositions: config.maxPositions ?? 10,
       brokerageRate: config.brokerageRate ?? MODEL_CONFIG.COSTS.BROKERAGE_PCT, // 0.0003
       sttSellRate: config.sttSellRate ?? MODEL_CONFIG.COSTS.STT_SELL_PCT, // 0.0010
@@ -187,6 +188,7 @@ export class EventDrivenPortfolioSimulator {
       const existingPos = this.positions.get(intent.ticker);
       const currentStockVal = existingPos ? existingPos.quantity * existingPos.currentPrice : 0;
       const currentSectorVal = this.getSectorValue(intent.sector);
+      const currentInvested = this.getInvestedValue();
 
       const maxAllowedStockVal = nav * this.config.maxStockWeight;
       const remainingStockCap = Math.max(0, maxAllowedStockVal - currentStockVal);
@@ -194,10 +196,14 @@ export class EventDrivenPortfolioSimulator {
       const maxAllowedSectorVal = nav * this.config.maxSectorWeight;
       const remainingSectorCap = Math.max(0, maxAllowedSectorVal - currentSectorVal);
 
-      // Max gross exposure: cash cannot go below 0
+      // Max gross exposure limit
+      const maxAllowedGrossVal = nav * this.config.maxGrossExposure;
+      const remainingGrossCap = Math.max(0, maxAllowedGrossVal - currentInvested);
+
+      // Available capital cannot exceed cash
       const availableCapital = Math.max(0, this.cash);
 
-      const maxExpenditure = Math.min(remainingStockCap, remainingSectorCap, availableCapital);
+      const maxExpenditure = Math.min(remainingStockCap, remainingSectorCap, remainingGrossCap, availableCapital);
       if (maxExpenditure <= 0) {
         return {
           executed: false,
@@ -210,12 +216,22 @@ export class EventDrivenPortfolioSimulator {
             ? `STOCK_CAP_EXCEEDED: Stock weight already at or above ${this.config.maxStockWeight * 100}% of NAV.`
             : remainingSectorCap <= 0
               ? `SECTOR_CAP_EXCEEDED: Sector '${intent.sector}' already at or above ${this.config.maxSectorWeight * 100}% of NAV.`
-              : `INSUFFICIENT_CASH: Available cash is ₹${this.cash.toFixed(2)}.`,
+              : remainingGrossCap <= 0
+                ? `GROSS_EXPOSURE_EXCEEDED: Portfolio gross exposure already at or above ${this.config.maxGrossExposure * 100}% of NAV.`
+                : `INSUFFICIENT_CASH: Available cash is ₹${this.cash.toFixed(2)}.`,
         };
       }
 
       const costPerShare = executionPrice * (1 + effectiveBrokerage);
-      let targetQuantity = intent.quantity ?? Math.floor(maxExpenditure / costPerShare);
+      let targetQuantity: number;
+      if (intent.targetWeight !== undefined && intent.targetWeight > 0) {
+        const targetNotional = Math.min(maxExpenditure, nav * intent.targetWeight);
+        targetQuantity = Math.floor(targetNotional / costPerShare);
+      } else if (intent.quantity !== undefined && intent.quantity > 0) {
+        targetQuantity = Math.min(intent.quantity, Math.floor(maxExpenditure / costPerShare));
+      } else {
+        targetQuantity = Math.floor(maxExpenditure / costPerShare);
+      }
 
       // Enforce sizing does not exceed maxExpenditure
       if (targetQuantity * costPerShare > maxExpenditure) {
@@ -228,7 +244,9 @@ export class EventDrivenPortfolioSimulator {
             ? `STOCK_CAP_EXCEEDED: Stock allocation exceeds maximum limit (${this.config.maxStockWeight * 100}% of NAV).`
             : remainingSectorCap < costPerShare
               ? `SECTOR_CAP_EXCEEDED: Sector '${intent.sector}' allocation exceeds maximum limit (${this.config.maxSectorWeight * 100}% of NAV).`
-              : 'SIZING_ZERO: Constraints reduced order quantity to 0 shares.';
+              : remainingGrossCap < costPerShare
+                ? `GROSS_EXPOSURE_EXCEEDED: Portfolio gross exposure exceeds maximum limit (${this.config.maxGrossExposure * 100}% of NAV).`
+                : 'SIZING_ZERO: Constraints reduced order quantity to 0 shares.';
         return {
           executed: false,
           orderType: 'BUY',
@@ -258,12 +276,8 @@ export class EventDrivenPortfolioSimulator {
 
       if (existingPos) {
         const newQty = existingPos.quantity + targetQuantity;
-        const newAvg = Money.calculateNewAveragePrice(
-          existingPos.quantity,
-          existingPos.averagePrice,
-          targetQuantity,
-          executionPrice
-        );
+        const existingTotalCost = existingPos.quantity * existingPos.averagePrice;
+        const newAvg = Money.round((existingTotalCost + totalCost) / newQty);
         existingPos.quantity = newQty;
         existingPos.averagePrice = newAvg;
         existingPos.currentPrice = executionPrice;
@@ -276,7 +290,7 @@ export class EventDrivenPortfolioSimulator {
           sector: intent.sector,
           quantity: targetQuantity,
           entryPrice: executionPrice,
-          averagePrice: executionPrice,
+          averagePrice: Money.round(costPerShare), // Economic acquisition cost basis including entry friction
           currentPrice: executionPrice,
           stopLossPrice: intent.stopLossPrice ?? null,
           targetPrice: intent.targetPrice ?? null,
@@ -454,11 +468,14 @@ export class EventDrivenPortfolioSimulator {
    * Daily Mark-to-Market Snapshot
    */
   public markToMarket(date: string, quotesMap: Map<string, number>): DailyEquityPoint {
+    let hasMissingMark = false;
     // Update marks for held positions
     for (const [ticker, pos] of this.positions.entries()) {
       const mark = quotesMap.get(ticker);
       if (mark !== undefined && mark > 0) {
         pos.currentPrice = mark;
+      } else {
+        hasMissingMark = true;
       }
     }
 
@@ -480,6 +497,7 @@ export class EventDrivenPortfolioSimulator {
       grossExposure,
       positionsCount: this.positions.size,
       dailyReturn,
+      valuationStatus: hasMissingMark ? 'MARK_UNAVAILABLE' : 'VALID',
     };
 
     this.equityCurve.push(point);

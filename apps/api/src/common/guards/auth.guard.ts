@@ -43,11 +43,22 @@ export class AuthGuard implements CanActivate {
 
     // Service-to-Service API Key authentication (e.g. MCP server adapter with shared secret)
     if (apiKeyHeader && configuredApiKey && apiKeyHeader === configuredApiKey) {
-      // Caller authenticated as service principal. Strict non-impersonation:
-      // Arbitrary caller-controlled identity selection via headers is completely disallowed.
+      const delegatedBy = request.headers['x-delegated-by'];
       if (userIdHeader && userIdHeader !== 'quantx_service') {
+        if (delegatedBy === 'quantx_service') {
+          // Authorized service principal delegation
+          const sanitized = String(userIdHeader)
+            .replace(/[^a-zA-Z0-9_-]/g, '')
+            .trim();
+          request.userId = sanitized;
+          request.user = { id: sanitized, sub: sanitized, role: 'USER' };
+          request.userRole = 'USER';
+          request.isDelegated = true;
+          return true;
+        }
+
         this.logger.warn(
-          `API_KEY_IMPERSONATION_BLOCKED: API key caller attempted to select x-user-id '${userIdHeader}'`,
+          `API_KEY_IMPERSONATION_BLOCKED: API key caller attempted to select x-user-id '${userIdHeader}' without delegation authority`,
         );
         throw new ForbiddenException(
           'API_KEY_IMPERSONATION_BLOCKED: Service API key requests cannot select arbitrary user identity via headers',

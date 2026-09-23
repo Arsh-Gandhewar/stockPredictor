@@ -298,7 +298,7 @@ export default function WatchlistPage() {
               <div className="space-y-1.5 max-w-md mx-auto">
                 <h3 className="text-lg font-bold text-foreground">Your Watchlist is Empty</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  Start tracking high-conviction Indian equities with real-time 5-second streaming quotes, intraday spreads, and quantitative AI signals.
+                  Start tracking high-conviction Indian equities with live 10-second polling quotes, intraday spreads, and quantitative AI signals.
                 </p>
               </div>
 

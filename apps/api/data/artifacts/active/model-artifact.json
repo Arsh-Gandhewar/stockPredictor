@@ -4,7 +4,7 @@
   "policyVersion": "5.1.0-mvo-constrained",
   "modelType": "ONNX_ENSEMBLE",
   "featureVersion": "v5.1.0-multi-factor-25",
-  "featureSchemaHash": "e34d088fa4b4a36f65611dcff43603cd00478ea6be64440d3f499b2c630ed4cd",
+  "featureSchemaHash": "e25ac489011cc8d5381e772a6a55fb609b540668fb46e2ec05fb20f32a54504f",
   "featureSchema": [
     "rsi_14",
     "macd_hist",
@@ -3328,7 +3328,7 @@
   },
   "createdAt": "2026-09-03T03:53:11.359Z",
   "id": "art_1788407591360_9ce479f0",
-  "checksum": "a8dfe41e36ec150512961b89eb3507ec712fc65371562025981e9574a4444f32",
+  "checksum": "be9360d6f1b11335e99a9a3a792eefd754773fba39f1d4d9bab297e15634dba2",
   "dateRanges": {
     "training": {
       "start": "2021-01-01",

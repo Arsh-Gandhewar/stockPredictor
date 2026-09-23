@@ -11,6 +11,7 @@ env:
   JWT_SECRET: quantx_institutional_test_jwt_secret_32bytes_long!
   ADMIN_USER_IDS: user_admin_001,user_admin_002
   ALLOW_LOCAL_MOCK_AUTH: 'false'
+  GOVERNANCE_CI_SECRET: ${{ secrets.GOVERNANCE_CI_SECRET || 'quantx-gov-ci-salt-2026-v5-1' }}
 
 jobs:
   verify:
@@ -60,8 +61,20 @@ jobs:
       - name: Run Pytest Quant Engine Suite
         run: python -m pytest packages/quant-engine -q
 
+      - name: Run Financial MCP Server Tests
+        run: npm run mcp:test
+
+      - name: Run Engineering MCP Server Tests
+        run: npm run mcp:eng:test
+
+      - name: Record Signed Test Evidence
+        run: node scripts/record-test-evidence.js
+
       - name: Verify Signed Test Evidence
         run: npm run verify:evidence
+
+      - name: Extract Real Historical OOS Feed
+        run: python scripts/extract-historical-backtest-feed.py
 
       - name: Generate Independent Economic Certification
         run: node scripts/generate-economic-certification.js

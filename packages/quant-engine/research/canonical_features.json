@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "name": "QuantX Canonical Multi-Factor 25-Feature Schema",
-  "version": "v5.0.0-multi-factor-25",
+  "version": "v5.1.0-multi-factor-25",
   "featureCount": 25,
   "globalMinLookback": 252,
   "features": [

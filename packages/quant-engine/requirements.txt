@@ -8,3 +8,4 @@ ta
 joblib
 pyyaml
 pyarrow
+onnxruntime

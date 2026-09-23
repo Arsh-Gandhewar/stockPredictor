@@ -34,28 +34,21 @@ try {
   process.exit(1);
 }
 
-// 2. Commit SHA matching
+// 2. Commit SHA matching (Strict binding to exact commit; zero parent exception)
 let currentCommitSha;
-let parentCommitSha;
 try {
   currentCommitSha = execSync('git rev-parse HEAD', { encoding: 'utf-8' }).trim();
-  try {
-    parentCommitSha = execSync('git rev-parse HEAD~1', { encoding: 'utf-8' }).trim();
-  } catch {}
 } catch {
   currentCommitSha = process.env.COMMIT_SHA;
 }
 
-const isShaValid =
-  !currentCommitSha ||
-  cert.commitSha === currentCommitSha ||
-  (parentCommitSha && cert.commitSha === parentCommitSha);
+const isShaValid = !currentCommitSha || cert.commitSha === currentCommitSha;
 
 if (!isShaValid) {
   console.error('❌ FAIL: Certification commit SHA mismatch!');
   console.error(`  Expected commit: ${currentCommitSha}`);
   console.error(`  Certified commit: ${cert.commitSha}`);
-  console.error('  Economic evidence was not generated from the current commit.');
+  console.error('  Economic evidence was not generated from the exact current commit.');
   process.exit(1);
 }
 
@@ -70,7 +63,7 @@ if (!cert.signature) {
   process.exit(1);
 }
 
-const certCanonical = JSON.stringify({
+const certCanonicalPayload = {
   commitSha: cert.commitSha,
   evaluatedAt: cert.evaluatedAt,
   ledgerHash: cert.ledgerHash,
@@ -78,7 +71,11 @@ const certCanonical = JSON.stringify({
   metrics: cert.metrics,
   mandate: cert.mandate,
   sourceModel: cert.sourceModel,
-});
+};
+if (cert.sourceDataset) {
+  certCanonicalPayload.sourceDataset = cert.sourceDataset;
+}
+const certCanonical = JSON.stringify(certCanonicalPayload);
 
 const expectedSignature = crypto.createHmac('sha256', HMAC_SECRET).update(certCanonical).digest('hex');
 if (cert.signature !== expectedSignature) {

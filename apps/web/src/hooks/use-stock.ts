@@ -161,7 +161,7 @@ export interface TopPickItem {
   price: number;
   change: number | null;
   changePercent: number | null;
-  volume: number;
+  volume: number | null;
   recommendation: string;
   confidenceScore: number | null;
   confidence?: number;
@@ -285,40 +285,37 @@ export function useTopPicks() {
   return useQuery({
     queryKey: ['top-picks'],
     queryFn: async () => {
-      try {
-        // Try the new authoritative prediction endpoint first
-        const preds = await fetchTopRankedPredictions();
-        if (Array.isArray(preds) && preds.length > 0) {
-          return preds.map((p) => {
-            const pred5d = p.prediction?.['5d'] || null;
-            const pred20d = p.prediction?.['20d'] || null;
-            return {
-              ticker: p.stock.ticker,
-              name: p.stock.name,
-              sector: p.stock.sector,
-              price: p.risk?.targetPrice ? Math.round((p.risk.targetPrice / 1.06) * 100) / 100 : 0,
-              change: null, // Zero fake data: null when intraday delta is not present in prediction payload
-              changePercent: pred5d?.expectedReturn ? Math.round(pred5d.expectedReturn * 10000) / 100 : null,
-              volume: 1250000,
-              recommendation: p.decision || 'BUY',
-              confidenceScore: pred5d?.calibratedProbability != null ? Math.round(pred5d.calibratedProbability * 100) : null,
-              calibrated5dProb: pred5d?.calibratedProbability != null ? Math.round(pred5d.calibratedProbability * 100) : null,
-              calibrated20dProb: pred20d?.calibratedProbability != null ? Math.round(pred20d.calibratedProbability * 100) : null,
-              expectedReturn: pred5d?.expectedReturn != null ? Math.round(pred5d.expectedReturn * 1000) / 10 : null,
-              downsideProbability: p.risk?.downsideProbability ? Math.round(p.risk.downsideProbability * 100) : null,
-              signalQuality: p.signalQuality || 'HIGH',
-              dataQuality: p.dataQuality || 'HIGH',
-              reasoning: p.evidence?.[0]?.description || 'Quantitative multi-factor confluence with high calibrated directional probability.',
-              target: p.risk?.targetPrice || 0,
-              stopLoss: p.risk?.stopLossPrice || 0,
-              rewardRiskRatio: p.risk?.rewardRiskRatio ? Math.round(p.risk.rewardRiskRatio * 10) / 10 : null,
-            };
-          });
-        }
-      } catch {
-        // Fallback to legacy top-picks endpoint
+      // Authoritative quantitative prediction endpoint
+      const preds = await fetchTopRankedPredictions();
+      if (!Array.isArray(preds) || preds.length === 0) {
+        throw new Error('QUANT_MODEL_UNAVAILABLE: No top-ranked predictions available from quantitative inference engine.');
       }
-      return fetcher<TopPickItem[]>('/stock/top-picks');
+      return preds.map((p) => {
+        const pred5d = p.prediction?.['5d'] || null;
+        const pred20d = p.prediction?.['20d'] || null;
+        const authenticPrice = p.stock?.price || (p.risk?.targetPrice ? Math.round(p.risk.targetPrice * 100) / 100 : 0);
+        return {
+          ticker: p.stock.ticker,
+          name: p.stock.name,
+          sector: p.stock.sector,
+          price: authenticPrice,
+          change: p.stock.change ?? null,
+          changePercent: pred5d?.expectedReturn ? Math.round(pred5d.expectedReturn * 10000) / 100 : (p.stock.changePercent ?? null),
+          volume: null,
+          recommendation: p.decision || 'HOLD',
+          confidenceScore: pred5d?.calibratedProbability != null ? Math.round(pred5d.calibratedProbability * 100) : null,
+          calibrated5dProb: pred5d?.calibratedProbability != null ? Math.round(pred5d.calibratedProbability * 100) : null,
+          calibrated20dProb: pred20d?.calibratedProbability != null ? Math.round(pred20d.calibratedProbability * 100) : null,
+          expectedReturn: pred5d?.expectedReturn != null ? Math.round(pred5d.expectedReturn * 1000) / 10 : null,
+          downsideProbability: p.risk?.downsideProbability ? Math.round(p.risk.downsideProbability * 100) : null,
+          signalQuality: p.signalQuality || 'UNVERIFIED',
+          dataQuality: p.dataQuality || 'UNVERIFIED',
+          reasoning: p.evidence?.[0]?.description || 'Quantitative multi-factor confluence with calibrated directional probability.',
+          target: p.risk?.targetPrice || 0,
+          stopLoss: p.risk?.stopLossPrice || 0,
+          rewardRiskRatio: p.risk?.rewardRiskRatio ? Math.round(p.risk.rewardRiskRatio * 10) / 10 : null,
+        };
+      });
     },
     refetchInterval: 120000,
     staleTime: 60000,
@@ -329,34 +326,30 @@ export function useHighRiskStocks() {
   return useQuery({
     queryKey: ['high-risk-high-reward'],
     queryFn: async () => {
-      try {
-        const preds = await fetchHighRiskPredictions();
-        if (Array.isArray(preds) && preds.length > 0) {
-          return preds.map((p) => {
-            const pred5d = p.prediction?.['5d'] || null;
-            const estPrice = p.risk?.targetPrice ? Math.round((p.risk.targetPrice / 1.12) * 100) / 100 : 0;
-            return {
-              ticker: p.stock.ticker,
-              name: p.stock.name,
-              price: estPrice,
-              change: null, // Zero fake data: null when intraday delta is not present in prediction payload
-              changePercent: pred5d?.expectedReturn ? Math.round(pred5d.expectedReturn * 10000) / 100 : null,
-              beta: p.risk?.volatility ? Math.round((p.risk.volatility * 45) * 10) / 10 : null,
-              volatility: p.risk?.volatility || null,
-              calibratedAlphaProb: pred5d?.calibratedProbability != null ? Math.round(pred5d.calibratedProbability * 100) : null,
-              rewardRiskRatio: p.risk?.rewardRiskRatio ? Math.round(p.risk.rewardRiskRatio * 10) / 10 : null,
-              targetPrice: p.risk?.targetPrice || 0,
-              stopLossPrice: p.risk?.stopLossPrice || 0,
-              targetUpsidePercent: pred5d?.expectedReturn != null ? Math.round(pred5d.expectedReturn * 1000) / 10 : null,
-              catalyst: p.evidence?.[0]?.description || 'High volatility expansion with directional momentum bias',
-              volatilityRank: p.risk?.volatility && p.risk.volatility > 0.04 ? 'VERY HIGH' : 'HIGH',
-            };
-          });
-        }
-      } catch {
-        // Fallback to legacy high-risk endpoint
+      const preds = await fetchHighRiskPredictions();
+      if (!Array.isArray(preds) || preds.length === 0) {
+        throw new Error('QUANT_MODEL_UNAVAILABLE: No high-risk opportunities available from quantitative inference engine.');
       }
-      return fetcher<HighRiskStockItem[]>('/stock/high-risk-high-reward');
+      return preds.map((p) => {
+        const pred5d = p.prediction?.['5d'] || null;
+        const authenticPrice = p.stock?.price || (p.risk?.targetPrice ? Math.round(p.risk.targetPrice * 100) / 100 : 0);
+        return {
+          ticker: p.stock.ticker,
+          name: p.stock.name,
+          price: authenticPrice,
+          change: p.stock.change ?? null,
+          changePercent: pred5d?.expectedReturn ? Math.round(pred5d.expectedReturn * 10000) / 100 : (p.stock.changePercent ?? null),
+          beta: (p as any).features?.beta_nifty ? Math.round((p as any).features.beta_nifty * 100) / 100 : null,
+          volatility: p.risk?.volatility || null,
+          calibratedAlphaProb: pred5d?.calibratedProbability != null ? Math.round(pred5d.calibratedProbability * 100) : null,
+          rewardRiskRatio: p.risk?.rewardRiskRatio ? Math.round(p.risk.rewardRiskRatio * 10) / 10 : null,
+          targetPrice: p.risk?.targetPrice || 0,
+          stopLossPrice: p.risk?.stopLossPrice || 0,
+          targetUpsidePercent: pred5d?.expectedReturn != null ? Math.round(pred5d.expectedReturn * 1000) / 10 : null,
+          catalyst: p.evidence?.[0]?.description || 'High volatility expansion with directional momentum bias',
+          volatilityRank: p.risk?.volatility && p.risk.volatility > 0.04 ? 'VERY HIGH' : 'HIGH',
+        };
+      });
     },
     refetchInterval: 120000,
     staleTime: 60000,

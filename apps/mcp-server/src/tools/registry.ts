@@ -228,13 +228,22 @@ export function createDefaultToolRegistry(): ToolRegistry {
         rawList = await client.getTopRankedPredictions();
       }
 
-      if (isLow && Array.isArray(rawList)) {
-        // Low risk profile: sort by highest Sortino ratio and filter out high downside probabilities
-        rawList = [...rawList].sort((a: any, b: any) => {
-          const sortA = a.ranking?.breakdown?.sortinoRatio ?? -999;
-          const sortB = b.ranking?.breakdown?.sortinoRatio ?? -999;
-          return sortB - sortA;
-        });
+      if (Array.isArray(rawList)) {
+        if (isLow) {
+          // Low risk profile: sort by highest Sortino ratio and filter out high downside probabilities
+          rawList = [...rawList].sort((a: any, b: any) => {
+            const sortA = a.ranking?.breakdown?.sortinoRatio ?? -999;
+            const sortB = b.ranking?.breakdown?.sortinoRatio ?? -999;
+            return sortB - sortA;
+          });
+        } else if (requestedHorizon !== '5d') {
+          // Re-sort candidates matching requested horizon when available
+          rawList = [...rawList].sort((a: any, b: any) => {
+            const probA = a.prediction?.[requestedHorizon]?.calibratedProbability ?? a.ranking?.breakdown?.expectedValue ?? -999;
+            const probB = b.prediction?.[requestedHorizon]?.calibratedProbability ?? b.ranking?.breakdown?.expectedValue ?? -999;
+            return probB - probA;
+          });
+        }
       }
 
       const limit = Math.min(20, Math.max(1, input.limit || 10));
@@ -618,6 +627,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
         type: 'BUY',
         quantity: input.quantity,
         orderType: input.orderType || 'MARKET',
+        limitPrice: input.limitPrice,
       });
 
       return await idempotencyManager.runOnce(
@@ -631,6 +641,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
             type: 'BUY',
             quantity: input.quantity,
             orderType: input.orderType || 'MARKET',
+            limitPrice: input.limitPrice,
             idempotencyKey,
           });
 
@@ -668,6 +679,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
         type: 'SELL',
         quantity: input.quantity,
         orderType: input.orderType || 'MARKET',
+        limitPrice: input.limitPrice,
       });
 
       return await idempotencyManager.runOnce(
@@ -681,6 +693,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
             type: 'SELL',
             quantity: input.quantity,
             orderType: input.orderType || 'MARKET',
+            limitPrice: input.limitPrice,
             idempotencyKey,
           });
 
@@ -736,6 +749,12 @@ export function createDefaultToolRegistry(): ToolRegistry {
       }
 
       const isHealthy = backendStatus === 'healthy' || backendStatus === 'UP';
+      let overallStatus = 'HEALTHY';
+      if (backendStatus === 'UNREACHABLE' || dbStatus === 'DOWN') {
+        overallStatus = 'UNHEALTHY';
+      } else if (!isHealthy || modelArtifactStatus === 'UNAVAILABLE') {
+        overallStatus = 'DEGRADED';
+      }
 
       return {
         mcpServer: {
@@ -755,7 +774,7 @@ export function createDefaultToolRegistry(): ToolRegistry {
         modelArtifact: {
           status: modelArtifactStatus,
         },
-        overallStatus: isHealthy ? 'HEALTHY' : 'UNHEALTHY',
+        overallStatus,
         durationMs: Date.now() - startTime,
         timestamp: new Date().toISOString(),
       };

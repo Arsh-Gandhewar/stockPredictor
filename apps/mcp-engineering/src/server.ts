@@ -121,7 +121,13 @@ export class EngineeringMcpServer {
       const lastSha = this.store.getLastIndexedCommit();
 
       if (currentSha !== this.currentGitSha || !lastSha) {
-        this.currentGitSha = currentSha;
+        process.stderr.write(`[engineering-mcp] Stale index detected (${this.currentGitSha} -> ${currentSha}). Re-indexing...\n`);
+        const indexResult = await this.indexer.initialize(this.config.repoRoot, this.config.contextIndexDir);
+        this.currentGitSha = indexResult.gitSha || currentSha;
+        this.depGraph = new DependencyGraph(this.store);
+        await this.depGraph.build();
+        this.symGraph = new SymbolReferenceGraph(this.store);
+        await this.symGraph.build();
       }
     } catch {
       // Git unavailable — continue with cached index
