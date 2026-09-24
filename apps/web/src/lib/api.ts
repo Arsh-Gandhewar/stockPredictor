@@ -351,11 +351,19 @@ export async function fetchPrediction(ticker: string): Promise<StockPrediction> 
 }
 
 export async function fetchTopRankedPredictions(): Promise<StockPrediction[]> {
-  return fetcher<StockPrediction[]>('/prediction/top-ranked');
+  try {
+    const res = await fetcher<StockPrediction[]>('/prediction/top-ranked');
+    if (Array.isArray(res) && res.length > 0) return res;
+  } catch {}
+  return fetcher<StockPrediction[]>('/stock/prediction/top-ranked');
 }
 
 export async function fetchHighRiskPredictions(): Promise<StockPrediction[]> {
-  return fetcher<StockPrediction[]>('/prediction/high-risk');
+  try {
+    const res = await fetcher<StockPrediction[]>('/prediction/high-risk');
+    if (Array.isArray(res) && res.length > 0) return res;
+  } catch {}
+  return fetcher<StockPrediction[]>('/stock/prediction/high-risk');
 }
 
 export async function fetchMarketRegime(): Promise<{ regime: MarketRegime }> {

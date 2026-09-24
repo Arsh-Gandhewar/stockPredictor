@@ -112,22 +112,6 @@ export class QuantPredictionService implements OnModuleInit {
     );
     this.refreshArtifactGovernance();
     this.lastValidUniverseSnapshot = this.getSeedUniversePredictions();
-
-    // Warm up universe predictions in background so initial web requests respond instantaneously
-    setTimeout(() => {
-      this.getUniversePredictions().catch((err) =>
-        this.logger.warn(`Initial universe predictions warmup: ${err.message}`),
-      );
-    }, 500);
-
-    // Refresh universe predictions in background every 2 minutes
-    setInterval(() => {
-      this.getUniversePredictions().catch((err) =>
-        this.logger.warn(
-          `Automated universe predictions refresh: ${err.message}`,
-        ),
-      );
-    }, 120_000);
   }
 
   /**
@@ -921,78 +905,11 @@ export class QuantPredictionService implements OnModuleInit {
   }
 
   async getUniversePredictions(): Promise<StockPrediction[]> {
-    const universeCacheKey = `${this.artifactChecksum}:__universe_predictions__`;
-    const cached = this.cache.get(universeCacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      return cached.data as unknown as StockPrediction[];
-    }
-
-    // Trigger async background refresh if not already executing
-    if (!this.inFlightUniversePromise) {
-      this.inFlightUniversePromise = (async () => {
-        try {
-          // Pre-warm benchmark chart into memory
-          await this.stockService.getChartData('^NSEI', '6mo').catch(() => []);
-
-          // Optimize for free-tier gateway timeouts (max 15 liquid stocks per run)
-          const fullUniverse = this.universeRegistry.getUniverseAt(new Date());
-          const scanList = fullUniverse.slice(0, 15);
-
-          const predictions: StockPrediction[] = [];
-          const batchSize = 5;
-          for (let i = 0; i < scanList.length; i += batchSize) {
-            const batch = scanList.slice(i, i + batchSize);
-            const results = await Promise.allSettled(
-              batch.map((ticker) => this.getPrediction(ticker)),
-            );
-            for (const r of results) {
-              if (r.status === 'fulfilled' && r.value) {
-                predictions.push(r.value);
-              }
-            }
-          }
-
-          if (predictions.length > 0) {
-            predictions.sort(
-              (a, b) =>
-                (b.prediction['20d'].calibratedProbability ?? -1) -
-                (a.prediction['20d'].calibratedProbability ?? -1),
-            );
-
-            predictions.forEach((p, idx) => {
-              p.ranking = {
-                rank: idx + 1,
-                percentile: parseFloat(
-                  (100 - (idx / predictions.length) * 100).toFixed(1),
-                ),
-                universeSize: predictions.length,
-              };
-            });
-
-            this.universeFailureCount = 0;
-            this.lastValidUniverseSnapshot = predictions;
-            this.cache.set(universeCacheKey, {
-              data: predictions as unknown as StockPrediction,
-              expiresAt: Date.now() + 180_000, // 3 minutes TTL
-            });
-            return predictions;
-          }
-        } catch (err: any) {
-          this.logger.warn(`Universe scan encountered issue: ${err.message}`);
-          this.universeFailureCount++;
-          this.lastUniverseFailureTime = Date.now();
-        } finally {
-          this.inFlightUniversePromise = null;
-        }
-        return this.lastValidUniverseSnapshot || this.getSeedUniversePredictions();
-      })();
-    }
-
-    // Zero-Wait Guarantee: Return immediate snapshot so HTTP calls respond in <50ms without gateway timeout
     if (this.lastValidUniverseSnapshot && this.lastValidUniverseSnapshot.length > 0) {
       return this.lastValidUniverseSnapshot;
     }
-    return this.getSeedUniversePredictions();
+    this.lastValidUniverseSnapshot = this.getSeedUniversePredictions();
+    return this.lastValidUniverseSnapshot;
   }
 
   async getTopRankedStocks(
