@@ -32,4 +32,4 @@ services:
       - key: CLERK_SECRET_KEY
         sync: false
       - key: FRONTEND_URL
-        sync: false
+        value: https://stock-predictor-quantx.vercel.app
