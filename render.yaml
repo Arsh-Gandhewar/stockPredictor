@@ -5,7 +5,7 @@ services:
     plan: free
     region: oregon
     branch: main
-    buildCommand: npm install && npm run generate --workspace=packages/db && npm run build --workspace=apps/api
+    buildCommand: npm install --include=dev && npm run generate --workspace=packages/db && npm run build --workspace=apps/api
     startCommand: node apps/api/dist/main.js
     healthCheckPath: /health/liveness
     envVars:
