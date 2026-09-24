@@ -146,7 +146,7 @@ export default function Dashboard() {
   }, [currentMovers]);
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-500 w-full max-w-[2100px] mx-auto">
+    <div className="space-y-6 pb-12 animate-in fade-in duration-500 w-full max-w-[2560px] mx-auto px-1 sm:px-2">
       {/* ── 1. Top Institutional Market Status Bar ── */}
       <div className="relative overflow-hidden rounded-xl border border-border/50 bg-card/60 backdrop-blur-md p-4 sm:p-5 shadow-sm">
         {/* Subtle decorative mesh gradient */}
@@ -295,20 +295,25 @@ export default function Dashboard() {
                       <span className={`text-xs font-bold uppercase tracking-wider ${isSelected ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground transition-colors'}`}>
                         {index.name}
                       </span>
-                      <span className="text-[10px] font-mono px-1 py-0.2 rounded bg-muted/40 text-muted-foreground/80 border border-border/30">
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted/40 text-muted-foreground/80 border border-border/30">
                         {index.symbol.replace('^', '')}
                       </span>
                     </div>
 
-                    <div className={`h-2 w-2 rounded-full transition-all ${isSelected ? 'bg-primary shadow-[0_0_8px_rgba(99,102,241,0.8)]' : 'bg-muted-foreground/30'}`} />
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-mono uppercase px-1.5 py-0.5 rounded bg-muted/30 text-muted-foreground/70 border border-border/20">
+                        {index.marketState || 'NSE'}
+                      </span>
+                      <div className={`h-2 w-2 rounded-full transition-all ${isSelected ? 'bg-primary shadow-[0_0_8px_rgba(99,102,241,0.8)]' : 'bg-muted-foreground/30'}`} />
+                    </div>
                   </div>
 
-                  <div className="space-y-1">
+                  <div className="space-y-1.5">
                     <div className="text-xl sm:text-2xl font-bold font-mono tracking-tight text-foreground tabular-nums">
                       {index.value > 0 ? index.value.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center justify-between">
                       <div
                         className={`inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-xs font-mono font-medium border ${
                           isPositive
@@ -321,6 +326,9 @@ export default function Dashboard() {
                           {isPositive ? '+' : ''}{index.change.toFixed(2)} ({isPositive ? '+' : ''}{index.changePercent.toFixed(2)}%)
                         </span>
                       </div>
+                      <span className="text-[10px] font-mono text-muted-foreground/60 hidden sm:inline-block">
+                        Benchmark
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -374,14 +382,14 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="p-4 relative min-h-[350px]">
+          <div className="p-4 relative min-h-[440px] flex-1 flex flex-col justify-between">
             {isLoadingChart && (
               <div className="absolute inset-0 bg-background/60 backdrop-blur-xs flex items-center justify-center z-10">
                 <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
                 <span className="text-xs text-muted-foreground font-mono">Streaming benchmark candles...</span>
               </div>
             )}
-            <CandlestickChart data={indexChart || []} height={360} ticker={selectedIndex.name} />
+            <CandlestickChart data={indexChart || []} height={430} ticker={selectedIndex.name} />
           </div>
         </div>
 
@@ -449,34 +457,48 @@ export default function Dashboard() {
                     className="group relative flex flex-col p-3.5 hover:bg-primary/[0.03] transition-all duration-150 cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <span className="flex h-5 w-5 items-center justify-center rounded text-[10px] font-mono font-bold bg-muted/60 text-muted-foreground border border-border/40 shrink-0">
                           #{idx + 1}
                         </span>
-                        <span className="font-mono font-bold text-sm text-foreground group-hover:text-primary transition-colors">
-                          {pick.ticker.replace('.NS', '')}
-                        </span>
-                        {pick.sector && (
-                          <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded bg-muted/40 border border-border/30 max-w-[110px] truncate hidden sm:inline-block">
-                            {pick.sector}
-                          </span>
-                        )}
-                        <Badge 
-                          variant={decisionBadge.variant} 
-                          size="sm" 
-                          dot={decisionBadge.dot} 
-                          pulse={decisionBadge.pulse}
-                        >
-                          {decisionBadge.label}
-                        </Badge>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-sm text-foreground group-hover:text-primary transition-colors">
+                              {pick.ticker.replace('.NS', '')}
+                            </span>
+                            {pick.sector && (
+                              <span className="text-[10px] text-muted-foreground px-1.5 py-0.2 rounded bg-muted/40 border border-border/30 max-w-[110px] truncate hidden sm:inline-block">
+                                {pick.sector}
+                              </span>
+                            )}
+                            <Badge 
+                              variant={decisionBadge.variant} 
+                              size="sm" 
+                              dot={decisionBadge.dot} 
+                              pulse={decisionBadge.pulse}
+                            >
+                              {decisionBadge.label}
+                            </Badge>
+                          </div>
+                          {pick.name && (
+                            <span className="text-[11px] text-muted-foreground truncate max-w-[160px] sm:max-w-[240px] block font-sans">
+                              {pick.name}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5">
-                        {pick.target > 0 && (
-                          <span className="text-xs font-mono text-muted-foreground tabular-nums">
-                            Target: <span className="font-semibold text-foreground">₹{pick.target.toFixed(1)}</span>
-                          </span>
-                        )}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right font-mono">
+                          <div className="text-sm font-bold text-foreground tabular-nums">
+                            {pick.price > 0 ? `₹${pick.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+                          </div>
+                          {pick.target > 0 && (
+                            <span className="text-[10px] text-muted-foreground tabular-nums block">
+                              Target: <span className="font-semibold text-emerald-400">₹{pick.target.toFixed(1)}</span>
+                            </span>
+                          )}
+                        </div>
                         <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-primary group-hover:translate-x-0.5 transition-all" />
                       </div>
                     </div>
@@ -575,27 +597,41 @@ export default function Dashboard() {
                     className="group relative flex flex-col p-3.5 hover:bg-amber-500/[0.04] transition-all duration-150 cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
                         <span className="flex h-5 w-5 items-center justify-center rounded text-[10px] font-mono font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 shrink-0">
                           #{idx + 1}
                         </span>
-                        <span className="font-mono font-bold text-sm text-foreground group-hover:text-amber-400 transition-colors">
-                          {stock.ticker.replace('.NS', '')}
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 font-semibold border border-amber-500/30 font-mono">
-                          {stock.beta ? `${stock.beta}x Beta` : 'High Beta'}
-                        </span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-medium border border-emerald-500/20 font-mono">
-                          1:{rrRatio} R:R
-                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold text-sm text-foreground group-hover:text-amber-400 transition-colors">
+                              {stock.ticker.replace('.NS', '')}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-400 font-semibold border border-amber-500/30 font-mono">
+                              {stock.beta ? `${stock.beta}x Beta` : 'High Beta'}
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 font-medium border border-emerald-500/20 font-mono">
+                              1:{rrRatio} R:R
+                            </span>
+                          </div>
+                          {stock.name && (
+                            <span className="text-[11px] text-muted-foreground truncate max-w-[160px] sm:max-w-[240px] block font-sans">
+                              {stock.name}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-1.5">
-                        {stock.targetPrice > 0 && (
-                          <span className="text-xs font-mono font-semibold text-foreground tabular-nums">
-                            ₹{stock.targetPrice.toFixed(1)}
-                          </span>
-                        )}
+                      <div className="flex items-center gap-3 shrink-0">
+                        <div className="text-right font-mono">
+                          <div className="text-sm font-bold text-foreground tabular-nums">
+                            {stock.price > 0 ? `₹${stock.price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
+                          </div>
+                          {stock.targetPrice > 0 && (
+                            <span className="text-[10px] text-muted-foreground tabular-nums block">
+                              Target: <span className="font-semibold text-amber-400">₹{stock.targetPrice.toFixed(1)}</span>
+                            </span>
+                          )}
+                        </div>
                         <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-amber-400 group-hover:translate-x-0.5 transition-all" />
                       </div>
                     </div>

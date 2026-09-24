@@ -8,7 +8,9 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspaces --if-present",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run generate --workspace=packages/db && npm run build --workspace=packages/db && npm run build --workspace=apps/api",
+    "build:all": "npm run build --workspaces --if-present",
+    "start": "node apps/api/dist/main.js",
     "lint": "npm run lint --workspaces --if-present",
     "mcp:start": "npm run start --prefix apps/mcp-server",
     "mcp:start:prod": "npm run start:prod --prefix apps/mcp-server",
