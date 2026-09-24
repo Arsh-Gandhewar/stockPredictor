@@ -146,7 +146,7 @@ export default function Dashboard() {
   }, [currentMovers]);
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-500 max-w-7xl mx-auto">
+    <div className="space-y-6 pb-12 animate-in fade-in duration-500 w-full max-w-[2100px] mx-auto">
       {/* ── 1. Top Institutional Market Status Bar ── */}
       <div className="relative overflow-hidden rounded-xl border border-border/50 bg-card/60 backdrop-blur-md p-4 sm:p-5 shadow-sm">
         {/* Subtle decorative mesh gradient */}
@@ -331,9 +331,9 @@ export default function Dashboard() {
       </div>
 
       {/* ── 3. Row 1: Candlestick Chart & Benchmark + Top Monitored (Low Risk / Safe Profit) ── */}
-      <div className="grid gap-6 lg:grid-cols-7">
+      <div className="grid gap-6 xl:grid-cols-12">
         {/* Sleek Candlestick Chart Container */}
-        <div className="lg:col-span-4 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm overflow-hidden flex flex-col justify-between">
+        <div className="xl:col-span-7 2xl:col-span-8 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm overflow-hidden flex flex-col justify-between">
           <div className="px-5 py-4 border-b border-border/40 bg-gradient-to-r from-card/80 via-card/50 to-card/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
@@ -374,19 +374,19 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="p-4 relative min-h-[300px]">
+          <div className="p-4 relative min-h-[350px]">
             {isLoadingChart && (
               <div className="absolute inset-0 bg-background/60 backdrop-blur-xs flex items-center justify-center z-10">
                 <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
                 <span className="text-xs text-muted-foreground font-mono">Streaming benchmark candles...</span>
               </div>
             )}
-            <CandlestickChart data={indexChart || []} height={285} ticker={selectedIndex.name} />
+            <CandlestickChart data={indexChart || []} height={360} ticker={selectedIndex.name} />
           </div>
         </div>
 
         {/* ── 4. Top Monitored Stocks (Low Risk / Safe Profit) ── */}
-        <div className="lg:col-span-3 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm flex flex-col overflow-hidden">
+        <div className="xl:col-span-5 2xl:col-span-4 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm flex flex-col overflow-hidden">
           <div className="px-5 py-4 border-b border-border/40 bg-gradient-to-r from-card/80 via-card/50 to-card/80 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
@@ -428,7 +428,7 @@ export default function Dashboard() {
                 </Button>
               </div>
             ) : (
-              topPicks.slice(0, 5).map((pick: TopPickItem, idx: number) => {
+              topPicks.slice(0, 5).map((pick, idx: number) => {
                 const prob5d = pick.calibrated5dProb ?? pick.confidenceScore ?? null;
                 const expRet = pick.expectedReturn ?? (pick.changePercent !== 0 && pick.changePercent !== null ? pick.changePercent : null);
                 const decision = pick.recommendation || 'BUY';
@@ -509,9 +509,9 @@ export default function Dashboard() {
       </div>
 
       {/* ── 5. Row 2: High Beta Alpha Setups + Market Movers ── */}
-      <div className="grid gap-6 lg:grid-cols-7">
+      <div className="grid gap-6 xl:grid-cols-12">
         {/* High Beta Alpha Setups */}
-        <div className="lg:col-span-3 rounded-xl border border-amber-500/25 bg-card/60 backdrop-blur-md shadow-sm relative overflow-hidden flex flex-col justify-between">
+        <div className="xl:col-span-5 2xl:col-span-5 rounded-xl border border-amber-500/25 bg-card/60 backdrop-blur-md shadow-sm relative overflow-hidden flex flex-col justify-between">
           {/* Subtle amber ambient glow */}
           <div className="absolute -top-14 -right-14 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
 
@@ -627,7 +627,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── 6. Market Movers (Gainers, Losers, Most Active) ── */}
-        <div className="lg:col-span-4 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm flex flex-col justify-between overflow-hidden">
+        <div className="xl:col-span-7 2xl:col-span-7 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm flex flex-col justify-between overflow-hidden">
           <div className="px-5 py-4 border-b border-border/40 bg-gradient-to-r from-card/80 via-card/50 to-card/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
