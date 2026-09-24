@@ -13,12 +13,14 @@ import {
   Compass,
   Star,
   Activity,
-  Cpu
+  Cpu,
+  Search
 } from 'lucide-react';
 
 export const routes = [
   { label: 'Dashboard', icon: LayoutDashboard, href: '/' },
   { label: 'Discover', icon: Compass, href: '/discover' },
+  { label: 'Deep Audit', icon: Search, href: '/audit' },
   { label: 'Markets', icon: LineChart, href: '/markets' },
   { label: 'Model Performance', icon: Cpu, href: '/model-performance' },
   { label: 'Watchlist', icon: Star, href: '/watchlist' },

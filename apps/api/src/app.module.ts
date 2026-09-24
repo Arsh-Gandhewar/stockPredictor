@@ -13,6 +13,7 @@ import { WatchlistModule } from './modules/watchlist/watchlist.module';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { HealthModule } from './modules/health/health.module';
 import { PredictionModule } from './modules/prediction/prediction.module';
+import { DeepAuditModule } from './modules/deep-audit/deep-audit.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { PredictionModule } from './modules/prediction/prediction.module';
     AlertsModule,
     HealthModule,
     PredictionModule,
+    DeepAuditModule,
   ],
   controllers: [AppController],
   providers: [

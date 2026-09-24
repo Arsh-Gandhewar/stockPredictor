@@ -369,3 +369,99 @@ export async function fetchModelStatus(): Promise<ModelStatusInfo> {
 export async function fetchModelPerformance(): Promise<ModelPerformanceInfo> {
   return fetcher<ModelPerformanceInfo>('/prediction/model-performance');
 }
+
+// ── Deep Audit Types ───────────────────────────────────────────────────────────
+
+export interface ResolvedTicker {
+  ticker: string;
+  name: string;
+  exchange: 'NSE' | 'BSE';
+  sector: string;
+  industry: string;
+  marketCap: number | null;
+  isInUniverse: boolean;
+}
+
+export interface DeepAuditReport {
+  ticker: string;
+  resolvedInfo: ResolvedTicker;
+  auditTimestamp: string;
+  historyAudit: {
+    dataYears: number;
+    totalTradingDays: number;
+    cagr: number;
+    totalReturn: number;
+    maxDrawdown: number;
+    maxDrawdownDate: string;
+    allTimeHigh: { price: number; date: string };
+    allTimeLow: { price: number; date: string };
+    current52wHigh: number;
+    current52wLow: number;
+    annualizedVolatility: number;
+    sharpeRatio: number;
+    monthlyReturns: { month: string; return: number }[];
+    yearlyReturns: { year: number; return: number }[];
+  };
+  patterns: {
+    trend: string;
+    trendStrength: number;
+    supportLevels: number[];
+    resistanceLevels: number[];
+    candlestickPatterns: { name: string; type: string; date: string; reliability: string }[];
+    movingAverageAlignment: string;
+    goldenCross: boolean;
+    deathCross: boolean;
+    rsiDivergence: string;
+  };
+  buySellAnalysis: {
+    volumeTrend: string;
+    volumeTrendStrength: number;
+    avgVolumeChange30d: number;
+    priceVolumeCorrelation: number;
+    deliveryPercentTrend: string | null;
+    institutionalSignal: string;
+    smartMoneyIndicator: number;
+    recentLargeVolumeDays: { date: string; volume: number; priceChange: number; signal: string }[];
+  };
+  newsAnalysis: {
+    overallSentiment: string;
+    sentimentScore: number;
+    stockNews: { title: string; sentiment: string; date: string; impact: string }[];
+    sectorNews: { title: string; sentiment: string; date: string }[];
+    sectorOutlook: string;
+    keyRisks: string[];
+    keyCatalysts: string[];
+  };
+  quantPrediction: {
+    available: boolean;
+    horizons: {
+      '1d'?: { probability: number; calibratedProbability: number; expectedReturn: number };
+      '5d'?: { probability: number; calibratedProbability: number; expectedReturn: number };
+      '20d'?: { probability: number; calibratedProbability: number; expectedReturn: number };
+    };
+    decision: string;
+    signalQuality: string;
+    risk: { stopLoss: number; targetPrice: number; rewardRiskRatio: number };
+  } | null;
+  verdict: {
+    recommendation: string;
+    confidence: number;
+    reasoning: string;
+    rightTimeToBuy: boolean;
+    entryZone: { low: number; high: number } | null;
+    targetPrice: number | null;
+    stopLoss: number | null;
+    timeHorizon: string;
+    bullishFactors: string[];
+    bearishFactors: string[];
+    riskLevel: string;
+  };
+}
+
+// ── Deep Audit API Methods ─────────────────────────────────────────────────────
+
+export const searchUniversalStocks = (query: string): Promise<ResolvedTicker[]> =>
+  fetcher(`/deep-audit/search?q=${encodeURIComponent(query)}`);
+
+export const fetchDeepAudit = (ticker: string): Promise<DeepAuditReport> =>
+  fetcher(`/deep-audit/${encodeURIComponent(ticker)}`);

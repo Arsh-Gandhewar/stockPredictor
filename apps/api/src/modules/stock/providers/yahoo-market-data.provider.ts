@@ -13,6 +13,7 @@ import {
   isNseHoliday,
   classifyTradingSession,
 } from '../data/nse-holidays.data';
+import { ResolvedTicker } from './resolved-ticker.interface';
 
 export const VALID_CHART_RANGES = [
   '1d',
@@ -411,6 +412,129 @@ export class YahooMarketDataProvider implements MarketDataProvider {
       return { status: 'DOWN', latencyMs };
     } catch (err: any) {
       return { status: 'DOWN', latencyMs: Date.now() - t0 };
+    }
+  }
+
+  async resolveAnyTicker(query: string): Promise<ResolvedTicker | null> {
+    try {
+      const q = query.trim().toUpperCase();
+      const tickerNs = q.endsWith('.NS') ? q : `${q}.NS`;
+      
+      const inUniverse = this.universe.find((s) => s.ticker === tickerNs);
+      if (inUniverse) {
+        return {
+          ticker: inUniverse.ticker,
+          name: inUniverse.name,
+          exchange: 'NSE',
+          sector: inUniverse.sector || 'Unknown',
+          industry: inUniverse.industry || 'Unknown',
+          marketCap: null,
+          isInUniverse: true
+        };
+      }
+
+      const searchRes = await this.yf.search(q);
+      const match = searchRes.quotes.find((quote: any) => 
+        (quote.quoteType === 'EQUITY' || quote.isYahooFinance) && 
+        (quote.symbol.endsWith('.NS') || quote.symbol.endsWith('.BO'))
+      );
+
+      if (!match) return null;
+
+      const profile = await this.yf.quoteSummary(match.symbol, { modules: ['summaryProfile', 'price'] });
+      
+      return {
+        ticker: match.symbol,
+        name: profile.price?.shortName || profile.price?.longName || match.shortname || match.longname || match.symbol,
+        exchange: match.symbol.endsWith('.BO') ? 'BSE' : 'NSE',
+        sector: profile.summaryProfile?.sector || 'Unknown',
+        industry: profile.summaryProfile?.industry || 'Unknown',
+        marketCap: profile.price?.marketCap || null,
+        isInUniverse: false
+      };
+    } catch (err: any) {
+      this.logger.warn(`resolveAnyTicker error for ${query}: ${err.message}`);
+      return null;
+    }
+  }
+
+  async getExtendedHistoricalCandles(ticker: string, years: number = 5): Promise<any[]> {
+    try {
+      const startDate = new Date(Date.now() - years * 365 * 24 * 60 * 60 * 1000);
+      const chartResult = await this.yf.chart(ticker, {
+        period1: startDate,
+        interval: '1d',
+      });
+
+      if (!chartResult || !chartResult.quotes || chartResult.quotes.length === 0) {
+        return [];
+      }
+
+      const seenTimes = new Set<string>();
+      return chartResult.quotes
+        .filter((q: any) => q && q.date && q.open != null && q.close != null && q.high != null && q.low != null)
+        .map((q: any) => ({
+          time: new Date(q.date).toISOString().split('T')[0],
+          open: parseFloat(q.open.toFixed(2)),
+          high: parseFloat(q.high.toFixed(2)),
+          low: parseFloat(q.low.toFixed(2)),
+          close: parseFloat(q.close.toFixed(2)),
+          volume: q.volume || 0,
+        }))
+        .filter((c: any) => {
+          if (seenTimes.has(c.time)) return false;
+          seenTimes.add(c.time);
+          return true;
+        })
+        .sort((a: any, b: any) => new Date(a.time).getTime() - new Date(b.time).getTime());
+    } catch (err: any) {
+      this.logger.warn(`Extended historical fetch error for ${ticker}: ${err.message}`);
+      return [];
+    }
+  }
+
+  async searchUniversalStocks(query: string): Promise<ResolvedTicker[]> {
+    try {
+      const q = query.trim();
+      if (q.length < 2) return [];
+      
+      const qLower = q.toLowerCase();
+      
+      const localMatches = this.universe
+        .filter((s) => s.ticker.toLowerCase().includes(qLower) || s.name.toLowerCase().includes(qLower))
+        .map((s) => ({
+          ticker: s.ticker,
+          name: s.name,
+          exchange: 'NSE' as const,
+          sector: s.sector || 'Unknown',
+          industry: s.industry || 'Unknown',
+          marketCap: null,
+          isInUniverse: true
+        }));
+        
+      const localTickers = new Set(localMatches.map((m) => m.ticker));
+      
+      const searchRes = await this.yf.search(q);
+      const remoteMatches = searchRes.quotes
+        .filter((quote: any) => 
+          (quote.quoteType === 'EQUITY' || quote.isYahooFinance) && 
+          (quote.symbol.endsWith('.NS') || quote.symbol.endsWith('.BO')) &&
+          !localTickers.has(quote.symbol)
+        )
+        .map((quote: any) => ({
+          ticker: quote.symbol,
+          name: quote.shortname || quote.longname || quote.symbol,
+          exchange: quote.symbol.endsWith('.BO') ? 'BSE' as const : 'NSE' as const,
+          sector: 'Unknown',
+          industry: 'Unknown',
+          marketCap: null,
+          isInUniverse: false
+        }));
+        
+      return [...localMatches, ...remoteMatches].slice(0, 20);
+    } catch (err: any) {
+      this.logger.warn(`searchUniversalStocks error for ${query}: ${err.message}`);
+      return [];
     }
   }
 }

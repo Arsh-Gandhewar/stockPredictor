@@ -270,4 +270,174 @@ export class AiService {
       return fallback;
     }
   }
+
+  private get flashModel(): GenerativeModel {
+    return this.genAI.getGenerativeModel({
+      model:
+        this.configService.get<string>('GEMINI_FLASH_MODEL') ||
+        'gemini-1.5-flash',
+      generationConfig: { temperature: 0 },
+    });
+  }
+
+  async analyzeStockNews(
+    ticker: string,
+    companyName: string,
+    sector: string,
+  ): Promise<{
+    overallSentiment: string;
+    sentimentScore: number;
+    stockNews: { title: string; sentiment: string; date: string; impact: string }[];
+    sectorNews: { title: string; sentiment: string; date: string }[];
+    sectorOutlook: string;
+    keyRisks: string[];
+    keyCatalysts: string[];
+  }> {
+    const prompt = `
+      Act as a financial news analyst.
+      Research and provide the latest news about ${companyName} (ticker: ${ticker}) in the ${sector} sector.
+      
+      Return a JSON response with:
+      - overallSentiment (VERY_BULLISH/BULLISH/NEUTRAL/BEARISH/VERY_BEARISH)
+      - sentimentScore (-100 to +100)
+      - stockNews (array of up to 5 recent headlines with sentiment, date estimate, and impact level)
+      - sectorNews (array of up to 3 sector headlines with sentiment, date)
+      - sectorOutlook (1-2 sentence outlook)
+      - keyRisks (array of up to 4 risk factors)
+      - keyCatalysts (array of up to 4 positive catalysts)
+    `;
+
+    const fallback = {
+      overallSentiment: 'NEUTRAL',
+      sentimentScore: 0,
+      stockNews: [],
+      sectorNews: [],
+      sectorOutlook: 'Neutral outlook',
+      keyRisks: [],
+      keyCatalysts: [],
+    };
+
+    try {
+      const result = await this.flashModel.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      return this.cleanAndParseJson<any>(text, fallback);
+    } catch (error) {
+      this.logger.error(`Failed to analyze stock news for ${ticker}`, error);
+      return fallback;
+    }
+  }
+
+  async analyzeSectorOutlook(
+    sector: string,
+    industry: string,
+  ): Promise<{
+    outlook: string;
+    trend: 'IMPROVING' | 'STABLE' | 'DECLINING';
+    keyDrivers: string[];
+  }> {
+    const prompt = `
+      Analyze the current outlook for the ${sector} sector, specifically the ${industry} industry in India.
+      
+      Return a JSON response with:
+      - outlook (string)
+      - trend (IMPROVING | STABLE | DECLINING)
+      - keyDrivers (array of strings)
+    `;
+
+    const fallback = {
+      outlook: 'Neutral outlook',
+      trend: 'STABLE' as const,
+      keyDrivers: [],
+    };
+
+    try {
+      const result = await this.flashModel.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      return this.cleanAndParseJson<any>(text, fallback);
+    } catch (error) {
+      this.logger.error(`Failed to analyze sector outlook for ${sector}`, error);
+      return fallback;
+    }
+  }
+
+  async synthesizeDeepAuditVerdict(inputs: {
+    ticker: string;
+    companyName: string;
+    sector: string;
+    currentPrice: number;
+    historyAudit: any;
+    patterns: any;
+    buySellAnalysis: any;
+    newsAnalysis: any;
+    quantPrediction: any | null;
+  }): Promise<{
+    recommendation: string;
+    confidence: number;
+    reasoning: string;
+    rightTimeToBuy: boolean;
+    entryZone: { low: number; high: number } | null;
+    targetPrice: number | null;
+    stopLoss: number | null;
+    timeHorizon: string;
+    bullishFactors: string[];
+    bearishFactors: string[];
+    riskLevel: string;
+  }> {
+    const prompt = `
+      Based on all the technical, fundamental, pattern, volume, news, and quantitative data provided, determine if NOW is the right time to buy this stock.
+
+      Data:
+      ${JSON.stringify(inputs, null, 2)}
+
+      Return a JSON response with:
+      - recommendation (STRONG_BUY/BUY/ACCUMULATE/HOLD/REDUCE/SELL/STRONG_SELL/AVOID)
+      - confidence (0-100)
+      - reasoning (3-5 sentences explaining the verdict)
+      - rightTimeToBuy (boolean)
+      - entryZone (object with low and high or null)
+      - targetPrice (number or null)
+      - stopLoss (number or null)
+      - timeHorizon (Short-term/Medium-term/Long-term)
+      - bullishFactors (array of 3-5 factors)
+      - bearishFactors (array of 3-5 factors)
+      - riskLevel (LOW/MODERATE/HIGH/VERY_HIGH)
+    `;
+
+    const fallback = {
+      recommendation: 'HOLD',
+      confidence: 50,
+      reasoning: 'Insufficient data to determine a definitive verdict.',
+      rightTimeToBuy: false,
+      entryZone: null,
+      targetPrice: null,
+      stopLoss: null,
+      timeHorizon: 'Medium-term',
+      bullishFactors: [],
+      bearishFactors: [],
+      riskLevel: 'MODERATE',
+    };
+
+    try {
+      const result = await this.model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      const parsed = this.cleanAndParseJson<any>(text, fallback);
+
+      if (parsed && inputs.quantPrediction) {
+        parsed.confidence =
+          (inputs.quantPrediction.horizons?.['5d']?.calibratedProbability * 100) || parsed.confidence;
+        parsed.targetPrice =
+          inputs.quantPrediction.risk?.targetPrice || parsed.targetPrice;
+        parsed.stopLoss =
+          inputs.quantPrediction.risk?.stopLoss || parsed.stopLoss;
+      }
+
+      return parsed || fallback;
+    } catch (error) {
+      this.logger.error(`Failed to synthesize deep audit verdict for ${inputs.ticker}`, error);
+      return fallback;
+    }
+  }
 }
