@@ -2,14 +2,16 @@
   "name": "db",
   "version": "1.0.0",
   "description": "",
-  "main": "index.ts",
+  "main": "dist/index.js",
   "types": "index.ts",
   "scripts": {
-    "generate": "prisma generate"
+    "generate": "prisma generate",
+    "build": "npx tsc --module commonjs --moduleResolution node --target ES2023 --esModuleInterop --outDir dist --declaration index.ts --skipLibCheck"
   },
   "dependencies": {
     "@prisma/client": "^6.0.0",
-    "prisma": "^6.0.0"
+    "prisma": "^6.0.0",
+    "dotenv": "^16.0.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
