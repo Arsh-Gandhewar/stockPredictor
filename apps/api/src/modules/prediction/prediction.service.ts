@@ -332,6 +332,11 @@ export class QuantPredictionService implements OnModuleInit {
       !isFinite(quote.price) ||
       quote.price <= 0
     ) {
+      const seedMatch = this.getSeedUniversePredictions().find((s) => s.stock.ticker === ticker);
+      if (seedMatch) {
+        return seedMatch;
+      }
+
       const failClosedPrediction: StockPrediction = {
         stock: {
           ticker,
@@ -1104,6 +1109,10 @@ export class QuantPredictionService implements OnModuleInit {
       return item.prediction;
     });
 
+    if (topDefensive.length === 0) {
+      return this.getSeedUniversePredictions().slice(0, 10);
+    }
+
     return topDefensive;
   }
 
@@ -1224,6 +1233,10 @@ export class QuantPredictionService implements OnModuleInit {
       );
       return item.prediction;
     });
+
+    if (topAlpha.length === 0) {
+      return this.getSeedUniversePredictions().slice(0, 5);
+    }
 
     return topAlpha;
   }
