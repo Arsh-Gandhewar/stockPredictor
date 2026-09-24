@@ -111,6 +111,7 @@ export class QuantPredictionService implements OnModuleInit {
       'QuantPredictionService v5.0 initializing ONNX models & statistical governance...',
     );
     this.refreshArtifactGovernance();
+    this.lastValidUniverseSnapshot = this.getSeedUniversePredictions();
 
     // Warm up universe predictions in background so initial web requests respond instantaneously
     setTimeout(() => {
@@ -921,109 +922,72 @@ export class QuantPredictionService implements OnModuleInit {
       return cached.data as unknown as StockPrediction[];
     }
 
-    // Circuit breaker: If repeated upstream failures, back off before retry
-    const now = Date.now();
-    if (
-      this.universeFailureCount >= 3 &&
-      now - this.lastUniverseFailureTime < 30_000
-    ) {
-      if (
-        this.lastValidUniverseSnapshot &&
-        this.lastValidUniverseSnapshot.length > 0
-      ) {
-        return this.lastValidUniverseSnapshot.map((p) => ({
-          ...p,
-          isStale: true,
-        }));
-      }
-      return this.getSeedUniversePredictions();
-    }
+    // Trigger async background refresh if not already executing
+    if (!this.inFlightUniversePromise) {
+      this.inFlightUniversePromise = (async () => {
+        try {
+          // Pre-warm benchmark chart into memory
+          await this.stockService.getChartData('^NSEI', '6mo').catch(() => []);
 
-    // Share active in-flight evaluation across concurrent requests
-    if (this.inFlightUniversePromise) {
-      return this.inFlightUniversePromise;
-    }
+          // Optimize for free-tier gateway timeouts (max 15 liquid stocks per run)
+          const fullUniverse = this.universeRegistry.getUniverseAt(new Date());
+          const scanList = fullUniverse.slice(0, 15);
 
-    this.inFlightUniversePromise = (async () => {
-      try {
-        // Pre-warm benchmark chart into memory
-        await this.stockService.getChartData('^NSEI', '6mo').catch(() => []);
-
-        // Optimize for free-tier gateway timeouts (max 15 liquid stocks per run)
-        const fullUniverse = this.universeRegistry.getUniverseAt(new Date());
-        const scanList = fullUniverse.slice(0, 15);
-
-        const predictions: StockPrediction[] = [];
-        const batchSize = 5;
-        for (let i = 0; i < scanList.length; i += batchSize) {
-          const batch = scanList.slice(i, i + batchSize);
-          const results = await Promise.allSettled(
-            batch.map((ticker) => this.getPrediction(ticker)),
-          );
-          for (const r of results) {
-            if (r.status === 'fulfilled' && r.value) {
-              predictions.push(r.value);
+          const predictions: StockPrediction[] = [];
+          const batchSize = 5;
+          for (let i = 0; i < scanList.length; i += batchSize) {
+            const batch = scanList.slice(i, i + batchSize);
+            const results = await Promise.allSettled(
+              batch.map((ticker) => this.getPrediction(ticker)),
+            );
+            for (const r of results) {
+              if (r.status === 'fulfilled' && r.value) {
+                predictions.push(r.value);
+              }
             }
           }
-        }
 
-        predictions.sort(
-          (a, b) =>
-            (b.prediction['20d'].calibratedProbability ?? -1) -
-            (a.prediction['20d'].calibratedProbability ?? -1),
-        );
+          if (predictions.length > 0) {
+            predictions.sort(
+              (a, b) =>
+                (b.prediction['20d'].calibratedProbability ?? -1) -
+                (a.prediction['20d'].calibratedProbability ?? -1),
+            );
 
-        predictions.forEach((p, idx) => {
-          p.ranking = {
-            rank: idx + 1,
-            percentile: parseFloat(
-              (100 - (idx / predictions.length) * 100).toFixed(1),
-            ),
-            universeSize: predictions.length,
-          };
-        });
+            predictions.forEach((p, idx) => {
+              p.ranking = {
+                rank: idx + 1,
+                percentile: parseFloat(
+                  (100 - (idx / predictions.length) * 100).toFixed(1),
+                ),
+                universeSize: predictions.length,
+              };
+            });
 
-        if (predictions.length > 0) {
-          this.universeFailureCount = 0;
-          this.lastValidUniverseSnapshot = predictions;
-          this.cache.set(universeCacheKey, {
-            data: predictions as unknown as StockPrediction,
-            expiresAt: Date.now() + 180_000, // 3 minutes TTL
-          });
-          return predictions;
-        } else {
+            this.universeFailureCount = 0;
+            this.lastValidUniverseSnapshot = predictions;
+            this.cache.set(universeCacheKey, {
+              data: predictions as unknown as StockPrediction,
+              expiresAt: Date.now() + 180_000, // 3 minutes TTL
+            });
+            return predictions;
+          }
+        } catch (err: any) {
+          this.logger.warn(`Universe scan encountered issue: ${err.message}`);
           this.universeFailureCount++;
           this.lastUniverseFailureTime = Date.now();
-          if (
-            this.lastValidUniverseSnapshot &&
-            this.lastValidUniverseSnapshot.length > 0
-          ) {
-            return this.lastValidUniverseSnapshot.map((p) => ({
-              ...p,
-              isStale: true,
-            }));
-          }
-          return this.getSeedUniversePredictions();
+        } finally {
+          this.inFlightUniversePromise = null;
         }
-      } catch (err) {
-        this.universeFailureCount++;
-        this.lastUniverseFailureTime = Date.now();
-        if (
-          this.lastValidUniverseSnapshot &&
-          this.lastValidUniverseSnapshot.length > 0
-        ) {
-          return this.lastValidUniverseSnapshot.map((p) => ({
-            ...p,
-            isStale: true,
-          }));
-        }
-        return this.getSeedUniversePredictions();
-      } finally {
-        this.inFlightUniversePromise = null;
-      }
-    })();
+        return this.lastValidUniverseSnapshot || this.getSeedUniversePredictions();
+      })();
+    }
 
-    return this.inFlightUniversePromise;
+    // Zero-Wait Guarantee: Return immediate snapshot so HTTP calls respond in <50ms without gateway timeout
+    if (this.lastValidUniverseSnapshot && this.lastValidUniverseSnapshot.length > 0) {
+      return this.lastValidUniverseSnapshot;
+    }
+    return this.getSeedUniversePredictions();
   }
 
   async getTopRankedStocks(
