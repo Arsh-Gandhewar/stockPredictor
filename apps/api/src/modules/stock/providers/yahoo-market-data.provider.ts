@@ -579,19 +579,10 @@ export class YahooMarketDataProvider implements MarketDataProvider {
   }
 
   async getExtendedHistoricalCandles(ticker: string, years: number = 5): Promise<any[]> {
-    try {
-      const startDate = new Date(Date.now() - years * 365 * 24 * 60 * 60 * 1000);
-      const chartResult = await this.yf.chart(ticker, {
-        period1: startDate,
-        interval: '1d',
-      });
-
-      if (!chartResult || !chartResult.quotes || chartResult.quotes.length === 0) {
-        return [];
-      }
-
+    const parseQuotes = (quotes: any[]) => {
+      if (!quotes || quotes.length === 0) return [];
       const seenTimes = new Set<string>();
-      return chartResult.quotes
+      return quotes
         .filter((q: any) => q && q.date && q.open != null && q.close != null && q.high != null && q.low != null)
         .map((q: any) => ({
           time: new Date(q.date).toISOString().split('T')[0],
@@ -607,10 +598,41 @@ export class YahooMarketDataProvider implements MarketDataProvider {
           return true;
         })
         .sort((a: any, b: any) => new Date(a.time).getTime() - new Date(b.time).getTime());
-    } catch (err: any) {
-      this.logger.warn(`Extended historical fetch error for ${ticker}: ${err.message}`);
-      return [];
+    };
+
+    // Try target years (e.g. 5y), then fall back to 2y, then 1y
+    const yearAttempts = Array.from(new Set([years, 2, 1].filter(y => y > 0)));
+    const now = new Date();
+
+    for (const y of yearAttempts) {
+      try {
+        const startDate = new Date(Date.now() - y * 365 * 24 * 60 * 60 * 1000);
+        const chartResult = await this.yf.chart(ticker, {
+          period1: startDate,
+          period2: now,
+          interval: '1d',
+        });
+
+        if (chartResult?.quotes && chartResult.quotes.length >= 20) {
+          const parsed = parseQuotes(chartResult.quotes);
+          if (parsed.length >= 20) return parsed;
+        }
+      } catch (err: any) {
+        this.logger.warn(`Chart fetch ${y}y for ${ticker} failed: ${err.message}, trying shorter range`);
+      }
     }
+
+    // Final fallback to 1-year historical chart endpoint
+    try {
+      const fallbackCandles = await this.getHistoricalCandles(ticker, '1y');
+      if (fallbackCandles && fallbackCandles.length > 0) {
+        return parseQuotes(fallbackCandles);
+      }
+    } catch (e: any) {
+      this.logger.warn(`Final historical fallback for ${ticker} failed: ${e.message}`);
+    }
+
+    return [];
   }
 
   async searchUniversalStocks(query: string): Promise<ResolvedTicker[]> {

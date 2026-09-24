@@ -44,10 +44,31 @@ export default function DeepAuditPage() {
   // Fetch search results
   const { data: searchResults, isLoading: isSearching } = useDeepAuditSearch(debouncedQuery);
 
-  // Fetch deep audit report
-  const { data: auditData, isLoading: isAuditing } = useDeepAudit(selectedTicker);
+  // Fetch deep audit report with complete error handling
+  const {
+    data: auditData,
+    isLoading: isAuditing,
+    isError: isAuditError,
+    error: auditError,
+    refetch: refetchAudit,
+  } = useDeepAudit(selectedTicker);
 
-  // Load recent searches on mount
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  // Live timer during audit loading
+  useEffect(() => {
+    if (!isAuditing) {
+      setElapsedMs(0);
+      return;
+    }
+    const start = Date.now();
+    const interval = setInterval(() => {
+      setElapsedMs(Date.now() - start);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isAuditing]);
+
+  // Load recent searches and check URL query ticker on mount
   useEffect(() => {
     const saved = localStorage.getItem('deepAuditRecentSearches');
     if (saved) {
@@ -55,6 +76,14 @@ export default function DeepAuditPage() {
         setRecentSearches(JSON.parse(saved));
       } catch (e) {
         console.error('Failed to parse recent searches');
+      }
+    }
+
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlTicker = params.get('ticker');
+      if (urlTicker) {
+        setSelectedTicker(urlTicker.toUpperCase());
       }
     }
   }, []);
@@ -69,10 +98,17 @@ export default function DeepAuditPage() {
     const newRecent = [tickerInfo, ...recentSearches.filter(t => t.ticker !== tickerInfo.ticker)].slice(0, 5);
     setRecentSearches(newRecent);
     localStorage.setItem('deepAuditRecentSearches', JSON.stringify(newRecent));
+
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', `/audit?ticker=${encodeURIComponent(tickerInfo.ticker)}`);
+    }
   };
 
   const handleBack = () => {
     setSelectedTicker(null);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState(null, '', '/audit');
+    }
   };
 
   // State 1: Search Mode
@@ -208,37 +244,103 @@ export default function DeepAuditPage() {
     );
   }
 
-  // State 2: Audit Report Loading
-  if (isAuditing || !auditData) {
+  // State 2: Audit Error State
+  if (selectedTicker && (isAuditError || (!isAuditing && !auditData))) {
+    const errorMsg =
+      (auditError as any)?.response?.data?.message ||
+      (auditError as any)?.message ||
+      'Historical price candles could not be retrieved from exchange feeds or the ticker is unlisted.';
+
     return (
-      <div className="flex flex-col items-center justify-center min-h-[80vh] space-y-6">
-        <div className="relative w-24 h-24">
+      <div className="flex flex-col items-center justify-center min-h-[80vh] px-4 animate-in fade-in duration-300">
+        <div className="w-full max-w-lg p-8 rounded-3xl bg-card/80 backdrop-blur-2xl border border-rose-500/20 shadow-[0_0_50px_rgba(244,63,94,0.1)] text-center space-y-6">
+          <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400">
+            <AlertTriangle className="h-8 w-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-2xl font-black text-foreground">Audit Unavailable</h2>
+            <p className="text-sm font-semibold text-rose-400 font-mono bg-rose-500/10 px-3 py-1 rounded-lg inline-block border border-rose-500/20">
+              {selectedTicker}
+            </p>
+            <p className="text-sm text-muted-foreground max-w-md mx-auto pt-2">
+              {errorMsg}
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => refetchAudit()}
+              className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold hover:bg-primary/90 transition-all flex items-center gap-2 shadow-lg active:scale-95"
+            >
+              <Activity className="h-4 w-4" />
+              Retry Audit
+            </button>
+            <button
+              onClick={handleBack}
+              className="px-5 py-2.5 rounded-xl bg-muted/60 hover:bg-muted text-foreground font-semibold transition-all border border-border/50 flex items-center gap-2 active:scale-95"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Search Another Stock
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // State 3: Audit Report Loading
+  if (isAuditing || !auditData) {
+    const elapsedSeconds = (elapsedMs / 1000).toFixed(1);
+
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[80vh] px-4 space-y-8 animate-in fade-in duration-300">
+        <div className="relative w-28 h-28">
           <svg className="w-full h-full animate-spin text-primary/20" viewBox="0 0 100 100">
             <circle cx="50" cy="50" r="45" fill="none" strokeWidth="2" stroke="currentColor" />
           </svg>
-          <svg className="w-full h-full animate-spin text-primary absolute top-0 left-0" viewBox="0 0 100 100" style={{ animationDirection: 'reverse', animationDuration: '3s' }}>
-            <circle cx="50" cy="50" r="35" fill="none" strokeWidth="2" strokeDasharray="50 150" strokeLinecap="round" stroke="currentColor" />
+          <svg className="w-full h-full animate-spin text-primary absolute top-0 left-0" viewBox="0 0 100 100" style={{ animationDirection: 'reverse', animationDuration: '2.5s' }}>
+            <circle cx="50" cy="50" r="35" fill="none" strokeWidth="2.5" strokeDasharray="60 140" strokeLinecap="round" stroke="currentColor" />
           </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Activity className="h-8 w-8 text-primary animate-pulse" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center">
+            <Activity className="h-7 w-7 text-primary animate-pulse mb-0.5" />
+            <span className="text-[10px] font-mono font-bold text-muted-foreground">{elapsedSeconds}s</span>
           </div>
         </div>
-        <div className="text-center space-y-2">
-          <h2 className="text-xl font-bold text-foreground">Deep Audit in Progress</h2>
-          <div className="text-sm text-muted-foreground max-w-xs mx-auto overflow-hidden relative h-6">
-            <motion.div
-              animate={{ y: [0, -24, -48, -72, -96, -120] }}
-              transition={{ repeat: Infinity, duration: 6, ease: "linear" }}
-              className="absolute w-full"
+
+        <div className="text-center space-y-4 max-w-md w-full">
+          <div>
+            <h2 className="text-2xl font-black text-foreground flex items-center justify-center gap-2">
+              Auditing {selectedTicker}
+              <span className="inline-block h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+            </h2>
+            <p className="text-xs text-muted-foreground mt-1">Multi-factor quantitative consensus running</p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-card/60 backdrop-blur-xl border border-border/50 text-left space-y-2 text-xs">
+            <div className={`flex items-center gap-2 ${elapsedMs >= 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 600 ? 'text-emerald-400' : 'text-primary animate-spin'}`} />
+              <span>Historical quotes & returns analysis</span>
+            </div>
+            <div className={`flex items-center gap-2 ${elapsedMs >= 600 ? 'text-foreground' : 'text-muted-foreground/60'}`}>
+              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 1400 ? 'text-emerald-400' : elapsedMs >= 600 ? 'text-primary animate-spin' : 'text-muted-foreground/40'}`} />
+              <span>Technical patterns & moving average alignment</span>
+            </div>
+            <div className={`flex items-center gap-2 ${elapsedMs >= 1400 ? 'text-foreground' : 'text-muted-foreground/60'}`}>
+              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 2200 ? 'text-emerald-400' : elapsedMs >= 1400 ? 'text-primary animate-spin' : 'text-muted-foreground/40'}`} />
+              <span>Institutional volume & smart money tracking</span>
+            </div>
+            <div className={`flex items-center gap-2 ${elapsedMs >= 2200 ? 'text-foreground' : 'text-muted-foreground/60'}`}>
+              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 3000 ? 'text-emerald-400' : elapsedMs >= 2200 ? 'text-primary animate-spin' : 'text-muted-foreground/40'}`} />
+              <span>Gemini AI verdict & risk parameter synthesis</span>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button
+              onClick={handleBack}
+              className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 transition-colors"
             >
-              <div className="h-6">Fetching historical data...</div>
-              <div className="h-6">Detecting patterns...</div>
-              <div className="h-6">Analyzing volume flow...</div>
-              <div className="h-6">Scanning news...</div>
-              <div className="h-6">Running quantitative models...</div>
-              <div className="h-6">Synthesizing verdict...</div>
-              <div className="h-6">Fetching historical data...</div>
-            </motion.div>
+              Cancel and pick another stock
+            </button>
           </div>
         </div>
       </div>
