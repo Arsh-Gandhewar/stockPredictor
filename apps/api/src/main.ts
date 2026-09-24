@@ -62,6 +62,10 @@ async function bootstrap() {
     ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
     : ['http://localhost:3000', 'http://127.0.0.1:3000'];
 
+  if (process.env.FRONTEND_URL) {
+    configuredOrigins.push(process.env.FRONTEND_URL);
+  }
+
   app.enableCors({
     origin: (
       origin: string | undefined,
@@ -70,7 +74,8 @@ async function bootstrap() {
       if (!origin) return callback(null, true);
       if (
         configuredOrigins.includes(origin) ||
-        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+        /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin) ||
+        /\.vercel\.app$/.test(new URL(origin).hostname)
       ) {
         return callback(null, true);
       }
@@ -94,9 +99,9 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   const port = process.env.PORT ?? 3001;
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   logger.log(
-    `🚀 QuantX Production API Gateway listening on http://127.0.0.1:${port}`,
+    `🚀 QuantX Production API Gateway listening on 0.0.0.0:${port}`,
   );
 }
 bootstrap();

@@ -5,15 +5,14 @@ services:
     plan: free
     region: oregon
     branch: main
-    repo: https://github.com/Arsh-Gandhewar/stockPredictor
-    buildCommand: npm install && npm run build --workspace=apps/api
+    buildCommand: npm install && npm run generate --workspace=packages/db && npm run build --workspace=apps/api
     startCommand: node apps/api/dist/main.js
-    healthCheckPath: /stock/market-status
+    healthCheckPath: /health/liveness
     envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
       - key: NODE_ENV
         value: production
-      - key: PORT
-        value: 3001
       - key: DATABASE_URL
         sync: false
       - key: REDIS_HOST
