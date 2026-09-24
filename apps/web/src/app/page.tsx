@@ -146,7 +146,7 @@ export default function Dashboard() {
   }, [currentMovers]);
 
   return (
-    <div className="space-y-6 pb-12 animate-in fade-in duration-500 w-full max-w-[2560px] mx-auto px-1 sm:px-2">
+    <div className="space-y-6 pb-12 animate-in fade-in duration-500 w-full max-w-7xl 2xl:max-w-[1536px] mx-auto px-3 sm:px-6">
       {/* ── 1. Top Institutional Market Status Bar ── */}
       <div className="relative overflow-hidden rounded-xl border border-border/50 bg-card/60 backdrop-blur-md p-4 sm:p-5 shadow-sm">
         {/* Subtle decorative mesh gradient */}

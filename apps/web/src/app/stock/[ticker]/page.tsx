@@ -48,7 +48,9 @@ import {
   TrendingDown as BearishIcon,
   Shield,
   Check,
-  Radio
+  Radio,
+  RefreshCw,
+  Search
 } from 'lucide-react';
 import { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -68,7 +70,7 @@ export default function StockDetailsPage() {
   const [tradeSuccessMsg, setTradeSuccessMsg] = useState<string | null>(null);
   const [tradeErrorMsg, setTradeErrorMsg] = useState<string | null>(null);
 
-  const { data: profile, isLoading: isProfileLoading } = useStockProfile(ticker);
+  const { data: profile, isLoading: isProfileLoading, isError: isProfileError, refetch: refetchProfile } = useStockProfile(ticker);
   const { data: chartData, isLoading: isChartLoading } = useStockChart(ticker, selectedRange);
   const { data: predictionData, isLoading: isPredictionLoading } = usePrediction(ticker);
   const { data: portfolio } = usePortfolio();
@@ -121,18 +123,52 @@ export default function StockDetailsPage() {
 
   if (!profile || !profile.quote) {
     return (
-      <div className="p-12 text-center space-y-4 max-w-md mx-auto my-12 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-md">
-        <AlertTriangle className="h-10 w-10 text-amber-400 mx-auto" />
-        <h2 className="text-lg font-bold text-foreground">Stock Not Found</h2>
-        <p className="text-xs text-muted-foreground">
-          Stock symbol "{ticker}" was not located in the actively monitored Indian equities universe.
-        </p>
-        <button
-          onClick={() => router.push('/')}
-          className="px-4 py-2 rounded-xl bg-primary text-primary-foreground text-xs font-bold shadow-lg hover:bg-primary/90 transition-colors"
-        >
-          Return to Terminal Dashboard
-        </button>
+      <div className="p-8 sm:p-12 text-center space-y-5 max-w-lg mx-auto my-16 rounded-2xl border border-border/50 bg-card/60 backdrop-blur-md shadow-xl">
+        <div className="relative mx-auto w-14 h-14 flex items-center justify-center rounded-2xl bg-amber-500/10 border border-amber-500/20">
+          <AlertTriangle className="h-7 w-7 text-amber-400" />
+          <span className="absolute -top-1 -right-1 flex h-3 w-3">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-500" />
+          </span>
+        </div>
+
+        <div className="space-y-2">
+          <h2 className="text-lg font-bold text-foreground font-mono">
+            {isProfileError ? 'Live Feed Reconnecting' : 'Symbol Outside Active Universe'}
+          </h2>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {isProfileError 
+              ? `Real-time stream for ${ticker} is momentarily reconnecting to the market data feed. Click Retry below to re-establish connection.`
+              : `Stock symbol "${ticker}" is not currently in the top 300 active index universe, or is undergoing an exchange corporate action.`}
+          </p>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+          <button
+            onClick={() => refetchProfile()}
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-xs font-bold font-mono shadow-md hover:bg-primary/90 transition-all flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Retry Live Feed
+          </button>
+          
+          <button
+            onClick={() => router.push(`/audit?ticker=${encodeURIComponent(ticker)}`)}
+            className="w-full sm:w-auto px-4 py-2.5 rounded-xl border border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-xs font-bold font-mono transition-all flex items-center justify-center gap-2"
+          >
+            <Search className="h-3.5 w-3.5" />
+            Run Deep Audit
+          </button>
+        </div>
+
+        <div className="pt-2 border-t border-border/30">
+          <button
+            onClick={() => router.push('/')}
+            className="text-xs text-muted-foreground hover:text-foreground font-mono transition-colors"
+          >
+            ← Return to Terminal Dashboard
+          </button>
+        </div>
       </div>
     );
   }

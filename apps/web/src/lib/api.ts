@@ -63,6 +63,12 @@ export async function fetcher<T>(
       return fetcher<T>(endpoint, options, retries - 1);
     }
 
+    // 502 / 503 / 504 Gateway wake-up retry (transparently absorbs Render cloud cold-starts)
+    if ((res.status === 502 || res.status === 503 || res.status === 504) && retries > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      return fetcher<T>(endpoint, options, retries - 1);
+    }
+
     if (!res.ok) {
       let errorData;
       try {

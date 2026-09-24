@@ -317,19 +317,19 @@ export default function DeepAuditPage() {
 
           <div className="p-4 rounded-2xl bg-card/60 backdrop-blur-xl border border-border/50 text-left space-y-2 text-xs">
             <div className={`flex items-center gap-2 ${elapsedMs >= 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
-              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 600 ? 'text-emerald-400' : 'text-primary animate-spin'}`} />
+              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 350 ? 'text-emerald-400' : 'text-primary animate-spin'}`} />
               <span>Historical quotes & returns analysis</span>
             </div>
-            <div className={`flex items-center gap-2 ${elapsedMs >= 600 ? 'text-foreground' : 'text-muted-foreground/60'}`}>
-              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 1400 ? 'text-emerald-400' : elapsedMs >= 600 ? 'text-primary animate-spin' : 'text-muted-foreground/40'}`} />
+            <div className={`flex items-center gap-2 ${elapsedMs >= 350 ? 'text-foreground' : 'text-muted-foreground/60'}`}>
+              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 750 ? 'text-emerald-400' : elapsedMs >= 350 ? 'text-primary animate-spin' : 'text-muted-foreground/40'}`} />
               <span>Technical patterns & moving average alignment</span>
             </div>
-            <div className={`flex items-center gap-2 ${elapsedMs >= 1400 ? 'text-foreground' : 'text-muted-foreground/60'}`}>
-              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 2200 ? 'text-emerald-400' : elapsedMs >= 1400 ? 'text-primary animate-spin' : 'text-muted-foreground/40'}`} />
+            <div className={`flex items-center gap-2 ${elapsedMs >= 750 ? 'text-foreground' : 'text-muted-foreground/60'}`}>
+              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 1150 ? 'text-emerald-400' : elapsedMs >= 750 ? 'text-primary animate-spin' : 'text-muted-foreground/40'}`} />
               <span>Institutional volume & smart money tracking</span>
             </div>
-            <div className={`flex items-center gap-2 ${elapsedMs >= 2200 ? 'text-foreground' : 'text-muted-foreground/60'}`}>
-              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 3000 ? 'text-emerald-400' : elapsedMs >= 2200 ? 'text-primary animate-spin' : 'text-muted-foreground/40'}`} />
+            <div className={`flex items-center gap-2 ${elapsedMs >= 1150 ? 'text-foreground' : 'text-muted-foreground/60'}`}>
+              <CheckCircle2 className={`h-3.5 w-3.5 ${elapsedMs >= 1600 ? 'text-emerald-400' : elapsedMs >= 1150 ? 'text-primary animate-spin' : 'text-muted-foreground/40'}`} />
               <span>Gemini AI verdict & risk parameter synthesis</span>
             </div>
           </div>

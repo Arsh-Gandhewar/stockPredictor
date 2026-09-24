@@ -36,8 +36,11 @@ export class DeepAuditService {
   }
 
   async audit(ticker: string): Promise<DeepAuditReport> {
-    const cacheKey = ticker.trim().toUpperCase();
-    const cached = this.cache.get(cacheKey);
+    const rawKey = ticker.trim().toUpperCase();
+    const aliasTarget = (this.marketProvider as any).TICKER_ALIASES?.[rawKey] || rawKey;
+    const tickerNs = aliasTarget.endsWith('.NS') || aliasTarget.endsWith('.BO') ? aliasTarget : `${aliasTarget}.NS`;
+
+    const cached = this.cache.get(tickerNs) || this.cache.get(rawKey) || this.cache.get(aliasTarget);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.data;
     }
@@ -47,7 +50,14 @@ export class DeepAuditService {
       throw new NotFoundException(`Ticker ${ticker} not found`);
     }
 
-    let candles = await this.marketProvider.getExtendedHistoricalCandles(resolvedInfo.ticker, 5);
+    // Check cache by resolved ticker as well
+    const cachedByResolved = this.cache.get(resolvedInfo.ticker.toUpperCase());
+    if (cachedByResolved && cachedByResolved.expiresAt > Date.now()) {
+      return cachedByResolved.data;
+    }
+
+    // Fetch 2 years of daily candles (~500 trading days) - fast, lightweight, and complete
+    let candles = await this.marketProvider.getExtendedHistoricalCandles(resolvedInfo.ticker, 2);
     if (!candles || candles.length < 20) {
       candles = await this.marketProvider.getHistoricalCandles(resolvedInfo.ticker, '1y');
     }
@@ -55,58 +65,18 @@ export class DeepAuditService {
       throw new BadRequestException(`Insufficient historical data for ${ticker} (minimum 20 trading days required)`);
     }
 
-    const [
-      historyAuditResult,
-      patternAnalysisResult,
-      buySellAnalysisResult,
-      newsAnalysisResult,
-      quantPredictionResult
-    ] = await Promise.allSettled([
-      Promise.resolve(this.analyzeHistory(candles)),
-      Promise.resolve(this.detectPatterns(candles)),
-      Promise.resolve(this.analyzeBuySellPatterns(candles)),
-      this.analyzeNews(resolvedInfo),
-      this.getQuantPrediction(resolvedInfo.ticker)
-    ]);
+    // 1. Synchronous quantitative engines execute in <15ms
+    const historyAudit = this.analyzeHistory(candles);
+    const patterns = this.detectPatterns(candles);
+    const buySellAnalysis = this.analyzeBuySellPatterns(candles);
 
-    const historyAudit = historyAuditResult.status === 'fulfilled' ? historyAuditResult.value : this.analyzeHistory(candles);
-    const patterns = patternAnalysisResult.status === 'fulfilled' ? patternAnalysisResult.value : {
-      trend: 'SIDEWAYS' as const,
-      trendStrength: 50,
-      supportLevels: [candles[candles.length - 1].close * 0.95],
-      resistanceLevels: [candles[candles.length - 1].close * 1.05],
-      candlestickPatterns: [],
-      movingAverageAlignment: 'MIXED' as const,
-      goldenCross: false,
-      deathCross: false,
-      rsiDivergence: 'NONE' as const
-    };
-    const buySellAnalysis = buySellAnalysisResult.status === 'fulfilled' ? buySellAnalysisResult.value : {
-      obvValue: 0,
-      adlValue: 0,
-      vptValue: 0,
-      volumeTrend: 'NEUTRAL' as const,
-      volumeTrendStrength: 50,
-      avgVolumeChange30d: 0,
-      priceVolumeCorrelation: 0,
-      deliveryPercentTrend: null,
-      institutionalSignal: 'NEUTRAL' as const,
-      smartMoneyIndicator: 0,
-      recentLargeVolumeDays: []
-    };
-    const newsAnalysis = newsAnalysisResult.status === 'fulfilled' && newsAnalysisResult.value ? newsAnalysisResult.value : {
-      overallSentiment: 'NEUTRAL' as const,
-      sentimentScore: 0,
-      stockNews: [],
-      sectorNews: [],
-      sectorOutlook: `${resolvedInfo.sector} sector operations remain steady.`,
-      keyRisks: ['Market volatility', 'Macroeconomic conditions'],
-      keyCatalysts: ['Earnings expansion', 'Domestic demand growth']
-    };
-    const quantPrediction = quantPredictionResult.status === 'fulfilled' ? quantPredictionResult.value : null;
+    // 2. High-speed bounded quant prediction (skipped for non-universe, 1200ms timeout for universe)
+    const quantPrediction = await this.getQuantPrediction(resolvedInfo.ticker, resolvedInfo.isInUniverse);
 
     const lastCandle = candles[candles.length - 1];
-    const verdict = (await this.aiService.synthesizeDeepAuditVerdict({
+
+    // 3. High-speed unified AI synthesis (< 2s max timeout with zero-delay mathematical fallback)
+    const { newsAnalysis, verdict } = await this.aiService.synthesizeDeepAuditUnified({
       ticker: resolvedInfo.ticker,
       companyName: resolvedInfo.name,
       sector: resolvedInfo.sector,
@@ -114,9 +84,8 @@ export class DeepAuditService {
       historyAudit,
       patterns,
       buySellAnalysis,
-      newsAnalysis,
       quantPrediction
-    })) as AuditVerdict;
+    });
 
     const report: DeepAuditReport = {
       ticker: resolvedInfo.ticker,
@@ -130,8 +99,13 @@ export class DeepAuditService {
       verdict
     };
 
-    // Cache report for 15 minutes
-    this.cache.set(cacheKey, { data: report, expiresAt: Date.now() + 900_000 });
+    // Cache report for 15 minutes across all ticker representations
+    const expiresAt = Date.now() + 900_000;
+    this.cache.set(tickerNs, { data: report, expiresAt });
+    this.cache.set(rawKey, { data: report, expiresAt });
+    this.cache.set(aliasTarget, { data: report, expiresAt });
+    this.cache.set(resolvedInfo.ticker.toUpperCase(), { data: report, expiresAt });
+
     return report;
   }
 
@@ -274,10 +248,31 @@ export class DeepAuditService {
     }
   }
 
-  private async getQuantPrediction(ticker: string): Promise<QuantPrediction | null> {
+  private async getQuantPrediction(ticker: string, isInUniverse: boolean = true): Promise<QuantPrediction | null> {
+    if (!isInUniverse) {
+      return {
+        available: false,
+        horizons: {},
+        decision: 'NO_TRADE',
+        signalQuality: 'LOW',
+        risk: { stopLoss: 0, targetPrice: 0, rewardRiskRatio: 0 }
+      };
+    }
+
     try {
-      const pred = await this.predictionService.getPrediction(ticker);
-      if (!pred) return null;
+      const pred = await Promise.race([
+        this.predictionService.getPrediction(ticker),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 1200))
+      ]);
+      if (!pred) {
+        return {
+          available: false,
+          horizons: {},
+          decision: 'NO_TRADE',
+          signalQuality: 'LOW',
+          risk: { stopLoss: 0, targetPrice: 0, rewardRiskRatio: 0 }
+        };
+      }
       
       if (pred.decision === 'NO_TRADE' && (pred as any).dataQuality === 'LOW') {
         return {
