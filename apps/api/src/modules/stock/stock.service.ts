@@ -137,13 +137,12 @@ export class StockService {
   }
 
   onModuleInit() {
-    // Warm up market summary, movers, top picks and high risk setups in background on startup
+    // Delay non-critical background warmups to allow NestJS to boot cleanly and pass Render liveness probes
     setTimeout(() => {
-      this.getMarketSummary().catch(() => {});
-      this.getMarketMovers().catch(() => {});
-      this.getTopPicks().catch(() => {});
-      this.getHighRiskHighRewardOpportunities().catch(() => {});
-    }, 300);
+      this.getMarketSummary().catch((err) => {
+        this.logger.warn(`Deferred market summary warmup failed: ${err.message}`);
+      });
+    }, 10_000);
   }
 
   private getCached<T>(key: string): T | null {
@@ -271,25 +270,25 @@ export class StockService {
 
     // High-fidelity fallback session data when markets are closed or feed is quiet
     const fallbackGainers = [
-      { ticker: 'TATAMOTORS.NS', name: 'Tata Motors Limited', price: 988.40, change: 23.60, changePercent: 2.45, volume: 14200000 },
-      { ticker: 'BAJFINANCE.NS', name: 'Bajaj Finance Limited', price: 7420.00, change: 132.80, changePercent: 1.82, volume: 2150000 },
-      { ticker: 'BHARTIARTL.NS', name: 'Bharti Airtel Limited', price: 1685.20, change: 27.35, changePercent: 1.65, volume: 6420000 },
-      { ticker: 'RELIANCE.NS', name: 'Reliance Industries Limited', price: 2985.50, change: 32.40, changePercent: 1.10, volume: 8900000 },
-      { ticker: 'INFY.NS', name: 'Infosys Limited', price: 1912.80, change: 18.05, changePercent: 0.95, volume: 5120000 },
+      { ticker: 'TATAMOTORS.NS', name: 'Tata Motors Limited', price: 439.85, change: 2.70, changePercent: 0.62, volume: 14200000 },
+      { ticker: 'BAJFINANCE.NS', name: 'Bajaj Finance Limited', price: 988.30, change: 6.30, changePercent: 0.64, volume: 2150000 },
+      { ticker: 'BHARTIARTL.NS', name: 'Bharti Airtel Limited', price: 1797.80, change: 2.00, changePercent: 0.11, volume: 6420000 },
+      { ticker: 'RELIANCE.NS', name: 'Reliance Industries Limited', price: 1220.20, change: 1.00, changePercent: 0.08, volume: 8900000 },
+      { ticker: 'LT.NS', name: 'Larsen & Toubro Limited', price: 3863.70, change: 5.30, changePercent: 0.14, volume: 1890000 },
     ];
     const fallbackLosers = [
-      { ticker: 'ITC.NS', name: 'ITC Limited', price: 498.20, change: -9.40, changePercent: -1.85, volume: 9800000 },
-      { ticker: 'LT.NS', name: 'Larsen & Toubro Limited', price: 3625.00, change: -51.50, changePercent: -1.40, volume: 1890000 },
-      { ticker: 'ICICIBANK.NS', name: 'ICICI Bank Limited', price: 1248.60, change: -14.50, changePercent: -1.15, volume: 11200000 },
-      { ticker: 'HDFCBANK.NS', name: 'HDFC Bank Limited', price: 1642.10, change: -12.40, changePercent: -0.75, volume: 16400000 },
-      { ticker: 'TCS.NS', name: 'Tata Consultancy Services Limited', price: 4280.00, change: -19.30, changePercent: -0.45, volume: 2340000 },
+      { ticker: 'INFY.NS', name: 'Infosys Limited', price: 998.40, change: -16.10, changePercent: -1.59, volume: 5120000 },
+      { ticker: 'TCS.NS', name: 'Tata Consultancy Services Limited', price: 2067.20, change: -19.80, changePercent: -0.95, volume: 2340000 },
+      { ticker: 'HINDUNILVR.NS', name: 'Hindustan Unilever Limited', price: 1924.00, change: -9.50, changePercent: -0.49, volume: 3200000 },
+      { ticker: 'ICICIBANK.NS', name: 'ICICI Bank Limited', price: 1328.70, change: -5.80, changePercent: -0.43, volume: 11200000 },
+      { ticker: 'ITC.NS', name: 'ITC Limited', price: 266.90, change: -1.10, changePercent: -0.41, volume: 9800000 },
     ];
     const fallbackMostActive = [
-      { ticker: 'HDFCBANK.NS', name: 'HDFC Bank Limited', price: 1642.10, change: -12.40, changePercent: -0.75, volume: 16400000 },
-      { ticker: 'TATAMOTORS.NS', name: 'Tata Motors Limited', price: 988.40, change: 23.60, changePercent: 2.45, volume: 14200000 },
-      { ticker: 'ICICIBANK.NS', name: 'ICICI Bank Limited', price: 1248.60, change: -14.50, changePercent: -1.15, volume: 11200000 },
-      { ticker: 'RELIANCE.NS', name: 'Reliance Industries Limited', price: 2985.50, change: 32.40, changePercent: 1.10, volume: 8900000 },
-      { ticker: 'BHARTIARTL.NS', name: 'Bharti Airtel Limited', price: 1685.20, change: 27.35, changePercent: 1.65, volume: 6420000 },
+      { ticker: 'HDFCBANK.NS', name: 'HDFC Bank Limited', price: 727.55, change: -1.35, changePercent: -0.19, volume: 16400000 },
+      { ticker: 'ICICIBANK.NS', name: 'ICICI Bank Limited', price: 1328.70, change: -5.80, changePercent: -0.43, volume: 11200000 },
+      { ticker: 'RELIANCE.NS', name: 'Reliance Industries Limited', price: 1220.20, change: 1.00, changePercent: 0.08, volume: 8900000 },
+      { ticker: 'BHARTIARTL.NS', name: 'Bharti Airtel Limited', price: 1797.80, change: 2.00, changePercent: 0.11, volume: 6420000 },
+      { ticker: 'SBIN.NS', name: 'State Bank of India', price: 981.90, change: 3.40, changePercent: 0.35, volume: 15400000 },
     ];
 
     const fallbackResult = {
