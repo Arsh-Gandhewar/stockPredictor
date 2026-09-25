@@ -341,7 +341,7 @@ export default function Dashboard() {
       {/* ── 3. Row 1: Candlestick Chart & Benchmark + Top Monitored (Low Risk / Safe Profit) ── */}
       <div className="grid gap-6 xl:grid-cols-12">
         {/* Sleek Candlestick Chart Container */}
-        <div className="xl:col-span-7 2xl:col-span-8 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm overflow-hidden flex flex-col justify-between">
+        <div className="xl:col-span-7 2xl:col-span-8 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm overflow-hidden flex flex-col">
           <div className="px-5 py-4 border-b border-border/40 bg-gradient-to-r from-card/80 via-card/50 to-card/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
@@ -382,7 +382,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="p-4 relative min-h-[440px] flex-1 flex flex-col justify-between">
+          <div className="p-4 relative flex-1 flex flex-col">
             {isLoadingChart && (
               <div className="absolute inset-0 bg-background/60 backdrop-blur-xs flex items-center justify-center z-10">
                 <Loader2 className="h-5 w-5 animate-spin text-primary mr-2" />
@@ -533,7 +533,7 @@ export default function Dashboard() {
       {/* ── 5. Row 2: High Beta Alpha Setups + Market Movers ── */}
       <div className="grid gap-6 xl:grid-cols-12">
         {/* High Beta Alpha Setups */}
-        <div className="xl:col-span-5 2xl:col-span-5 rounded-xl border border-amber-500/25 bg-card/60 backdrop-blur-md shadow-sm relative overflow-hidden flex flex-col justify-between">
+        <div className="xl:col-span-5 2xl:col-span-5 rounded-xl border border-amber-500/25 bg-card/60 backdrop-blur-md shadow-sm relative overflow-hidden flex flex-col">
           {/* Subtle amber ambient glow */}
           <div className="absolute -top-14 -right-14 w-32 h-32 bg-amber-500/10 rounded-full blur-2xl pointer-events-none" />
 
@@ -663,7 +663,7 @@ export default function Dashboard() {
         </div>
 
         {/* ── 6. Market Movers (Gainers, Losers, Most Active) ── */}
-        <div className="xl:col-span-7 2xl:col-span-7 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm flex flex-col justify-between overflow-hidden">
+        <div className="xl:col-span-7 2xl:col-span-7 rounded-xl border border-border/50 bg-card/60 backdrop-blur-md shadow-sm flex flex-col overflow-hidden">
           <div className="px-5 py-4 border-b border-border/40 bg-gradient-to-r from-card/80 via-card/50 to-card/80 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20">
