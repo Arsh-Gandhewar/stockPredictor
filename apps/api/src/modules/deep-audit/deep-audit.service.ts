@@ -99,8 +99,8 @@ export class DeepAuditService {
       verdict
     };
 
-    // Cache report for 15 minutes across all ticker representations
-    const expiresAt = Date.now() + 900_000;
+    // Cache report for 30 minutes across all ticker representations
+    const expiresAt = Date.now() + 1800_000;
     this.cache.set(tickerNs, { data: report, expiresAt });
     this.cache.set(rawKey, { data: report, expiresAt });
     this.cache.set(aliasTarget, { data: report, expiresAt });

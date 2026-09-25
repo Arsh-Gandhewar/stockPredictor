@@ -28,7 +28,7 @@ export async function fetcher<T>(
   retries: number = 2
 ): Promise<T> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15s timeout
+  const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout to gracefully absorb Render cloud wake-ups
 
   let token: string | null = null;
   if (authTokenGetter) {

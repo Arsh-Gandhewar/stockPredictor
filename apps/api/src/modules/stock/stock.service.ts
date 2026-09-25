@@ -137,11 +137,13 @@ export class StockService {
   }
 
   onModuleInit() {
-    // Warm up market summary and movers in background on startup
+    // Warm up market summary, movers, top picks and high risk setups in background on startup
     setTimeout(() => {
       this.getMarketSummary().catch(() => {});
       this.getMarketMovers().catch(() => {});
-    }, 500);
+      this.getTopPicks().catch(() => {});
+      this.getHighRiskHighRewardOpportunities().catch(() => {});
+    }, 300);
   }
 
   private getCached<T>(key: string): T | null {
@@ -156,7 +158,7 @@ export class StockService {
 
   private getCacheTtl(): number {
     const status = this.marketProvider.getMarketStatus();
-    return status.status === 'OPEN' ? 20_000 : 60_000; // 20s during market, 60s otherwise
+    return status.status === 'OPEN' ? 60_000 : 300_000; // 60s during market, 5min otherwise
   }
 
   async getMarketSummary(): Promise<MarketIndexBenchmark[]> {
@@ -259,7 +261,7 @@ export class StockService {
         };
 
         if (result.gainers.length > 0 || result.losers.length > 0) {
-          this.setCache('market-movers', result, 45_000);
+          this.setCache('market-movers', result, 180_000);
           return result;
         }
       }
@@ -295,7 +297,7 @@ export class StockService {
       losers: fallbackLosers,
       mostActive: fallbackMostActive,
     };
-    this.setCache('market-movers', fallbackResult, 60_000);
+    this.setCache('market-movers', fallbackResult, 180_000);
     return fallbackResult;
   }
 
@@ -370,7 +372,7 @@ export class StockService {
       };
     });
 
-    this.setCache('top-picks', picks, this.getCacheTtl());
+    this.setCache('top-picks', picks, 180_000); // 3 minutes
     return picks;
   }
 
@@ -445,7 +447,7 @@ export class StockService {
       };
     });
 
-    this.setCache('high-risk-high-reward', ranked, this.getCacheTtl());
+    this.setCache('high-risk-high-reward', ranked, 180_000); // 3 minutes
     return ranked;
   }
 
@@ -453,9 +455,15 @@ export class StockService {
    * "Why is this Stock Moving Today?" Contextual Multi-Factor Catalyst Synthesis Engine
    */
   async getMovementCatalyst(ticker: string): Promise<MovementCatalyst> {
-    const pred = await this.predictionService.getPrediction(ticker);
-    const quote = await this.getQuote(ticker);
-    const candles = await this.getChartData(ticker, '3mo');
+    const cacheKey = `catalyst:${ticker.toUpperCase()}`;
+    const cached = this.getCached<MovementCatalyst>(cacheKey);
+    if (cached) return cached;
+
+    const [pred, quote, candles] = await Promise.all([
+      this.predictionService.getPrediction(ticker),
+      this.getQuote(ticker),
+      this.getChartData(ticker, '3mo'),
+    ]);
     const universe = this.marketProvider.getUniverse();
     const meta = universe.find((s) => s.ticker === ticker);
 
@@ -465,7 +473,6 @@ export class StockService {
     const isGain = change >= 0;
 
     const companyName = meta?.name || quote.name || ticker.replace('.NS', '');
-    const cleanTicker = ticker.replace('.NS', '');
     const sector = meta?.sector || 'Core Equities';
     const industry = meta?.industry || 'Equities';
 
@@ -516,7 +523,7 @@ export class StockService {
       ...pred.invalidationConditions.slice(0, 2),
     ];
 
-    return {
+    const result: MovementCatalyst = {
       ticker,
       name: companyName,
       price: quote.price,
@@ -534,37 +541,44 @@ export class StockService {
       newsSentiment,
       topHeadline,
     };
+
+    this.setCache(cacheKey, result, 180_000); // 3 minutes cache
+    return result;
   }
 
   /**
    * Generates comprehensive Stock Profile with live technical indicators and catalyst explanation
    */
   async getStockProfile(ticker: string): Promise<StockProfileData> {
-    const quote = await this.getQuote(ticker);
-    let chart = await this.getChartData(ticker, '6mo');
-    if (!chart || chart.length === 0) {
-      chart = await this.marketProvider.getHistoricalCandles(ticker, '6mo');
-    }
-    
-    let catalyst: MovementCatalyst;
-    try {
-      catalyst = await this.getMovementCatalyst(ticker);
-    } catch {
-      catalyst = {
+    const cacheKey = `profile:${ticker.toUpperCase()}`;
+    const cached = this.getCached<StockProfileData>(cacheKey);
+    if (cached) return cached;
+
+    // Parallel fetch quote, chart, and movement catalyst in <300ms
+    const [quote, chartRaw, catalyst] = await Promise.all([
+      this.getQuote(ticker),
+      this.getChartData(ticker, '6mo').then(async (c) => {
+        if (!c || c.length === 0) {
+          return await this.marketProvider.getHistoricalCandles(ticker, '6mo');
+        }
+        return c;
+      }),
+      this.getMovementCatalyst(ticker).catch(() => ({
         ticker,
-        name: quote.name,
-        price: quote.price,
-        changePercent: quote.changePercent,
-        direction: quote.changePercent >= 0 ? 'UP' : 'DOWN',
+        name: ticker.replace('.NS', ''),
+        price: 0,
+        changePercent: 0,
+        direction: 'FLAT' as const,
         volumeSurgeRatio: 1.0,
-        primaryDriver: `${quote.name} trading at ₹${quote.price.toFixed(2)} with steady volume flow.`,
-        catalystType: 'TECHNICAL_BREAKOUT',
+        primaryDriver: `Order flow and benchmark consolidation.`,
+        catalystType: 'TECHNICAL_BREAKOUT' as const,
         confidenceScore: 75,
         keyFactors: ['Benchmark index correlation', 'Price action support hold'],
-        invalidationLevel: quote.price * 0.94,
-        newsSentiment: 'NEUTRAL',
-      };
-    }
+        invalidationLevel: null,
+        newsSentiment: 'NEUTRAL' as const,
+      })),
+    ]);
+    const chart = chartRaw;
 
     const closes = chart.map((c) => c.close);
 
@@ -664,7 +678,7 @@ export class StockService {
       sector: 'Equities',
     };
 
-    return {
+    const profileResult: StockProfileData = {
       stock: stockMeta,
       quote,
       chart,
@@ -679,5 +693,8 @@ export class StockService {
       },
       catalyst,
     };
+
+    this.setCache(cacheKey, profileResult, 120_000); // 2 minutes cache
+    return profileResult;
   }
 }

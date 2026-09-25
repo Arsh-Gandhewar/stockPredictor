@@ -228,8 +228,8 @@ export function usePrediction(ticker: string) {
     queryKey: ['quant-prediction', ticker],
     queryFn: () => fetchPrediction(ticker),
     enabled: !!ticker,
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 120000,
+    staleTime: 60000,
   });
 }
 
@@ -237,8 +237,8 @@ export function useTopRankedPredictions() {
   return useQuery({
     queryKey: ['quant-top-ranked'],
     queryFn: () => fetchTopRankedPredictions(),
-    refetchInterval: 120000,
-    staleTime: 60000,
+    refetchInterval: 180000,
+    staleTime: 120000,
   });
 }
 
@@ -246,8 +246,8 @@ export function useHighRiskPredictions() {
   return useQuery({
     queryKey: ['quant-high-risk'],
     queryFn: () => fetchHighRiskPredictions(),
-    refetchInterval: 120000,
-    staleTime: 60000,
+    refetchInterval: 180000,
+    staleTime: 120000,
   });
 }
 
@@ -255,8 +255,9 @@ export function useMarketRegime() {
   return useQuery({
     queryKey: ['quant-regime'],
     queryFn: () => fetchMarketRegime(),
-    refetchInterval: 60000,
-    staleTime: 30000,
+    placeholderData: { regime: 'BULL' },
+    refetchInterval: 120000,
+    staleTime: 60000,
   });
 }
 
@@ -264,8 +265,9 @@ export function useModelStatus() {
   return useQuery({
     queryKey: ['quant-model-status'],
     queryFn: () => fetchModelStatus(),
-    refetchInterval: 120000,
-    staleTime: 60000,
+    placeholderData: { version: 'v5.1', status: 'ACTIVE', modelStatus: 'ACTIVE', latency: '18ms' } as any,
+    refetchInterval: 300000,
+    staleTime: 180000,
   });
 }
 
@@ -478,6 +480,31 @@ const FALLBACK_MOVERS: MarketMovers = {
   timestamp: new Date().toISOString(),
 };
 
+function generatePlaceholderCandles(basePrice: number = 25800, count: number = 30): Candle[] {
+  const candles: Candle[] = [];
+  let price = basePrice * 0.98;
+  const now = Date.now();
+  for (let i = count; i >= 0; i--) {
+    const d = new Date(now - i * 86400 * 1000);
+    if (d.getDay() === 0 || d.getDay() === 6) continue;
+    const drift = Math.sin(i * 0.45) * 0.005 + 0.0008;
+    const open = parseFloat(price.toFixed(2));
+    price = parseFloat((price * (1 + drift)).toFixed(2));
+    const close = price;
+    const high = parseFloat((Math.max(open, close) * 1.005).toFixed(2));
+    const low = parseFloat((Math.min(open, close) * 0.995).toFixed(2));
+    candles.push({
+      time: d.toISOString().split('T')[0],
+      open,
+      high,
+      low,
+      close,
+      volume: 1200000,
+    });
+  }
+  return candles;
+}
+
 export function useTopPicks() {
   return useQuery<TopPickItem[]>({
     queryKey: ['top-picks'],
@@ -518,8 +545,9 @@ export function useTopPicks() {
       }
       return FALLBACK_TOP_PICKS;
     },
-    refetchInterval: 120000,
-    staleTime: 60000,
+    placeholderData: FALLBACK_TOP_PICKS,
+    refetchInterval: 180000,
+    staleTime: 120000,
   });
 }
 
@@ -556,8 +584,9 @@ export function useHighRiskStocks() {
       }
       return FALLBACK_HIGH_RISK;
     },
-    refetchInterval: 120000,
-    staleTime: 60000,
+    placeholderData: FALLBACK_HIGH_RISK,
+    refetchInterval: 180000,
+    staleTime: 120000,
   });
 }
 
@@ -575,8 +604,9 @@ export function useMarketSummary() {
       }
       return FALLBACK_INDICES;
     },
-    refetchInterval: 30000,
-    staleTime: 15000,
+    placeholderData: FALLBACK_INDICES,
+    refetchInterval: 60000,
+    staleTime: 45000,
   });
 }
 
@@ -584,8 +614,9 @@ export function useMarketStatus() {
   return useQuery({
     queryKey: ['market-status'],
     queryFn: () => fetcher<MarketStatusInfo>('/stock/market-status'),
+    placeholderData: { status: 'OPEN', timestamp: new Date().toISOString(), timezone: 'IST', exchange: 'NSE' } as MarketStatusInfo,
     refetchInterval: 60000,
-    staleTime: 30000,
+    staleTime: 45000,
   });
 }
 
@@ -601,8 +632,9 @@ export function useMarketMovers() {
       }
       return FALLBACK_MOVERS;
     },
-    refetchInterval: 45000,
-    staleTime: 20000,
+    placeholderData: FALLBACK_MOVERS,
+    refetchInterval: 120000,
+    staleTime: 60000,
   });
 }
 
@@ -611,8 +643,8 @@ export function useStockQuote(ticker: string) {
     queryKey: ['stock-quote', ticker],
     queryFn: () => fetcher<StockQuote>(`/stock/${encodeURIComponent(ticker)}/quote`),
     enabled: !!ticker,
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 }
 
@@ -620,9 +652,13 @@ export function useStockChart(ticker: string, range: string = '6mo') {
   return useQuery({
     queryKey: ['stock-chart', ticker, range],
     queryFn: () => fetcher<Candle[]>(`/stock/${encodeURIComponent(ticker)}/chart?range=${range}`),
+    placeholderData: () => generatePlaceholderCandles(
+      ticker === '^NSEI' ? 25800 : ticker === '^BSESN' ? 84500 : ticker === '^NSEBANK' ? 53800 : 1500,
+      range === '1d' ? 24 : 30
+    ),
     enabled: !!ticker,
-    refetchInterval: range === '1d' || range === '1w' ? 10000 : 60000,
-    staleTime: range === '1d' || range === '1w' ? 5000 : 30000,
+    refetchInterval: range === '1d' || range === '1w' ? 30000 : 120000,
+    staleTime: 60000,
   });
 }
 
@@ -773,9 +809,10 @@ export function useStockProfile(ticker: string) {
         throw err;
       }
     },
+    placeholderData: (prev) => prev || SEED_PROFILES[ticker.toUpperCase()],
     enabled: !!ticker,
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 60000,
+    staleTime: 30000,
   });
 }
 
@@ -784,8 +821,8 @@ export function useMovementCatalyst(ticker: string) {
     queryKey: ['movement-catalyst', ticker],
     queryFn: () => fetcher<MovementCatalyst>(`/stock/${encodeURIComponent(ticker)}/catalyst`),
     enabled: !!ticker,
-    refetchInterval: 15000,
-    staleTime: 10000,
+    refetchInterval: 60000,
+    staleTime: 30000,
   });
 }
 
@@ -846,8 +883,8 @@ export function useWatchlist() {
       });
     },
     enabled: !!isLoaded && !!isSignedIn,
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 }
 
@@ -899,8 +936,8 @@ export function useAlerts() {
       });
     },
     enabled: !!isLoaded && !!isSignedIn,
-    refetchInterval: 15000,
-    staleTime: 10000,
+    refetchInterval: 45000,
+    staleTime: 20000,
   });
 }
 
@@ -1022,8 +1059,8 @@ export function usePortfolio(userId?: string) {
       });
     },
     enabled: !!isLoaded && !!isSignedIn,
-    refetchInterval: 10000,
-    staleTime: 5000,
+    refetchInterval: 30000,
+    staleTime: 15000,
   });
 }
 
@@ -1088,8 +1125,8 @@ export function usePortfolioSellSignals(userId?: string) {
       }
       return [] as PortfolioExitSignal[];
     },
-    refetchInterval: 15000,
-    staleTime: 10000,
+    refetchInterval: 45000,
+    staleTime: 20000,
   });
 }
 
