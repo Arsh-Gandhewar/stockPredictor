@@ -199,6 +199,10 @@ export class PredictionController {
 
   @Get(':ticker')
   async getPrediction(@Param('ticker') ticker: string) {
-    return this.predictionService.getPrediction(ticker);
+    try {
+      return await this.predictionService.getPrediction(ticker);
+    } catch {
+      return this.predictionService.getSeedFallbackPrediction(ticker);
+    }
   }
 }

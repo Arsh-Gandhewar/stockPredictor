@@ -104,7 +104,7 @@ export default function StockDetailsPage() {
     { label: '5Y', value: '5y' },
   ];
 
-  if (isProfileLoading || isPredictionLoading) {
+  if (isProfileLoading && !profile) {
     return (
       <div className="flex flex-col justify-center items-center h-[70vh] gap-4">
         <div className="relative">

@@ -353,7 +353,11 @@ export interface ModelPerformanceInfo {
 // ── API Client Methods ─────────────────────────────────────────────────────────
 
 export async function fetchPrediction(ticker: string): Promise<StockPrediction> {
-  return fetcher<StockPrediction>(`/prediction/${encodeURIComponent(ticker)}`);
+  try {
+    return await fetcher<StockPrediction>(`/prediction/${encodeURIComponent(ticker)}`);
+  } catch {
+    return fetcher<StockPrediction>(`/stock/${encodeURIComponent(ticker)}/prediction`);
+  }
 }
 
 export async function fetchTopRankedPredictions(): Promise<StockPrediction[]> {

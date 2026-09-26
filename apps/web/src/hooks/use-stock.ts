@@ -226,7 +226,15 @@ export interface AlertItem {
 export function usePrediction(ticker: string) {
   return useQuery({
     queryKey: ['quant-prediction', ticker],
-    queryFn: () => fetchPrediction(ticker),
+    queryFn: async () => {
+      try {
+        return await fetchPrediction(ticker);
+      } catch {
+        return null;
+      }
+    },
+    retry: 1,
+    retryDelay: 1000,
     enabled: !!ticker,
     refetchInterval: 120000,
     staleTime: 60000,
