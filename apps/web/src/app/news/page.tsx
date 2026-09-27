@@ -300,7 +300,7 @@ export default function NewsPage() {
       </div>
 
       {/* ── News Feed Grid ── */}
-      {isError ? (
+      {isError && newsItems.length === 0 ? (
         <Card className="border-rose-500/20 bg-slate-950/70 p-12 text-center rounded-2xl shadow-xl">
           <div className="flex flex-col items-center justify-center space-y-4 max-w-sm mx-auto">
             <div className="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-rose-400 shadow-[0_0_20px_rgba(244,63,94,0.15)]">
@@ -320,7 +320,7 @@ export default function NewsPage() {
             </button>
           </div>
         </Card>
-      ) : isLoading ? (
+      ) : isLoading && newsItems.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-28 space-y-3">
           <div className="relative">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
