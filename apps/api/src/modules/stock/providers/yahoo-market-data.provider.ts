@@ -29,18 +29,18 @@ export const VALID_CHART_RANGES = [
 export type ValidChartRange = (typeof VALID_CHART_RANGES)[number];
 
 export const KNOWN_SEED_QUOTES: Record<string, { name: string; price: number; change: number; changePercent: number }> = {
-  'TCS.NS': { name: 'Tata Consultancy Services Limited', price: 2067.20, change: -19.80, changePercent: -0.95 },
-  'INFY.NS': { name: 'Infosys Limited', price: 998.40, change: -16.10, changePercent: -1.59 },
-  'RELIANCE.NS': { name: 'Reliance Industries Limited', price: 1220.20, change: 1.00, changePercent: 0.08 },
-  'HDFCBANK.NS': { name: 'HDFC Bank Limited', price: 727.55, change: -1.35, changePercent: -0.19 },
-  'LT.NS': { name: 'Larsen & Toubro Limited', price: 3863.70, change: 5.30, changePercent: 0.14 },
-  'TATAMOTORS.NS': { name: 'Tata Motors Limited (TMCV)', price: 439.85, change: 2.70, changePercent: 0.62 },
-  'BAJFINANCE.NS': { name: 'Bajaj Finance Limited', price: 988.30, change: 6.30, changePercent: 0.64 },
-  'BHARTIARTL.NS': { name: 'Bharti Airtel Limited', price: 1797.80, change: 2.00, changePercent: 0.11 },
-  'ICICIBANK.NS': { name: 'ICICI Bank Limited', price: 1328.70, change: -5.80, changePercent: -0.43 },
-  'ITC.NS': { name: 'ITC Limited', price: 266.90, change: -1.10, changePercent: -0.41 },
-  'SBIN.NS': { name: 'State Bank of India', price: 981.90, change: 3.40, changePercent: 0.35 },
-  'HINDUNILVR.NS': { name: 'Hindustan Unilever Limited', price: 1924.00, change: -9.50, changePercent: -0.49 },
+  'TCS.NS': { name: 'Tata Consultancy Services Limited', price: 2082.00, change: -5.00, changePercent: -0.24 },
+  'INFY.NS': { name: 'Infosys Limited', price: 1000.20, change: -14.30, changePercent: -1.41 },
+  'RELIANCE.NS': { name: 'Reliance Industries Limited', price: 1226.00, change: 6.80, changePercent: 0.56 },
+  'HDFCBANK.NS': { name: 'HDFC Bank Limited', price: 735.60, change: 6.70, changePercent: 0.92 },
+  'LT.NS': { name: 'Larsen & Toubro Limited', price: 3876.20, change: 17.80, changePercent: 0.46 },
+  'TATAMOTORS.NS': { name: 'Tata Motors Limited (TMCV)', price: 290.45, change: -4.55, changePercent: -1.54 },
+  'BAJFINANCE.NS': { name: 'Bajaj Finance Limited', price: 996.90, change: 3.20, changePercent: 0.32 },
+  'BHARTIARTL.NS': { name: 'Bharti Airtel Limited', price: 1785.40, change: -12.40, changePercent: -0.69 },
+  'ICICIBANK.NS': { name: 'ICICI Bank Limited', price: 1326.80, change: -2.40, changePercent: -0.18 },
+  'ITC.NS': { name: 'ITC Limited', price: 269.00, change: -1.50, changePercent: -0.55 },
+  'SBIN.NS': { name: 'State Bank of India', price: 983.00, change: 4.50, changePercent: 0.46 },
+  'HINDUNILVR.NS': { name: 'Hindustan Unilever Limited', price: 1942.90, change: -8.10, changePercent: -0.42 },
   'KOTAKBANK.NS': { name: 'Kotak Mahindra Bank Limited', price: 404.95, change: -0.05, changePercent: -0.01 },
   'AXISBANK.NS': { name: 'Axis Bank Limited', price: 1195.00, change: 8.50, changePercent: 0.72 },
   'ASIANPAINT.NS': { name: 'Asian Paints Limited', price: 2420.70, change: 28.00, changePercent: 1.17 },
@@ -472,10 +472,10 @@ export class YahooMarketDataProvider implements MarketDataProvider {
    */
   async getMarketSummary(): Promise<MarketIndexBenchmark[]> {
     const indices = [
-      { name: 'NIFTY 50', symbol: '^NSEI', fallbackVal: 25860.30, fallbackChange: -22.00, fallbackPct: -0.10 },
-      { name: 'SENSEX', symbol: '^BSESN', fallbackVal: 84545.20, fallbackChange: -88.50, fallbackPct: -0.10 },
-      { name: 'BANK NIFTY', symbol: '^NSEBANK', fallbackVal: 53820.50, fallbackChange: 112.40, fallbackPct: 0.21 },
-      { name: 'INDIA VIX', symbol: '^INDIAVIX', fallbackVal: 12.45, fallbackChange: -0.35, fallbackPct: -2.73 },
+      { name: 'NIFTY 50', symbol: '^NSEI', fallbackVal: 23140.50, fallbackChange: 98.70, fallbackPct: 0.43 },
+      { name: 'SENSEX', symbol: '^BSESN', fallbackVal: 73895.74, fallbackChange: 315.20, fallbackPct: 0.43 },
+      { name: 'BANK NIFTY', symbol: '^NSEBANK', fallbackVal: 55580.40, fallbackChange: 245.60, fallbackPct: 0.44 },
+      { name: 'INDIA VIX', symbol: '^INDIAVIX', fallbackVal: 12.16, fallbackChange: -0.28, fallbackPct: -2.25 },
     ];
 
     const results = await Promise.allSettled(
