@@ -22,7 +22,7 @@ import { DeepAuditModule } from './modules/deep-audit/deep-audit.module';
       {
         name: 'default',
         ttl: 60000,
-        limit: Number(process.env.THROTTLE_LIMIT) || 300, // 300 requests per minute baseline for UI polling & light reads
+        limit: Number(process.env.THROTTLE_LIMIT) || 1200, // 1200 requests per minute baseline for 3s UI polling & light reads
       },
       {
         name: 'expensive',

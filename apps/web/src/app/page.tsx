@@ -180,6 +180,16 @@ export default function Dashboard() {
                 {regimeBadge.label}
               </Badge>
 
+              {/* 3s Live Refresh Beacon */}
+              <Badge 
+                variant="success" 
+                dot 
+                pulse
+                className="shadow-xs font-mono font-semibold"
+              >
+                3S LIVE REFRESH
+              </Badge>
+
               {/* Model Health Beacon */}
               <Badge 
                 variant="glass" 
@@ -195,7 +205,7 @@ export default function Dashboard() {
 
             <p className="text-xs text-muted-foreground flex items-center gap-1.5 font-mono">
               <Clock className="h-3.5 w-3.5 text-muted-foreground/70 shrink-0" />
-              <span>Authoritative Live Feed: National Stock Exchange (NSE) & Bombay Stock Exchange (BSE)</span>
+              <span>Authoritative Live Feed: NSE & BSE · Auto-Refreshes Every 3 Seconds</span>
             </p>
           </div>
 

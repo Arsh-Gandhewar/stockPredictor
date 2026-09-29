@@ -67,6 +67,8 @@ export class YahooMarketDataProvider implements MarketDataProvider {
 
   private readonly resolveCache = new Map<string, { data: ResolvedTicker | null; expiresAt: number }>();
   private readonly extendedCandlesCache = new Map<string, { data: any[]; expiresAt: number }>();
+  private readonly lastIndices = new Map<string, MarketIndexBenchmark>();
+  private readonly lastQuotes = new Map<string, MarketQuote>();
 
   /**
    * Evaluates current National Stock Exchange session status based on IST clock
@@ -197,10 +199,20 @@ export class YahooMarketDataProvider implements MarketDataProvider {
         if (targetTicker !== ticker) {
           formatted.name = `${formatted.name} (${targetTicker.replace('.NS', '')})`;
         }
+        this.lastQuotes.set(ticker, formatted);
         return formatted;
       }
     } catch (err: any) {
       this.logger.warn(`Quote retrieval issue for ${ticker} (target ${targetTicker}): ${err.message}`);
+    }
+
+    // Check last known live quote before falling back to chart or seed
+    const prevQuote = this.lastQuotes.get(ticker);
+    if (prevQuote) {
+      return {
+        ...prevQuote,
+        timestamp: new Date().toISOString(),
+      };
     }
 
     // Secondary fallback: Try chart metadata
@@ -285,7 +297,10 @@ export class YahooMarketDataProvider implements MarketDataProvider {
           if (q && q.symbol) {
             const originalTicker = aliasMap.get(q.symbol) || q.symbol;
             const formatted = this.formatQuote(q, originalTicker);
-            if (formatted) results.push(formatted);
+            if (formatted) {
+              this.lastQuotes.set(originalTicker, formatted);
+              results.push(formatted);
+            }
           }
         }
       } catch (err: any) {
@@ -300,6 +315,11 @@ export class YahooMarketDataProvider implements MarketDataProvider {
     if (results.length < tickers.length) {
       for (const t of tickers) {
         if (!results.some((r) => r.ticker === t)) {
+          const prevLive = this.lastQuotes.get(t);
+          if (prevLive) {
+            results.push({ ...prevLive, timestamp: new Date().toISOString() });
+            continue;
+          }
           const seed = KNOWN_SEED_QUOTES[t];
           if (seed) {
             results.push({
@@ -490,7 +510,7 @@ export class YahooMarketDataProvider implements MarketDataProvider {
           const changePercent =
             q?.regularMarketChangePercent ?? (val > 0 ? (change / val) * 100 : 0);
 
-          return {
+          const item: MarketIndexBenchmark = {
             name: idx.name,
             symbol: idx.symbol,
             value: parseFloat(val.toFixed(2)),
@@ -500,7 +520,16 @@ export class YahooMarketDataProvider implements MarketDataProvider {
             marketState: q?.marketState || 'REGULAR',
             timestamp: new Date().toISOString(),
           };
+          this.lastIndices.set(idx.symbol, item);
+          return item;
         } catch {
+          const cached = this.lastIndices.get(idx.symbol);
+          if (cached) {
+            return {
+              ...cached,
+              timestamp: new Date().toISOString(),
+            };
+          }
           // Graceful fallback so UI always has live benchmark reference values
           return {
             name: idx.name,

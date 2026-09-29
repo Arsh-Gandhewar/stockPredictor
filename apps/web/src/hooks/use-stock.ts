@@ -245,8 +245,8 @@ export function useTopRankedPredictions() {
   return useQuery({
     queryKey: ['quant-top-ranked'],
     queryFn: () => fetchTopRankedPredictions(),
-    refetchInterval: 180000,
-    staleTime: 120000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -254,8 +254,8 @@ export function useHighRiskPredictions() {
   return useQuery({
     queryKey: ['quant-high-risk'],
     queryFn: () => fetchHighRiskPredictions(),
-    refetchInterval: 180000,
-    staleTime: 120000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -554,8 +554,8 @@ export function useTopPicks() {
       return FALLBACK_TOP_PICKS;
     },
     placeholderData: FALLBACK_TOP_PICKS,
-    refetchInterval: 180000,
-    staleTime: 120000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -593,8 +593,8 @@ export function useHighRiskStocks() {
       return FALLBACK_HIGH_RISK;
     },
     placeholderData: FALLBACK_HIGH_RISK,
-    refetchInterval: 180000,
-    staleTime: 120000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -613,8 +613,8 @@ export function useMarketSummary() {
       return FALLBACK_INDICES;
     },
     placeholderData: FALLBACK_INDICES,
-    refetchInterval: 60000,
-    staleTime: 45000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -623,8 +623,8 @@ export function useMarketStatus() {
     queryKey: ['market-status'],
     queryFn: () => fetcher<MarketStatusInfo>('/stock/market-status'),
     placeholderData: { status: 'OPEN', timestamp: new Date().toISOString(), timezone: 'IST', exchange: 'NSE' } as MarketStatusInfo,
-    refetchInterval: 60000,
-    staleTime: 45000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -641,8 +641,8 @@ export function useMarketMovers() {
       return FALLBACK_MOVERS;
     },
     placeholderData: FALLBACK_MOVERS,
-    refetchInterval: 120000,
-    staleTime: 60000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -651,8 +651,8 @@ export function useStockQuote(ticker: string) {
     queryKey: ['stock-quote', ticker],
     queryFn: () => fetcher<StockQuote>(`/stock/${encodeURIComponent(ticker)}/quote`),
     enabled: !!ticker,
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -665,8 +665,8 @@ export function useStockChart(ticker: string, range: string = '6mo') {
       range === '1d' ? 24 : 30
     ),
     enabled: !!ticker,
-    refetchInterval: range === '1d' || range === '1w' ? 30000 : 120000,
-    staleTime: 60000,
+    refetchInterval: range === '1d' || range === '1w' ? 3000 : 60000,
+    staleTime: range === '1d' || range === '1w' ? 1500 : 30000,
   });
 }
 
@@ -1006,8 +1006,8 @@ export function useStockProfile(ticker: string) {
     },
     placeholderData: (prev) => prev || getOrGenerateFallbackProfile(ticker),
     enabled: !!ticker,
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -1016,8 +1016,8 @@ export function useMovementCatalyst(ticker: string) {
     queryKey: ['movement-catalyst', ticker],
     queryFn: () => fetcher<MovementCatalyst>(`/stock/${encodeURIComponent(ticker)}/catalyst`),
     enabled: !!ticker,
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -1318,8 +1318,8 @@ export function useWatchlist() {
       });
     },
     enabled: !!isLoaded && !!isSignedIn,
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -1494,8 +1494,8 @@ export function usePortfolio(userId?: string) {
       });
     },
     enabled: !!isLoaded && !!isSignedIn,
-    refetchInterval: 30000,
-    staleTime: 15000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -1560,8 +1560,8 @@ export function usePortfolioSellSignals(userId?: string) {
       }
       return [] as PortfolioExitSignal[];
     },
-    refetchInterval: 45000,
-    staleTime: 20000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 
@@ -1600,8 +1600,8 @@ export function useAllTrades(userId?: string, ticker?: string, type?: 'BUY' | 'S
       });
     },
     enabled: !!isLoaded && !!isSignedIn,
-    refetchInterval: 15000,
-    staleTime: 5000,
+    refetchInterval: 3000,
+    staleTime: 1500,
   });
 }
 

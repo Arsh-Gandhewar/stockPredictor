@@ -152,13 +152,13 @@ export default function WatchlistPage() {
               Personal Watchlist
             </h1>
 
-            {/* 5S SYNC Pulsing Beacon */}
+            {/* 3S SYNC Pulsing Beacon */}
             <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full text-xs font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/25">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-400" />
               </span>
-              5S LIVE SYNC
+              3S LIVE SYNC
             </div>
 
             <Badge variant="glass" size="sm">
